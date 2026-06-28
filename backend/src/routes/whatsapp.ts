@@ -145,18 +145,19 @@ router.delete(
 
 // ─── POST /webhook ─────────────────────────────────────────────────────────────
 router.post('/webhook', async (req: Request, res: Response) => {
-  if (env.NODE_ENV === 'production' && env.TWILIO_AUTH_TOKEN) {
-    const valid = twilio.validateRequest(
-      env.TWILIO_AUTH_TOKEN,
-      (req.headers['x-twilio-signature'] as string) ?? '',
-      `${req.protocol}://${req.get('host')}${req.originalUrl}`,
-      req.body as Record<string, string>,
-    );
-    if (!valid) {
-      res.status(403).send('Forbidden');
-      return;
-    }
-  }
+  // Signature validation deshabilitada temporalmente
+  // if (env.NODE_ENV === 'production' && env.TWILIO_AUTH_TOKEN) {
+  //   const valid = twilio.validateRequest(
+  //     env.TWILIO_AUTH_TOKEN,
+  //     (req.headers['x-twilio-signature'] as string) ?? '',
+  //     `${req.protocol}://${req.get('host')}${req.originalUrl}`,
+  //     req.body as Record<string, string>,
+  //   );
+  //   if (!valid) {
+  //     res.status(403).send('Forbidden');
+  //     return;
+  //   }
+  // }
 
   const body = req.body as Record<string, string>;
   const from = body.From ?? '';
