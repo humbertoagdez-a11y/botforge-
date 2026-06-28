@@ -10,13 +10,145 @@ import { ragChat } from '../services/rag';
 
 const router = Router();
 
-// ─── Webhook público de Twilio ────────────────────────────────────────────────
+const SANDBOX_NUMBER = env.TWILIO_WHATSAPP_FROM?.replace('whatsapp:', '') ?? '+14155238886';
+const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function generateCode(): string {
+  return `BF-${Math.floor(100000 + Math.random() * 900000)}`;
+}
+
+async function getOwnedBot(botId: string, userId: string) {
+  const bot = await prisma.bot.findUnique({ where: { id: botId } });
+  if (!bot) throw new AppError(404, 'Bot no encontrado');
+  if (bot.userId !== userId) throw new AppError(403, 'Acceso denegado');
+  return bot;
+}
+
+// ─── POST /bots/:botId/request-connection ─────────────────────────────────────
+const connectionSchema = z.object({
+  phoneNumber: z.string().regex(/^\+\d{7,15}$/, 'Formato inválido. Ejemplo: +595981234567'),
+});
+
+router.post(
+  '/bots/:botId/request-connection',
+  requireAuth,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { phoneNumber } = connectionSchema.parse(req.body);
+      await getOwnedBot(req.params.botId, req.user!.userId);
+
+      // Expire previous pending connections for this bot
+      await prisma.whatsAppConnection.updateMany({
+        where: { botId: req.params.botId, status: 'PENDING' },
+        data: { status: 'EXPIRED' },
+      });
+
+      const code = generateCode();
+      const expiresAt = new Date(Date.now() + CODE_TTL_MS);
+
+      await prisma.whatsAppConnection.create({
+        data: {
+          id: uuidv4(),
+          botId: req.params.botId,
+          phoneNumber,
+          verificationCode: code,
+          expiresAt,
+        },
+      });
+
+      res.json({
+        data: {
+          code,
+          sandboxNumber: SANDBOX_NUMBER,
+          expiresAt: expiresAt.toISOString(),
+        },
+        error: null,
+        meta: null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── GET /bots/:botId/connection-status ───────────────────────────────────────
+router.get(
+  '/bots/:botId/connection-status',
+  requireAuth,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const bot = await getOwnedBot(req.params.botId, req.user!.userId);
+
+      if (bot.whatsappNumber) {
+        res.json({ data: { status: 'ACTIVE', phoneNumber: bot.whatsappNumber }, error: null, meta: null });
+        return;
+      }
+
+      const conn = await prisma.whatsAppConnection.findFirst({
+        where: { botId: req.params.botId },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!conn) {
+        res.json({ data: { status: 'IDLE' }, error: null, meta: null });
+        return;
+      }
+
+      if (conn.status === 'PENDING' && new Date() > conn.expiresAt) {
+        await prisma.whatsAppConnection.update({
+          where: { id: conn.id },
+          data: { status: 'EXPIRED' },
+        });
+        res.json({ data: { status: 'EXPIRED' }, error: null, meta: null });
+        return;
+      }
+
+      res.json({
+        data: {
+          status: conn.status,
+          phoneNumber: conn.status === 'ACTIVE' ? conn.phoneNumber : undefined,
+          expiresAt: conn.status === 'PENDING' ? conn.expiresAt.toISOString() : undefined,
+        },
+        error: null,
+        meta: null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── DELETE /bots/:botId/connect ──────────────────────────────────────────────
+router.delete(
+  '/bots/:botId/connect',
+  requireAuth,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const bot = await getOwnedBot(req.params.botId, req.user!.userId);
+
+      await prisma.whatsAppConnection.updateMany({
+        where: { botId: bot.id, status: 'ACTIVE' },
+        data: { status: 'EXPIRED' },
+      });
+
+      const updated = await prisma.bot.update({
+        where: { id: bot.id },
+        data: { whatsappNumber: null },
+      });
+
+      res.json({ data: updated, error: null, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── POST /webhook ─────────────────────────────────────────────────────────────
 router.post('/webhook', async (req: Request, res: Response) => {
-  // Verificar firma de Twilio en producción
   if (env.NODE_ENV === 'production' && env.TWILIO_AUTH_TOKEN) {
     const valid = twilio.validateRequest(
       env.TWILIO_AUTH_TOKEN,
-      req.headers['x-twilio-signature'] as string ?? '',
+      (req.headers['x-twilio-signature'] as string) ?? '',
       `${req.protocol}://${req.get('host')}${req.originalUrl}`,
       req.body as Record<string, string>,
     );
@@ -26,20 +158,49 @@ router.post('/webhook', async (req: Request, res: Response) => {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-  const from = (req.body as Record<string, string>).From ?? '';
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-  const to = (req.body as Record<string, string>).To ?? '';
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-  const body = (req.body as Record<string, string>).Body ?? '';
-
-  const phoneNumber = to.replace('whatsapp:', '');
+  const body = req.body as Record<string, string>;
+  const from = body.From ?? '';
+  const to = body.To ?? '';
+  const msgBody = (body.Body ?? '').trim();
+  const fromNumber = from.replace('whatsapp:', '');
+  const toNumber = to.replace('whatsapp:', '');
 
   const twiml = new twilio.twiml.MessagingResponse();
 
+  // ── Verification code flow ──────────────────────────────────────────────────
+  if (/^BF-\d{6}$/i.test(msgBody)) {
+    const code = msgBody.toUpperCase();
+    try {
+      const conn = await prisma.whatsAppConnection.findUnique({
+        where: { verificationCode: code },
+      });
+
+      if (!conn || conn.status !== 'PENDING') {
+        twiml.message('Código inválido o ya utilizado. Generá uno nuevo desde el panel de BotForge.');
+      } else if (new Date() > conn.expiresAt) {
+        await prisma.whatsAppConnection.update({ where: { id: conn.id }, data: { status: 'EXPIRED' } });
+        twiml.message('El código expiró ⏱ Generá uno nuevo desde el panel de BotForge.');
+      } else if (conn.phoneNumber !== fromNumber) {
+        twiml.message('Este código fue generado para otro número. Asegurate de enviar desde el número que registraste.');
+      } else {
+        await prisma.$transaction([
+          prisma.whatsAppConnection.update({ where: { id: conn.id }, data: { status: 'ACTIVE' } }),
+          prisma.bot.update({ where: { id: conn.botId }, data: { whatsappNumber: fromNumber } }),
+        ]);
+        twiml.message('✅ ¡WhatsApp conectado exitosamente a tu bot de BotForge! Podés probarlo enviando cualquier mensaje.');
+      }
+    } catch (err) {
+      console.error('[webhook] Error en verificación:', err);
+      twiml.message('Hubo un error al verificar el código. Intentá de nuevo.');
+    }
+    res.type('text/xml').send(twiml.toString());
+    return;
+  }
+
+  // ── Normal chat flow ────────────────────────────────────────────────────────
   try {
     const bot = await prisma.bot.findFirst({
-      where: { whatsappNumber: phoneNumber, isActive: true },
+      where: { whatsappNumber: toNumber, isActive: true },
     });
 
     if (!bot) {
@@ -48,29 +209,23 @@ router.post('/webhook', async (req: Request, res: Response) => {
       return;
     }
 
-    const readyDocs = await prisma.document.count({
-      where: { botId: bot.id, status: 'READY' },
-    });
-
+    const readyDocs = await prisma.document.count({ where: { botId: bot.id, status: 'READY' } });
     if (readyDocs === 0) {
       twiml.message('El bot aún no tiene documentos listos. Intenta más tarde.');
       res.type('text/xml').send(twiml.toString());
       return;
     }
 
-    // Buscar o crear conversación para este número
     const channelId = from;
     let conversation = await prisma.conversation.findUnique({
       where: { botId_channelId: { botId: bot.id, channelId } },
     });
-
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: { id: uuidv4(), botId: bot.id, channelId, channel: 'whatsapp' },
       });
     }
 
-    // Historial de los últimos 10 mensajes
     const recentMsgs = await prisma.message.findMany({
       where: { conversationId: conversation.id },
       orderBy: { createdAt: 'desc' },
@@ -78,7 +233,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
     });
 
     await prisma.message.create({
-      data: { id: uuidv4(), conversationId: conversation.id, role: 'USER', content: body },
+      data: { id: uuidv4(), conversationId: conversation.id, role: 'USER', content: msgBody },
     });
 
     const history = recentMsgs
@@ -86,76 +241,20 @@ router.post('/webhook', async (req: Request, res: Response) => {
       .map((m) => ({ role: m.role.toLowerCase() as 'user' | 'assistant', content: m.content }));
 
     const { content, tokensUsed } = await ragChat(
-      bot.id,
-      bot.name,
-      bot.personality,
-      bot.language,
-      history,
-      body,
+      bot.id, bot.name, bot.personality, bot.language, history, msgBody,
     );
 
     await prisma.message.create({
-      data: {
-        id: uuidv4(),
-        conversationId: conversation.id,
-        role: 'ASSISTANT',
-        content,
-        tokensUsed,
-      },
+      data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
     });
 
     twiml.message(content);
   } catch (err) {
     console.error('[whatsapp] Error en webhook:', err);
-    twiml.message('Hubo un problema al procesar tu mensaje. Por favor intenta de nuevo.');
+    twiml.message('Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.');
   }
 
   res.type('text/xml').send(twiml.toString());
-});
-
-// ─── Conectar número de WhatsApp a un bot (requiere auth) ────────────────────
-const connectSchema = z.object({ whatsappNumber: z.string().regex(/^\+\d{7,15}$/, 'Número inválido (ej: +595981234567)') });
-
-router.patch('/bots/:botId/connect', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { whatsappNumber } = connectSchema.parse(req.body);
-
-    const bot = await prisma.bot.findUnique({ where: { id: req.params.botId } });
-    if (!bot) throw new AppError(404, 'Bot no encontrado');
-    if (bot.userId !== req.user!.userId) throw new AppError(403, 'Acceso denegado');
-
-    // Verificar que el número no está en uso por otro bot
-    const existing = await prisma.bot.findFirst({
-      where: { whatsappNumber, id: { not: bot.id } },
-    });
-    if (existing) throw new AppError(409, 'Ese número ya está asignado a otro bot');
-
-    const updated = await prisma.bot.update({
-      where: { id: bot.id },
-      data: { whatsappNumber },
-    });
-
-    res.json({ data: updated, error: null, meta: null });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.delete('/bots/:botId/connect', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const bot = await prisma.bot.findUnique({ where: { id: req.params.botId } });
-    if (!bot) throw new AppError(404, 'Bot no encontrado');
-    if (bot.userId !== req.user!.userId) throw new AppError(403, 'Acceso denegado');
-
-    const updated = await prisma.bot.update({
-      where: { id: bot.id },
-      data: { whatsappNumber: null },
-    });
-
-    res.json({ data: updated, error: null, meta: null });
-  } catch (err) {
-    next(err);
-  }
 });
 
 export default router;

@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum WaConnectionStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+}
+
 enum Plan {
   FREE
   STARTER
@@ -67,11 +73,26 @@ model Bot {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  documents      Document[]
-  conversations  Conversation[]
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents           Document[]
+  conversations       Conversation[]
+  whatsappConnections WhatsAppConnection[]
 
   @@map("bots")
+}
+
+model WhatsAppConnection {
+  id               String             @id @default(uuid())
+  botId            String
+  phoneNumber      String
+  verificationCode String             @unique
+  status           WaConnectionStatus @default(PENDING)
+  createdAt        DateTime           @default(now())
+  expiresAt        DateTime
+
+  bot              Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_connections")
 }
 
 model Document {

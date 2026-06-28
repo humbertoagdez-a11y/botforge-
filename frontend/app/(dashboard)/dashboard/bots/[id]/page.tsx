@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { ArrowLeft, Bot, FileText, Loader2, MessageSquare, Settings, Smartphone } from 'lucide-react';
+// Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,121 +19,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import DocumentUploader, { DocumentRow } from '@/components/DocumentUploader';
 import ChatWidget from '@/components/ChatWidget';
+import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
-import { useAuthStore } from '@/lib/store';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 function WhatsAppPanel({ bot, onUpdate }: { bot: BotType; onUpdate: (b: BotType) => void }) {
-  const { token } = useAuthStore();
-  const [number, setNumber] = useState(bot.whatsappNumber ?? '');
-  const [saving, setSaving] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-
-  async function connect() {
-    if (!number.match(/^\+\d{7,15}$/)) { toast.error('Número inválido. Formato: +595981234567'); return; }
-    setSaving(true);
-    try {
-      const res = await fetch(`${API_URL}/api/v1/whatsapp/bots/${bot.id}/connect`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ whatsappNumber: number }),
-      });
-      const data = (await res.json()) as { data?: BotType; error?: { message: string } };
-      if (!res.ok) throw new Error(data.error?.message);
-      onUpdate(data.data!);
-      toast.success('Número conectado correctamente');
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Error'); }
-    finally { setSaving(false); }
-  }
-
-  async function disconnect() {
-    setDisconnecting(true);
-    try {
-      const res = await fetch(`${API_URL}/api/v1/whatsapp/bots/${bot.id}/connect`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json()) as { data?: BotType; error?: { message: string } };
-      if (!res.ok) throw new Error(data.error?.message);
-      onUpdate(data.data!);
-      setNumber('');
-      toast.success('Número desconectado');
-    } catch (err) { toast.error(err instanceof Error ? err.message : 'Error'); }
-    finally { setDisconnecting(false); }
-  }
-
-  const webhookUrl = `${API_URL}/api/v1/whatsapp/webhook`;
-
-  return (
-    <div className="max-w-xl space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Conectar número de WhatsApp</CardTitle>
-          <CardDescription>
-            Asociá un número de Twilio a este bot. Los mensajes que lleguen a ese número serán respondidos automáticamente.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {bot.whatsappNumber ? (
-            <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
-              <Smartphone className="h-5 w-5 text-green-600" />
-              <div className="flex-1">
-                <p className="font-mono text-sm font-semibold">{bot.whatsappNumber}</p>
-                <p className="text-xs text-muted-foreground">Número conectado y activo</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={disconnect} disabled={disconnecting}>
-                {disconnecting && <Loader2 className="h-3 w-3 animate-spin" />}
-                Desconectar
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>Número de WhatsApp (formato internacional)</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="+595981234567"
-                  value={number}
-                  onChange={(e) => setNumber(e.target.value)}
-                  className="font-mono"
-                />
-                <Button onClick={connect} disabled={saving}>
-                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Conectar
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Configurar Twilio</CardTitle>
-          <CardDescription>Seguí estos pasos para conectar tu número de WhatsApp</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <ol className="space-y-2 text-muted-foreground">
-            <li className="flex gap-2"><span className="font-semibold text-foreground">1.</span> Entrá a console.twilio.com → Messaging → Try it out → Send a WhatsApp message</li>
-            <li className="flex gap-2"><span className="font-semibold text-foreground">2.</span> Para producción: comprá un número de Twilio con capacidad WhatsApp</li>
-            <li className="flex gap-2"><span className="font-semibold text-foreground">3.</span> En la configuración del número, pegá esta URL en el campo "When a message comes in":</li>
-          </ol>
-          <div className="flex items-center gap-2 rounded-md bg-muted p-3 font-mono text-xs">
-            <span className="flex-1 break-all">{webhookUrl}</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 shrink-0 text-xs"
-              onClick={() => { void navigator.clipboard.writeText(webhookUrl); toast.success('URL copiada'); }}
-            >
-              Copiar
-            </Button>
-          </div>
-          <li className="flex gap-2 text-muted-foreground"><span className="font-semibold text-foreground">4.</span> Asegurate de seleccionar HTTP POST como método</li>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  return <WhatsAppOnboarding bot={bot} onUpdate={onUpdate} />;
 }
 
 const updateSchema = z.object({
