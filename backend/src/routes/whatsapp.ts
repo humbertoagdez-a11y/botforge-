@@ -166,6 +166,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
   const fromNumber = from.replace('whatsapp:', '');
   const toNumber = to.replace('whatsapp:', '');
 
+  console.log('[webhook] from:', from);
+  console.log('[webhook] senderNumber:', from.replace('whatsapp:', ''));
+
   const twiml = new twilio.twiml.MessagingResponse();
 
   // ── Verification code flow ──────────────────────────────────────────────────
@@ -204,6 +207,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
     const bot = await prisma.bot.findFirst({
       where: { whatsappNumber: senderNumber, isActive: true },
     });
+    console.log('[webhook] bot encontrado:', bot?.id, bot?.whatsappNumber);
 
     if (!bot) {
       twiml.message('Este número no tiene un bot activo configurado.');
