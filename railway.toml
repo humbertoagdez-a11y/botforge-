@@ -1,0 +1,7 @@
+﻿[build]
+builder = "NIXPACKS"
+buildCommand = "cd backend && npm install && npx prisma generate && npm run build"
+
+[deploy]
+startCommand = "cd backend && npx prisma migrate deploy && node dist/index.js"
+healthcheckPath = "/health"
