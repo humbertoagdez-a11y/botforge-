@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.local
+*.env.local
+uploads/
+.next/
+coverage/
+*.log
+.DS_Store
+test-doc.txt
+test-flow.ps1
+cookies.txt

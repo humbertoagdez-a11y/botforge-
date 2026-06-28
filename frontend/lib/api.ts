@@ -1,0 +1,125 @@
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+export interface ApiError extends Error {
+  statusCode?: number;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  plan: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+  createdAt: string;
+  accessToken?: string;
+}
+
+export interface Bot {
+  id: string;
+  userId: string;
+  name: string;
+  personality: string;
+  language: string;
+  whatsappNumber: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { documents: number; conversations: number };
+}
+
+export interface BotDocument {
+  id: string;
+  botId: string;
+  name: string;
+  mimeType: string;
+  fileSize: number;
+  status: 'PENDING' | 'PROCESSING' | 'READY' | 'ERROR';
+  errorMsg: string | null;
+  createdAt: string;
+  _count?: { chunks: number };
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  role: 'USER' | 'ASSISTANT';
+  content: string;
+  tokensUsed: number;
+  createdAt: string;
+}
+
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('bf_token');
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getToken();
+  const isFormData = options.body instanceof FormData;
+
+  const headers: HeadersInit = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers ?? {}),
+  };
+
+  const res = await fetch(`${API}${path}`, { ...options, headers });
+  const json = (await res.json()) as { data: T; error: { message: string } | null };
+
+  if (!res.ok) {
+    const err: ApiError = new Error(json.error?.message ?? 'Error desconocido');
+    err.statusCode = res.status;
+    throw err;
+  }
+
+  return json.data;
+}
+
+export const api = {
+  auth: {
+    login: (email: string, password: string) =>
+      request<User>('/api/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      }),
+    register: (name: string, email: string, password: string) =>
+      request<User>('/api/v1/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, password }),
+      }),
+    me: () => request<User>('/api/v1/auth/me'),
+    logout: () => request<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
+  },
+
+  bots: {
+    list: () => request<Bot[]>('/api/v1/bots'),
+    get: (id: string) => request<Bot>(`/api/v1/bots/${id}`),
+    create: (data: { name: string; personality?: string; language: string }) =>
+      request<Bot>('/api/v1/bots', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: Partial<{ name: string; personality: string; language: string }>) =>
+      request<Bot>(`/api/v1/bots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id: string) =>
+      request<{ ok: boolean }>(`/api/v1/bots/${id}`, { method: 'DELETE' }),
+  },
+
+  documents: {
+    list: (botId: string) => request<BotDocument[]>(`/api/v1/bots/${botId}/documents`),
+    upload: (botId: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return request<BotDocument>(`/api/v1/bots/${botId}/documents`, {
+        method: 'POST',
+        body: form,
+      });
+    },
+    delete: (botId: string, docId: string) =>
+      request<{ ok: boolean }>(`/api/v1/bots/${botId}/documents/${docId}`, { method: 'DELETE' }),
+  },
+
+  chat: {
+    send: (botId: string, message: string, conversationId?: string) =>
+      request<{ conversationId: string; message: ChatMessage }>(`/api/v1/bots/${botId}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ message, ...(conversationId ? { conversationId } : {}) }),
+      }),
+  },
+};

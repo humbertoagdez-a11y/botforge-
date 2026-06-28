@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  AGENCY
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  READY
+  ERROR
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+model User {
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  passwordHash         String
+  name                 String
+  plan                 Plan      @default(FREE)
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  planExpiresAt        DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  bots          Bot[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Bot {
+  id             String   @id @default(uuid())
+  userId         String
+  name           String
+  personality    String   @default("Eres un asistente útil y amigable.")
+  language       String   @default("es")
+  whatsappNumber String?  @unique
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents      Document[]
+  conversations  Conversation[]
+
+  @@map("bots")
+}
+
+model Document {
+  id         String         @id @default(uuid())
+  botId      String
+  name       String
+  mimeType   String
+  filePath   String
+  fileSize   Int
+  status     DocumentStatus @default(PENDING)
+  errorMsg   String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  bot        Bot     @relation(fields: [botId], references: [id], onDelete: Cascade)
+  chunks     Chunk[]
+
+  @@map("documents")
+}
+
+model Chunk {
+  id           String   @id @default(uuid())
+  documentId   String
+  botId        String
+  content      String
+  tokenCount   Int
+  chunkIndex   Int
+  pineconeId   String   @unique
+  createdAt    DateTime @default(now())
+
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("chunks")
+}
+
+model Conversation {
+  id          String   @id @default(uuid())
+  botId       String
+  channelId   String
+  channel     String   @default("web")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages    Message[]
+
+  @@unique([botId, channelId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  tokensUsed     Int         @default(0)
+  createdAt      DateTime    @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
