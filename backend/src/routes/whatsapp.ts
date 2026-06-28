@@ -164,7 +164,6 @@ router.post('/webhook', async (req: Request, res: Response) => {
   const to = body.To ?? '';
   const msgBody = (body.Body ?? '').trim();
   const fromNumber = from.replace('whatsapp:', '');
-  const toNumber = to.replace('whatsapp:', '');
 
   console.log('[webhook] from:', from);
   console.log('[webhook] senderNumber:', from.replace('whatsapp:', ''));
