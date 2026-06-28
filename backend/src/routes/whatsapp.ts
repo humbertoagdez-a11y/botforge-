@@ -200,8 +200,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
   // ── Normal chat flow ────────────────────────────────────────────────────────
   try {
+    const senderNumber = fromNumber;
     const bot = await prisma.bot.findFirst({
-      where: { whatsappNumber: toNumber, isActive: true },
+      where: { whatsappNumber: senderNumber, isActive: true },
     });
 
     if (!bot) {
