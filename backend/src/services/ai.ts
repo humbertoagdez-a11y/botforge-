@@ -3,6 +3,9 @@ import { env } from '../config/env';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
+const PRIMARY_MODEL = 'claude-fable-5';
+const FALLBACK_MODEL = 'claude-opus-4-8';
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -54,6 +57,26 @@ function buildMessages(
   ];
 }
 
+async function callGenerate(
+  model: string,
+  systemText: string,
+  messages: Anthropic.MessageParam[],
+): Promise<{ content: string; tokensUsed: number; stopReason: string }> {
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens: 1024,
+    system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
+    messages,
+  });
+
+  const block = response.content[0];
+  const content = block.type === 'text' ? block.text : '';
+  const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+  const stopReason = (response.stop_reason as string) ?? '';
+
+  return { content, tokensUsed, stopReason };
+}
+
 export async function generateBotResponse(
   botName: string,
   personality: string,
@@ -63,19 +86,17 @@ export async function generateBotResponse(
   userMessage: string,
 ): Promise<{ content: string; tokensUsed: number }> {
   const systemText = buildSystemPrompt(botName, personality, language, contextChunks);
+  const messages = buildMessages(history, userMessage);
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
-    messages: buildMessages(history, userMessage),
-  });
+  const primary = await callGenerate(PRIMARY_MODEL, systemText, messages);
 
-  const block = response.content[0];
-  const content = block.type === 'text' ? block.text : '';
-  const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+  if (primary.stopReason === 'refusal') {
+    console.warn(`[ai] ${PRIMARY_MODEL} devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
+    const { content, tokensUsed } = await callGenerate(FALLBACK_MODEL, systemText, messages);
+    return { content, tokensUsed };
+  }
 
-  return { content, tokensUsed };
+  return { content: primary.content, tokensUsed: primary.tokensUsed };
 }
 
 export async function streamBotResponse(
@@ -89,12 +110,13 @@ export async function streamBotResponse(
   signal?: AbortSignal,
 ): Promise<{ content: string; tokensUsed: number }> {
   const systemText = buildSystemPrompt(botName, personality, language, contextChunks);
+  const messages = buildMessages(history, userMessage);
 
   const stream = anthropic.messages.stream({
-    model: 'claude-haiku-4-5-20251001',
+    model: PRIMARY_MODEL,
     max_tokens: 1024,
     system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
-    messages: buildMessages(history, userMessage),
+    messages,
   });
 
   signal?.addEventListener('abort', () => stream.abort());
@@ -104,6 +126,14 @@ export async function streamBotResponse(
   });
 
   const finalMessage = await stream.finalMessage();
+
+  if ((finalMessage.stop_reason as string) === 'refusal') {
+    console.warn(`[ai] ${PRIMARY_MODEL} stream devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
+    const fallback = await callGenerate(FALLBACK_MODEL, systemText, messages);
+    onDelta(fallback.content);
+    return fallback;
+  }
+
   const content = finalMessage.content[0]?.type === 'text' ? finalMessage.content[0].text : '';
   const tokensUsed = finalMessage.usage.input_tokens + finalMessage.usage.output_tokens;
 
