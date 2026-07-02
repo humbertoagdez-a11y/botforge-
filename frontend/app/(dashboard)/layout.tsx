@@ -10,7 +10,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { token } = useAuthStore();
 
   useEffect(() => {
-    if (!token) router.replace('/login');
+    if (!token) router.replace('/auth/login');
   }, [token, router]);
 
   if (!token) return null;
