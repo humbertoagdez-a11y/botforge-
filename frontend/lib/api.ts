@@ -99,6 +99,11 @@ export const api = {
       request<Bot>(`/api/v1/bots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<{ ok: boolean }>(`/api/v1/bots/${id}`, { method: 'DELETE' }),
+    generateInstructivo: (id: string, answers: Record<string, string>) =>
+      request<{ instructivo: string }>(`/api/v1/bots/${id}/generate-instructivo`, {
+        method: 'POST',
+        body: JSON.stringify({ answers }),
+      }),
   },
 
   documents: {

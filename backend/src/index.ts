@@ -19,6 +19,7 @@ import chatRouter from './routes/chat';
 import whatsappRouter from './routes/whatsapp';
 import stripeRouter from './routes/stripe';
 import publicRouter from './routes/public';
+import assistantRouter from './routes/assistant';
 import testRouter from './routes/test';
 import statsRouter from './routes/stats';
 
@@ -57,6 +58,9 @@ app.use('/api/v1/stats', statsRouter);
 
 // Rutas públicas (widget embebido)
 app.use('/api/v1/public', publicRouter);
+
+// Asistente Aria de la landing (público)
+app.use('/api/v1/assistant', assistantRouter);
 
 if (env.NODE_ENV !== 'production') {
   app.use('/api/v1/test', testRouter);

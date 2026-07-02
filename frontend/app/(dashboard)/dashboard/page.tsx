@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Bot, MessageSquare, FileText, Plus, Trash2, ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -59,10 +60,15 @@ export default function DashboardPage() {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : bots.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
-            <Bot className="h-6 w-6 text-muted-foreground" />
-          </div>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+          <Image
+            src="/mascota.svg"
+            alt="Mascota de BotForge"
+            width={200}
+            height={200}
+            unoptimized
+            className="mb-2 h-44 w-44"
+          />
           <h3 className="font-semibold">Todavía no tenés bots</h3>
           <p className="mt-1 text-sm text-muted-foreground">Creá tu primer bot y conectalo a tu base de conocimiento</p>
           <Button className="mt-4" asChild>

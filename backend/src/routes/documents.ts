@@ -32,11 +32,12 @@ const upload = multer({
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
       'text/plain',
+      'text/csv',
     ];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new AppError(400, 'Tipo de archivo no soportado. Use PDF, Word, Excel o TXT.'));
+      cb(new AppError(400, 'Tipo de archivo no soportado. Use PDF, Word, Excel, CSV o TXT.'));
     }
   },
 });

@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, Bot, FileText, Loader2, MessageSquare, Settings, Smartphone } from 'lucide-react';
+import { ArrowLeft, Bot, FileText, Loader2, MessageSquare, Settings, Smartphone, Sparkles } from 'lucide-react';
 // Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,12 +18,42 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import DocumentUploader, { DocumentRow } from '@/components/DocumentUploader';
+import DocumentDropzone from '@/components/DocumentDropzone';
+import InstructivoWizard from '@/components/InstructivoWizard';
 import ChatWidget from '@/components/ChatWidget';
 import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
 
-function WhatsAppPanel({ bot, onUpdate }: { bot: BotType; onUpdate: (b: BotType) => void }) {
-  return <WhatsAppOnboarding bot={bot} onUpdate={onUpdate} />;
+interface WhatsAppPanelProps {
+  bot: BotType;
+  onUpdate: (b: BotType) => void;
+  docs: BotDocument[];
+  onDocUploaded: (doc: BotDocument) => void;
+  onDocDeleted: (docId: string) => void;
+}
+
+function WhatsAppPanel({ bot, onUpdate, docs, onDocUploaded, onDocDeleted }: WhatsAppPanelProps) {
+  return (
+    <div className="space-y-4">
+      <WhatsAppOnboarding bot={bot} onUpdate={onUpdate} />
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-base">Archivos de entrenamiento rapido</CardTitle>
+          <CardDescription>
+            Estos archivos le dan informacion extra a tu bot para responder mejor
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DocumentDropzone
+            botId={bot.id}
+            docs={docs}
+            onUploaded={onDocUploaded}
+            onDeleted={onDocDeleted}
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 const updateSchema = z.object({
@@ -40,6 +70,7 @@ export default function BotDetailPage() {
   const [docs, setDocs] = useState<BotDocument[]>([]);
   const [loadingBot, setLoadingBot] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [activeTab, setActiveTab] = useState('documents');
 
   const form = useForm<UpdateData>({ resolver: zodResolver(updateSchema) });
 
@@ -122,7 +153,7 @@ export default function BotDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="documents">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="documents" className="gap-1.5">
             <FileText className="h-3.5 w-3.5" />
@@ -136,6 +167,10 @@ export default function BotDetailPage() {
           <TabsTrigger value="chat" className="gap-1.5">
             <MessageSquare className="h-3.5 w-3.5" />
             Chat de prueba
+          </TabsTrigger>
+          <TabsTrigger value="instructivo" className="gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            Instructivo
           </TabsTrigger>
           <TabsTrigger value="config" className="gap-1.5">
             <Settings className="h-3.5 w-3.5" />
@@ -201,6 +236,18 @@ export default function BotDetailPage() {
           )}
         </TabsContent>
 
+        {/* Instructivo tab */}
+        <TabsContent value="instructivo" className="mt-4">
+          <InstructivoWizard
+            botId={id}
+            botName={bot.name}
+            onUploaded={(doc) => {
+              setDocs((d) => [doc, ...d]);
+              setActiveTab('documents');
+            }}
+          />
+        </TabsContent>
+
         {/* Config tab */}
         <TabsContent value="config" className="mt-4">
           <Card className="max-w-xl">
@@ -253,7 +300,13 @@ export default function BotDetailPage() {
 
         {/* WhatsApp tab */}
         <TabsContent value="whatsapp" className="mt-4">
-          <WhatsAppPanel bot={bot} onUpdate={setBot} />
+          <WhatsAppPanel
+            bot={bot}
+            onUpdate={setBot}
+            docs={docs}
+            onDocUploaded={(doc) => setDocs((d) => [doc, ...d])}
+            onDocDeleted={(docId) => setDocs((d) => d.filter((x) => x.id !== docId))}
+          />
         </TabsContent>
       </Tabs>
     </div>

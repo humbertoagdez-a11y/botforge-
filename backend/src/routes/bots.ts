@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkBotLimit } from '../middleware/planLimits';
+import { generateInstructivo } from '../services/ai';
 
 const router = Router();
 
@@ -77,6 +78,24 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     await getOwnedBot(req.params.id, req.user!.userId);
     await prisma.bot.delete({ where: { id: req.params.id } });
     res.json({ data: { ok: true }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const instructivoSchema = z.object({
+  answers: z.record(z.string().max(4000)).refine(
+    (obj) => Object.values(obj).some((v) => v.trim().length > 0),
+    { message: 'Se necesita al menos una respuesta' },
+  ),
+});
+
+router.post('/:id/generate-instructivo', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await getOwnedBot(req.params.id, req.user!.userId);
+    const { answers } = instructivoSchema.parse(req.body);
+    const instructivo = await generateInstructivo(answers);
+    res.json({ data: { instructivo }, error: null, meta: null });
   } catch (err) {
     next(err);
   }
