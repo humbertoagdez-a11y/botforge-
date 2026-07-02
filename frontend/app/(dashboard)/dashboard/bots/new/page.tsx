@@ -89,9 +89,12 @@ function PersonalidadCard({
           <Check className="h-3 w-3 text-primary-foreground" />
         </span>
       )}
-      <span className="text-4xl leading-none">{p.emoji}</span>
+      <p.icon className="h-12 w-12" />
       <span className="text-sm font-semibold leading-tight">{p.nombre}</span>
       <span className="text-xs leading-snug text-muted-foreground">{p.descripcion}</span>
+      <span className="mt-auto rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">
+        {p.badge}
+      </span>
     </button>
   );
 }
@@ -265,7 +268,7 @@ export default function NewBotPage() {
             <CardTitle>
               {selectedPersonalidad ? (
                 <span className="flex items-center gap-2">
-                  <span>{selectedPersonalidad.emoji}</span>
+                  <selectedPersonalidad.icon className="h-7 w-7" />
                   {selectedPersonalidad.nombre}
                 </span>
               ) : (
@@ -317,8 +320,12 @@ export default function NewBotPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-2xl">
-                {selectedPersonalidad ? selectedPersonalidad.emoji : <Bot className="h-5 w-5 text-primary" />}
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                {selectedPersonalidad ? (
+                  <selectedPersonalidad.icon className="h-7 w-7" />
+                ) : (
+                  <Bot className="h-5 w-5 text-primary" />
+                )}
               </div>
               <div>
                 <p className="font-semibold">{step1Data.name}</p>
