@@ -31,3 +31,42 @@
   * { @apply border-border; }
   body { @apply bg-background text-foreground; }
 }
+
+/* ─── Tema dark tech del dashboard (scoped, no afecta landing ni auth) ─────── */
+.theme-dashboard {
+  /* #09090F */ --background: 240 25% 4.7%;
+  /* #E8E8F0 */ --foreground: 240 21% 92.5%;
+  /* #0F0F1A */ --card: 240 27% 8%;
+  --card-foreground: 240 21% 92.5%;
+  --popover: 240 27% 8%;
+  --popover-foreground: 240 21% 92.5%;
+  /* #16162A */ --secondary: 240 31% 12.5%;
+  --secondary-foreground: 240 21% 92.5%;
+  --muted: 240 31% 12.5%;
+  /* #6E6E8E */ --muted-foreground: 240 13% 55%;
+  --accent: 240 31% 12.5%;
+  --accent-foreground: 240 21% 92.5%;
+  /* #1E1E3A */ --border: 240 32% 17%;
+  --input: 240 32% 17%;
+  /* #22D3EE */ --ring: 187 85% 53%;
+}
+
+.dot-grid-dark {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+/* Scrollbar custom del asistente */
+.assistant-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.assistant-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.assistant-scroll::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.3);
+  border-radius: 9999px;
+}
+.assistant-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.5);
+}

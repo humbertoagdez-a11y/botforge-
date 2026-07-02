@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { BarChart2, LayoutDashboard, LogOut, MessageSquare, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -9,6 +10,7 @@ import { useAuthStore } from '@/lib/store';
 import { api, type AccountStats } from '@/lib/api';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
+import DashboardAssistant from './DashboardAssistant';
 
 const NAV = [
   { href: '/dashboard', label: 'Mis Bots', icon: LayoutDashboard },
@@ -60,6 +62,7 @@ export default function Sidebar() {
   const router = useRouter();
   const { user, clearAuth } = useAuthStore();
   const [stats, setStats] = useState<AccountStats | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   useEffect(() => {
     api.stats.get().then(setStats).catch(() => { /* la barra de uso es opcional */ });
@@ -72,7 +75,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex h-full w-60 flex-col border-r bg-card">
+    <aside className="flex h-full w-60 flex-col border-r bg-[#07070E]">
       <div className="flex h-14 items-center gap-2 border-b px-4">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
           <Zap className="h-4 w-4 text-primary-foreground" />
@@ -96,6 +99,15 @@ export default function Sidebar() {
             {label}
           </Link>
         ))}
+
+        <button
+          type="button"
+          onClick={() => setAssistantOpen(true)}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Image src="/asistente-logo.svg" alt="" width={24} height={24} unoptimized className="h-6 w-6 -ml-1" />
+          Asistente
+        </button>
       </nav>
 
       {stats && <PlanUsage stats={stats} />}
@@ -117,6 +129,8 @@ export default function Sidebar() {
           Salir
         </Button>
       </div>
+
+      <DashboardAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)} botId={null} botName={null} />
     </aside>
   );
 }

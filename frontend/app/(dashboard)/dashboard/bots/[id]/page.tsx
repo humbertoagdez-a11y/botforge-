@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -20,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import DocumentUploader, { DocumentRow } from '@/components/DocumentUploader';
 import DocumentDropzone from '@/components/DocumentDropzone';
 import InstructivoWizard from '@/components/InstructivoWizard';
+import DashboardAssistant from '@/components/DashboardAssistant';
 import ChatWidget from '@/components/ChatWidget';
 import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
@@ -71,6 +73,7 @@ export default function BotDetailPage() {
   const [loadingBot, setLoadingBot] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [activeTab, setActiveTab] = useState('documents');
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const form = useForm<UpdateData>({ resolver: zodResolver(updateSchema) });
 
@@ -273,7 +276,7 @@ export default function BotDetailPage() {
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="theme-dashboard">
                       <SelectItem value="es">Español</SelectItem>
                       <SelectItem value="en">English</SelectItem>
                       <SelectItem value="pt">Português</SelectItem>
@@ -309,6 +312,23 @@ export default function BotDetailPage() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Boton flotante del asistente con contexto del bot */}
+      <button
+        type="button"
+        onClick={() => setAssistantOpen(true)}
+        className="fixed bottom-5 left-5 z-40 flex items-center gap-2 rounded-full border border-cyan-400/30 bg-[#111120] py-2 pl-2 pr-4 text-sm font-medium text-[#E8E8F0] shadow-lg shadow-cyan-950/30 transition-transform hover:scale-105 md:left-[16.5rem]"
+      >
+        <Image src="/asistente-logo.svg" alt="" width={28} height={28} unoptimized className="h-7 w-7" />
+        Asistente
+      </button>
+
+      <DashboardAssistant
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        botId={id}
+        botName={bot.name}
+      />
     </div>
   );
 }

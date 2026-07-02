@@ -121,13 +121,13 @@ function MetricsRow({ stats }: { stats: AccountStats }) {
   return (
     <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {cards.map(({ icon: Icon, label, value, sub }) => (
-        <Card key={label}>
+        <Card key={label} className="transition-colors hover:border-cyan-400/30">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-medium text-muted-foreground">{label}</p>
-              <Icon className="h-4 w-4 text-primary" />
+              <p className="text-xs font-medium text-cyan-400/90">{label}</p>
+              <Icon className="h-4 w-4 text-cyan-400/70" />
             </div>
-            <p className="mt-1.5 text-2xl font-bold">{value.toLocaleString('es-PY')}</p>
+            <p className="mt-1.5 text-2xl font-bold text-foreground">{value.toLocaleString('es-PY')}</p>
             <p className="text-xs text-muted-foreground">{sub}</p>
           </CardContent>
         </Card>
@@ -309,7 +309,7 @@ export default function DashboardPage() {
       )}
 
       <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="theme-dashboard max-w-sm">
           <DialogHeader>
             <DialogTitle>¿Eliminar bot?</DialogTitle>
             <DialogDescription>

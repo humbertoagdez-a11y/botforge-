@@ -53,7 +53,7 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
 
   return (
     <Dialog open={!!conversationId} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col">
+      <DialogContent className="theme-dashboard flex max-h-[85vh] max-w-lg flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">

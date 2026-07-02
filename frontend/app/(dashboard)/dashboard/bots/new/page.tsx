@@ -197,7 +197,7 @@ export default function NewBotPage() {
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="theme-dashboard">
                     <SelectItem value="es">Español</SelectItem>
                     <SelectItem value="en">English</SelectItem>
                     <SelectItem value="pt">Português</SelectItem>

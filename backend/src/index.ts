@@ -20,6 +20,7 @@ import whatsappRouter from './routes/whatsapp';
 import stripeRouter from './routes/stripe';
 import publicRouter from './routes/public';
 import assistantRouter from './routes/assistant';
+import assistantDashboardRouter from './routes/assistantDashboard';
 import testRouter from './routes/test';
 import statsRouter from './routes/stats';
 
@@ -58,6 +59,9 @@ app.use('/api/v1/stats', statsRouter);
 
 // Rutas públicas (widget embebido)
 app.use('/api/v1/public', publicRouter);
+
+// Asistente del dashboard (autenticado) — registrar antes que el público
+app.use('/api/v1/assistant/dashboard', assistantDashboardRouter);
 
 // Asistente Aria de la landing (público)
 app.use('/api/v1/assistant', assistantRouter);
