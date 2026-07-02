@@ -90,16 +90,19 @@ function signTokens(userId: string, email: string) {
 
 function setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
   const isProd = env.NODE_ENV === 'production';
+  // En produccion frontend y backend viven en dominios distintos (Railway),
+  // asi que las cookies necesitan SameSite=None para viajar cross-site
+  const sameSite = isProd ? ('none' as const) : ('lax' as const);
   res.cookie('accessToken', accessToken, {
     httpOnly: true,
     secure: isProd,
-    sameSite: 'lax',
+    sameSite,
     maxAge: 15 * 60 * 1000,
   });
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: isProd,
-    sameSite: 'lax',
+    sameSite,
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/api/v1/auth/refresh',
   });
@@ -195,8 +198,13 @@ router.post('/refresh', async (req: Request, res: Response, next: NextFunction) 
       },
     });
 
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: payload.userId },
+      select: { id: true, name: true, email: true, plan: true, createdAt: true },
+    });
+
     setAuthCookies(res, accessToken, newRefresh);
-    res.json({ data: { ok: true }, error: null, meta: null });
+    res.json({ data: { accessToken, user }, error: null, meta: null });
   } catch (err) {
     next(err);
   }

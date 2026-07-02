@@ -1,3 +1,5 @@
+import { useAuthStore } from './store';
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export interface ApiError extends Error {
@@ -118,17 +120,85 @@ function getToken(): string | null {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
+// ─── Refresh silencioso de sesion ────────────────────────────────────────────
+
+// Endpoints donde un 401 NO debe disparar refresh: login/register (401 =
+// credenciales invalidas), refresh (evita loop) y logout (mantiene su flujo)
+const REFRESH_SKIP_PATHS = [
+  '/api/v1/auth/login',
+  '/api/v1/auth/register',
+  '/api/v1/auth/refresh',
+  '/api/v1/auth/logout',
+];
+
+// Promesa compartida: si varios requests reciben 401 a la vez, todos esperan
+// el MISMO refresh en lugar de disparar varios en paralelo
+let refreshPromise: Promise<string | null> | null = null;
+
+export function refreshSession(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = (async (): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API}/api/v1/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!res.ok) return null;
+        const json = (await res.json()) as {
+          data: { accessToken: string; user: User } | null;
+        };
+        if (!json.data?.accessToken) return null;
+        useAuthStore.getState().setAuth(json.data.accessToken, json.data.user);
+        return json.data.accessToken;
+      } catch {
+        return null;
+      }
+    })();
+    void refreshPromise.finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
+function handleSessionExpired(): void {
+  useAuthStore.getState().clearAuth();
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth/login')) {
+    window.location.href = '/auth/login';
+  }
+}
+
+async function fetchWithAuth(path: string, options: RequestInit = {}): Promise<Response> {
   const isFormData = options.body instanceof FormData;
 
-  const headers: HeadersInit = {
-    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(options.headers ?? {}),
+  const doFetch = (token: string | null) => {
+    const headers: HeadersInit = {
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    };
+    // credentials include: necesario para que la cookie httpOnly del refresh
+    // token se guarde y viaje entre dominios distintos (frontend/backend)
+    return fetch(`${API}${path}`, { ...options, headers, credentials: 'include' });
   };
 
-  const res = await fetch(`${API}${path}`, { ...options, headers });
+  let res = await doFetch(getToken());
+
+  if (res.status === 401 && !REFRESH_SKIP_PATHS.some((p) => path.startsWith(p))) {
+    const newToken = await refreshSession();
+    if (newToken) {
+      res = await doFetch(newToken);
+      if (res.status !== 401) return res;
+    }
+    // Refresh fallido o el retry volvio a dar 401: sesion realmente vencida
+    handleSessionExpired();
+  }
+
+  return res;
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetchWithAuth(path, options);
   const json = (await res.json()) as { data: T; error: { message: string } | null };
 
   if (!res.ok) {
@@ -141,10 +211,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 async function requestWithMeta<T, M>(path: string): Promise<{ data: T; meta: M }> {
-  const token = getToken();
-  const res = await fetch(`${API}${path}`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+  const res = await fetchWithAuth(path);
   const json = (await res.json()) as { data: T; error: { message: string } | null; meta: M };
 
   if (!res.ok) {

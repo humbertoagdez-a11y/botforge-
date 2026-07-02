@@ -5,6 +5,23 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import TechBackground from '@/components/TechBackground';
 import { useAuthStore } from '@/lib/store';
+import { refreshSession } from '@/lib/api';
+
+const REFRESH_MARGIN_MS = 2 * 60 * 1000;
+
+// Lee el campo exp del JWT sin librerias (payload base64url → atob)
+function tokenExpiresSoon(token: string): boolean {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return false;
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = JSON.parse(atob(base64)) as { exp?: number };
+    if (typeof decoded.exp !== 'number') return false;
+    return decoded.exp * 1000 - Date.now() < REFRESH_MARGIN_MS;
+  } catch {
+    return false;
+  }
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -13,6 +30,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!token) router.replace('/auth/login');
   }, [token, router]);
+
+  // Refresh proactivo: al montar y cada 60s, si el token vence en <2 min
+  // lo renueva antes de que cualquier request falle
+  useEffect(() => {
+    if (!token) return;
+    const check = () => {
+      if (tokenExpiresSoon(token)) void refreshSession();
+    };
+    check();
+    const interval = setInterval(check, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [token]);
 
   if (!token) return null;
 
