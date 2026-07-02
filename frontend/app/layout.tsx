@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
 import './globals.css';
@@ -29,6 +29,18 @@ export const metadata: Metadata = {
     description: 'Crea tu bot en 5 minutos y respondé clientes 24/7 por WhatsApp.',
   },
   robots: { index: true, follow: true },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'BotForge',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#07070E',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

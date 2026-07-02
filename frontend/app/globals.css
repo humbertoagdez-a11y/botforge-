@@ -32,6 +32,42 @@
   body { @apply bg-background text-foreground; }
 }
 
+/* ─── Scrollbar global fina ─────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #22d3ee33 transparent;
+  -webkit-tap-highlight-color: transparent;
+}
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #22d3ee33;
+  border-radius: 2px;
+}
+
+/* Ocultar scrollbar (tabs con scroll horizontal) */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Inputs a 16px en movil para evitar el auto-zoom de iOS */
+@media (max-width: 767px) {
+  .theme-dashboard input,
+  .theme-dashboard textarea,
+  .theme-dashboard select {
+    font-size: 16px;
+  }
+}
+
 /* ─── Tema dark tech del dashboard (scoped, no afecta landing ni auth) ─────── */
 .theme-dashboard {
   /* #09090F */ --background: 240 25% 4.7%;

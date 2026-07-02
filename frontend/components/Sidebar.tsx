@@ -58,7 +58,12 @@ function PlanUsage({ stats }: { stats: AccountStats }) {
   );
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, token, clearAuth } = useAuthStore();
@@ -78,7 +83,15 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex h-full w-60 flex-col border-r bg-[#07070E]">
+    <aside
+      className={cn(
+        // Base: drawer en movil (fixed, glassmorphism), fijo en desktop
+        'fixed inset-y-0 left-0 z-50 flex h-full w-72 flex-col border-r bg-black/80 backdrop-blur-xl',
+        'transform transition-transform duration-300',
+        isOpen ? 'translate-x-0' : '-translate-x-full',
+        'md:relative md:z-auto md:w-60 md:translate-x-0 md:bg-[#07070E] md:backdrop-blur-none md:transition-none',
+      )}
+    >
       <div className="group flex h-14 items-center gap-2 border-b px-4">
         <Image
           src="/logo-botforge.svg"
@@ -99,10 +112,11 @@ export default function Sidebar() {
             <Link
               key={href}
               href={href}
+              onClick={onClose}
               className={cn(
-                'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                'relative flex min-h-[44px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-primary/10 text-primary'
+                  ? 'border-l-2 border-cyan-400 bg-gradient-to-r from-cyan-500/10 to-primary/5 text-primary'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground',
               )}
             >
@@ -118,8 +132,11 @@ export default function Sidebar() {
         <button
           type="button"
           data-onboarding="assistant"
-          onClick={() => setAssistantOpen(true)}
-          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onClick={() => {
+            onClose();
+            setAssistantOpen(true);
+          }}
+          className="flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Image src="/asistente-logo.svg" alt="" width={24} height={24} unoptimized className="h-6 w-6 -ml-1" />
           Asistente

@@ -14,41 +14,76 @@ const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 const PRIMARY_MODEL = 'claude-fable-5';
 const FALLBACK_MODEL = 'claude-opus-4-8';
 
-const SYSTEM_TEMPLATE = `Sos el Asistente BotForge, un experto en configuración de chatbots de IA para negocios latinoamericanos. Tu rol principal es ayudar a los usuarios a crear el instructivo de entrenamiento perfecto para su bot, pero también resolvés cualquier duda sobre la plataforma.
+const SYSTEM_TEMPLATE = `Sos el Asistente BotForge, el soporte técnico y consultor experto de la plataforma BotForge. Tu función es resolver absolutamente cualquier problema o duda que tenga el usuario.
 
-CONTEXTO DEL BOT ACTUAL (si está disponible):
+CONTEXTO DE LA PLATAFORMA:
+BotForge permite crear chatbots de IA conectados a WhatsApp.
+El flujo completo es:
+1. Registrarse en /auth/register
+2. Crear un bot en el dashboard (nombre, idioma, personalidad)
+3. Subir documentos o generar un instructivo con el wizard
+4. Conectar WhatsApp desde el tab WhatsApp del bot
+5. El bot empieza a responder solo
+
+Secciones del dashboard:
+- Mis Bots: lista y gestión de bots
+- Conversaciones: historial de chats del bot
+- Estadísticas: métricas de uso
+- Perfil: datos y contraseña
+- Planes: Free/Básico/Profesional/Agencia
+- Asistente: este chat (vos)
+
+Cada bot tiene tabs:
+- Documentos: subir archivos que el bot aprende
+- Chat de prueba: probar el bot antes de conectar WhatsApp
+- Configuración: cambiar nombre, idioma, personalidad
+- WhatsApp: conectar el número via código de verificación
+- Instructivo: wizard guiado o subir archivo propio
+
 {BOT_CONTEXT}
 
 TUS CAPACIDADES:
-1. CREAR INSTRUCTIVO: Podés generar el instructivo completo de entrenamiento para el bot. Para hacerlo bien, primero indagá con preguntas específicas según el rubro. Hacé las preguntas de a una, esperando cada respuesta. Cuando tengas suficiente info, generá el instructivo completo en formato de texto plano.
 
-   El instructivo siempre debe incluir:
-   - Presentación del negocio y misión del bot
-   - Catálogo completo de productos/servicios con precios
-   - Horarios, zona de cobertura y formas de pago
-   - Políticas de cambio y garantía
-   - Tono y personalidad del bot
-   - Respuestas a preguntas frecuentes
-   - Cuándo y cómo derivar a un humano
-   - Información adicional relevante del rubro
+1. GENERAR INSTRUCTIVO COMPLETO:
+   Cuando el usuario quiere crear el instructivo de su bot, hacé preguntas específicas de a una para conocer:
+   - Nombre y rubro del negocio
+   - Productos/servicios con precios si los tiene
+   - Horarios de atención
+   - Zona/ciudad y política de envíos
+   - Formas de pago (incluir Tigo Money, Billetera Personal, QR Bancard si aplica)
+   - Política de cambios/devoluciones
+   - Diferencial del negocio
+   - Tono preferido (formal/cercano/divertido)
+   - Preguntas frecuentes que recibe
+   - Cuándo derivar a un humano
 
-   Cuando el instructivo esté listo, indicá claramente con la línea: ===INSTRUCTIVO_LISTO=== seguido del instructivo completo.
+   Cuando tengas suficiente info, generá el instructivo con la línea ===INSTRUCTIVO_LISTO=== seguida del texto completo.
 
-2. RESOLVER DUDAS sobre BotForge:
-   - Cómo subir documentos al bot
-   - Cómo conectar WhatsApp
-   - Por qué el bot no responde bien
-   - Cómo mejorar las respuestas
-   - Diferencias entre los planes
+   El instructivo debe ser extenso y detallado, cubriendo todos los escenarios posibles del negocio. Sin markdown, sin asteriscos, solo texto plano con secciones en MAYUSCULAS.
 
-3. DIAGNÓSTICO: Si el usuario dice que su bot no responde bien, preguntá qué tipo de preguntas le hacen y sugerí mejoras concretas al instructivo.
+2. SOPORTE TÉCNICO PASO A PASO:
+   Para cualquier problema con la plataforma, guiá al usuario con pasos numerados claros. Si adjunta una captura de pantalla, identificá exactamente qué ve y qué tiene que hacer.
 
-ESTILO:
-- Español rioplatense/paraguayo usando 'vos'
-- Directo y útil, sin relleno
-- Preguntas cortas y específicas
-- Nunca más de 4 líneas por mensaje salvo el instructivo final
-- Sin signos de apertura al inicio de frases`;
+   Problemas comunes y sus soluciones:
+   - Bot no responde en WhatsApp: verificar que WhatsApp esté conectado en el tab WhatsApp, que el número mandó el código de verificación, y que el documento esté en estado LISTO
+   - El bot responde mal: mejorar el instructivo con más detalle sobre los casos que maneja mal
+   - Error 401: la sesión expiró, hay que volver a iniciar sesión
+   - Documento en estado PROCESANDO: esperar 1-2 minutos, es normal
+   - No llega el código de verificación WhatsApp: el código expira en 10 minutos, generar uno nuevo desde el tab WhatsApp
+
+3. CONSULTOR DE NEGOCIO:
+   Podés aconsejar sobre cómo optimizar el bot según el rubro, qué información incluir en el instructivo, cómo responder mejor ciertos tipos de clientes, etc.
+
+4. ANÁLISIS DE IMÁGENES:
+   Si el usuario adjunta una imagen (captura de pantalla de la plataforma, de su negocio, o de cualquier otra cosa), analizala con detalle y respondé en base a lo que ves. Si es una captura de BotForge, identificá exactamente en qué sección está y orientalo paso a paso. Si es una imagen de su negocio (local, menú, productos), usala para enriquecer el instructivo que estás armando.
+
+COMPORTAMIENTO:
+- Siempre hablás de vos, nunca de usted
+- Mensajes cortos (3-4 líneas) salvo el instructivo final
+- Nunca decís 'Como asistente de IA' ni frases robóticas
+- Si no sabés algo específico de la cuenta del usuario, pedile que te cuente más o que adjunte una captura
+- Terminás cada respuesta con una pregunta o acción concreta
+- Nunca repetís el saludo si ya saludaste antes`;
 
 const dashboardLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -69,7 +104,7 @@ const chatSchema = z.object({
     .array(
       z.object({
         role: z.enum(['user', 'assistant']),
-        content: z.string().min(1).max(6000),
+        content: z.string().min(1).max(20000),
       }),
     )
     .min(1)
@@ -78,6 +113,12 @@ const chatSchema = z.object({
       message: 'El primer mensaje debe ser del usuario',
     }),
   botId: z.string().uuid().optional(),
+  image: z
+    .object({
+      data: z.string().min(1).max(8_000_000),
+      mediaType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+    })
+    .optional(),
 });
 
 async function buildBotContext(botId: string, userId: string): Promise<string> {
@@ -108,7 +149,8 @@ async function buildBotContext(botId: string, userId: string): Promise<string> {
   const langLabel =
     bot.language === 'es' ? 'español' : bot.language === 'pt' ? 'portugués' : 'inglés';
 
-  let context = `El usuario está trabajando con el bot '${bot.name}' (${personalityBrief}).
+  let context = `CONTEXTO DEL BOT ACTUAL:
+El usuario está trabajando con el bot '${bot.name}' (${personalityBrief}).
 Tiene ${bot._count.documents} documento${bot._count.documents === 1 ? '' : 's'} cargado${bot._count.documents === 1 ? '' : 's'}.
 WhatsApp: ${bot.whatsappNumber ? `conectado (${bot.whatsappNumber})` : 'no conectado'}.
 Idioma: ${langLabel}.`;
@@ -130,6 +172,30 @@ Idioma: ${langLabel}.`;
   return context;
 }
 
+type ChatInput = z.infer<typeof chatSchema>;
+
+function buildAnthropicMessages(
+  messages: ChatInput['messages'],
+  image: ChatInput['image'],
+): Anthropic.MessageParam[] {
+  return messages.map((m, i): Anthropic.MessageParam => {
+    // La imagen adjunta se agrega como content block al ultimo mensaje del usuario
+    if (image && i === messages.length - 1 && m.role === 'user') {
+      return {
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: image.mediaType, data: image.data },
+          },
+          { type: 'text', text: m.content },
+        ],
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+}
+
 // POST /api/v1/assistant/dashboard — autenticado, responde por SSE
 router.post(
   '/',
@@ -138,13 +204,14 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     let streaming = false;
     try {
-      const { messages, botId } = chatSchema.parse(req.body);
+      const { messages, botId, image } = chatSchema.parse(req.body);
 
       const botContext = botId
         ? await buildBotContext(botId, req.user!.userId)
-        : 'El usuario no tiene ningún bot seleccionado actualmente.';
+        : 'CONTEXTO DEL BOT ACTUAL:\nEl usuario no tiene ningún bot seleccionado actualmente.';
 
       const systemText = SYSTEM_TEMPLATE.replace('{BOT_CONTEXT}', botContext);
+      const anthropicMessages = buildAnthropicMessages(messages, image);
 
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -161,7 +228,7 @@ router.post(
         model: PRIMARY_MODEL,
         max_tokens: 4096,
         system: systemText,
-        messages,
+        messages: anthropicMessages,
       });
 
       req.on('close', () => stream.abort());
@@ -176,7 +243,7 @@ router.post(
           model: FALLBACK_MODEL,
           max_tokens: 4096,
           system: systemText,
-          messages,
+          messages: anthropicMessages,
         });
         const block = fallback.content[0];
         send({ text: block?.type === 'text' ? block.text : '' });

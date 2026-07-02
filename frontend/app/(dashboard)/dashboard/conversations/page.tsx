@@ -53,7 +53,7 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
 
   return (
     <Dialog open={!!conversationId} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="theme-dashboard flex max-h-[85vh] max-w-lg flex-col">
+      <DialogContent className="theme-dashboard flex flex-col max-md:inset-0 max-md:left-0 max-md:top-0 max-md:h-full max-md:max-h-full max-md:w-full max-md:max-w-full max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-none md:max-h-[85vh] md:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
@@ -167,17 +167,19 @@ export default function ConversationsPage() {
                   className="cursor-pointer transition-colors hover:border-primary/40"
                   onClick={() => setSelectedId(conv.id)}
                 >
-                  <CardContent className="flex items-start gap-4 p-4">
+                  <CardContent className="flex items-start gap-4 p-3 md:p-4">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
                       <Bot className="h-4 w-4 text-primary" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-sm">{conv.bot.name}</span>
-                        <ChannelBadge channel={conv.channel} />
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {formatDate(conv.updatedAt)}
-                        </span>
+                        <div className="flex w-full items-center gap-2 md:contents">
+                          <ChannelBadge channel={conv.channel} />
+                          <span className="text-xs text-muted-foreground md:ml-auto">
+                            {formatDate(conv.updatedAt)}
+                          </span>
+                        </div>
                       </div>
                       {lastMsg && (
                         <p className="mt-0.5 truncate text-sm text-muted-foreground">

@@ -191,7 +191,7 @@ export default function BotDetailPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="scrollbar-hide max-w-full justify-start overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="documents" className="gap-1.5">
             <FileText className="h-3.5 w-3.5" />
             Documentos

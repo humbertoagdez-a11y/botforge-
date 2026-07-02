@@ -81,7 +81,7 @@ function EmptyState({ userName }: { userName: string }) {
           width={180}
           height={180}
           unoptimized
-          className="mb-4 h-40 w-40"
+          className="mb-4 h-28 w-28 md:h-40 md:w-40"
         />
         <h2 className="text-xl font-bold">
           {userName ? `Hola, ${userName}. ` : 'Hola. '}Creá tu primer asistente con IA
@@ -145,7 +145,7 @@ function MetricsRow({ stats }: { stats: AccountStats }) {
   ];
 
   return (
-    <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {cards.map(({ icon: Icon, label, value, sub }) => (
         <Card key={label} className="transition-colors hover:border-cyan-400/30">
           <CardContent className="p-4">
@@ -316,13 +316,22 @@ export default function DashboardPage() {
             Gestioná tus asistentes de IA
           </p>
         </div>
-        <Button asChild data-onboarding="new-bot">
+        <Button asChild data-onboarding="new-bot" className="hidden md:inline-flex">
           <Link href="/dashboard/bots/new">
             <Plus className="h-4 w-4" />
             Nuevo bot
           </Link>
         </Button>
       </div>
+
+      {/* FAB para crear bot en movil */}
+      <Link
+        href="/dashboard/bots/new"
+        aria-label="Nuevo bot"
+        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#7C3AED] text-white shadow-lg shadow-violet-900/50 transition-transform active:scale-95 md:hidden"
+      >
+        <Plus className="h-6 w-6" />
+      </Link>
 
       <OnboardingGuide open={showGuide} onFinish={() => setShowGuide(false)} />
 
@@ -338,11 +347,11 @@ export default function DashboardPage() {
           {stats && <RecentConversations stats={stats} />}
           <ActivitySection events={activity} />
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {bots.map((bot) => (
               <Card
                 key={bot.id}
-                className="group flex flex-col transition-all duration-300 hover:border-cyan-400/40 hover:shadow-lg hover:shadow-cyan-500/10"
+                className="group flex flex-col border-t-2 border-t-cyan-500/20 transition-all duration-300 hover:border-cyan-400/40 hover:shadow-lg hover:shadow-cyan-500/10 active:scale-[0.98] md:active:scale-100"
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
