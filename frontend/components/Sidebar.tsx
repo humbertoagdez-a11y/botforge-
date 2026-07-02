@@ -1,12 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { BarChart2, Bot, LayoutDashboard, LogOut, MessageSquare, Settings, Zap } from 'lucide-react';
+import { BarChart2, LayoutDashboard, LogOut, MessageSquare, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
-import { api } from '@/lib/api';
+import { api, type AccountStats } from '@/lib/api';
 import { Button } from './ui/button';
+import { Progress } from './ui/progress';
 
 const NAV = [
   { href: '/dashboard', label: 'Mis Bots', icon: LayoutDashboard },
@@ -15,10 +17,53 @@ const NAV = [
   { href: '/pricing', label: 'Planes', icon: Zap },
 ];
 
+const PLAN_LABEL: Record<string, string> = {
+  FREE: 'Free',
+  STARTER: 'Básico',
+  PRO: 'Profesional',
+  AGENCY: 'Agencia',
+};
+
+function PlanUsage({ stats }: { stats: AccountStats }) {
+  const used = stats.monthlyMessages;
+  const limit = stats.planLimits.monthlyMessages;
+  const pct = Math.min(100, Math.round((used / limit) * 100));
+  const nearLimit = pct >= 80;
+
+  return (
+    <div className="mx-3 mb-3 rounded-lg border bg-muted/30 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold">{PLAN_LABEL[stats.plan] ?? stats.plan}</span>
+        <span className={cn('text-[11px]', nearLimit ? 'font-medium text-orange-600' : 'text-muted-foreground')}>
+          {used.toLocaleString('es-PY')}/{limit.toLocaleString('es-PY')}
+        </span>
+      </div>
+      <Progress value={pct} className="mt-2 h-1.5" />
+      <p className="mt-1.5 text-[10px] text-muted-foreground">mensajes este mes</p>
+      {(nearLimit || stats.plan === 'FREE') && (
+        <Link
+          href="/pricing"
+          className={cn(
+            'mt-1.5 block text-[11px] font-medium hover:underline',
+            nearLimit ? 'text-orange-600' : 'text-primary',
+          )}
+        >
+          {nearLimit ? 'Estás cerca del límite — ver planes' : 'Mejorar plan'}
+        </Link>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, clearAuth } = useAuthStore();
+  const [stats, setStats] = useState<AccountStats | null>(null);
+
+  useEffect(() => {
+    api.stats.get().then(setStats).catch(() => { /* la barra de uso es opcional */ });
+  }, []);
 
   async function handleLogout() {
     try { await api.auth.logout(); } catch { /* ignore */ }
@@ -53,6 +98,8 @@ export default function Sidebar() {
         ))}
       </nav>
 
+      {stats && <PlanUsage stats={stats} />}
+
       <div className="border-t p-3">
         <div className="mb-2 flex items-center gap-2 px-3 py-1">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
@@ -60,7 +107,9 @@ export default function Sidebar() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium">{user?.name}</p>
-            <p className="truncate text-xs text-muted-foreground capitalize">{user?.plan?.toLowerCase()}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {PLAN_LABEL[user?.plan ?? ''] ?? user?.plan?.toLowerCase()}
+            </p>
           </div>
         </div>
         <Button variant="ghost" size="sm" className="w-full justify-start gap-2 text-muted-foreground" onClick={handleLogout}>

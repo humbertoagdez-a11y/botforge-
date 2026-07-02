@@ -47,6 +47,51 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface ConversationSummary {
+  id: string;
+  botId: string;
+  channel: string;
+  channelId: string;
+  createdAt: string;
+  updatedAt: string;
+  bot: { name: string };
+  messages: { content: string; role: 'USER' | 'ASSISTANT'; createdAt: string }[];
+  _count: { messages: number };
+}
+
+export interface ConversationDetail {
+  id: string;
+  botId: string;
+  channel: string;
+  channelId: string;
+  createdAt: string;
+  updatedAt: string;
+  bot: { name: string };
+  messages: { id: string; role: 'USER' | 'ASSISTANT'; content: string; createdAt: string }[];
+}
+
+export interface AccountStats {
+  plan: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+  planLimits: {
+    bots: number | null;
+    docsPerBot: number | null;
+    monthlyMessages: number;
+    whatsapp: boolean;
+  };
+  totalBots: number;
+  activeBots: number;
+  botsWithWhatsApp: number;
+  botsWithoutWhatsApp: number;
+  totalDocs: number;
+  readyDocs: number;
+  totalConversations: number;
+  activeConversations: number;
+  monthlyMessages: number;
+  messagesToday: number;
+  totalMessages: number;
+  recentConversations: ConversationSummary[];
+}
+
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('bf_token');
@@ -72,6 +117,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return json.data;
+}
+
+async function requestWithMeta<T, M>(path: string): Promise<{ data: T; meta: M }> {
+  const token = getToken();
+  const res = await fetch(`${API}${path}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  const json = (await res.json()) as { data: T; error: { message: string } | null; meta: M };
+
+  if (!res.ok) {
+    const err: ApiError = new Error(json.error?.message ?? 'Error desconocido');
+    err.statusCode = res.status;
+    throw err;
+  }
+
+  return { data: json.data, meta: json.meta };
 }
 
 export const api = {
@@ -126,5 +187,15 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ message, ...(conversationId ? { conversationId } : {}) }),
       }),
+  },
+
+  stats: {
+    get: () => request<AccountStats>('/api/v1/stats'),
+    conversations: (page: number) =>
+      requestWithMeta<ConversationSummary[], { total: number; page: number; pages: number }>(
+        `/api/v1/stats/conversations?page=${page}`,
+      ),
+    conversation: (id: string) =>
+      request<ConversationDetail>(`/api/v1/stats/conversations/${id}`),
   },
 };

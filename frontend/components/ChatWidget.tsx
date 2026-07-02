@@ -30,7 +30,12 @@ type SseEvent =
 
 export default function ChatWidget({ botId, botName, isPublic = false }: Props) {
   const { token } = useAuthStore();
-  const [messages, setMessages] = useState<UIMessage[]>([]);
+  // Mensaje inicial local para orientar al usuario (no se envia al backend)
+  const greeting: UIMessage = {
+    role: 'ASSISTANT',
+    content: `Hola! Soy ${botName}. Preguntame lo que quieras sobre el negocio y te respondo al instante.`,
+  };
+  const [messages, setMessages] = useState<UIMessage[]>([greeting]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>();
@@ -43,7 +48,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
 
   function resetChat() {
     abortRef.current?.abort();
-    setMessages([]);
+    setMessages([greeting]);
     setConversationId(undefined);
   }
 
@@ -141,7 +146,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
           <Bot className="h-4 w-4 text-primary" />
         </div>
         <span className="flex-1 text-sm font-medium">{botName}</span>
-        {messages.length > 0 && (
+        {messages.length > 1 && (
           <Button
             variant="ghost"
             size="icon"
@@ -152,19 +157,11 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
             <RotateCcw className="h-3.5 w-3.5" />
           </Button>
         )}
-        <span className="text-xs text-muted-foreground">Chat de prueba</span>
+        {!isPublic && <span className="text-xs text-muted-foreground">Chat de prueba</span>}
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
-            <Bot className="mb-3 h-10 w-10 opacity-20" />
-            <p className="text-sm font-medium">Iniciá la conversación</p>
-            <p className="mt-1 text-xs">Escribí cualquier pregunta sobre el negocio</p>
-          </div>
-        )}
-
         {messages.map((msg, i) => (
           <div key={i} className={cn('flex gap-2', msg.role === 'USER' ? 'justify-end' : 'justify-start')}>
             {msg.role === 'ASSISTANT' && (

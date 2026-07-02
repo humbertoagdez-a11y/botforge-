@@ -1,40 +1,40 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bot, FileText, Loader2, MessageSquare, TrendingUp } from 'lucide-react';
+import Link from 'next/link';
+import {
+  Bot,
+  FileText,
+  Loader2,
+  MessageSquare,
+  MessagesSquare,
+  Smartphone,
+  TrendingUp,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useAuthStore } from '@/lib/store';
+import { Progress } from '@/components/ui/progress';
+import { api, type AccountStats } from '@/lib/api';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-
-interface Stats {
-  totalBots: number;
-  activeBots: number;
-  totalDocs: number;
-  totalConversations: number;
-  monthlyMessages: number;
-}
-
-const STAT_CARDS = [
-  { key: 'activeBots' as const, label: 'Bots activos', icon: Bot, color: 'text-violet-600' },
-  { key: 'totalDocs' as const, label: 'Documentos', icon: FileText, color: 'text-blue-600' },
-  { key: 'totalConversations' as const, label: 'Conversaciones', icon: MessageSquare, color: 'text-green-600' },
-  { key: 'monthlyMessages' as const, label: 'Mensajes este mes', icon: TrendingUp, color: 'text-orange-600' },
-];
+const PLAN_LABEL: Record<AccountStats['plan'], string> = {
+  FREE: 'Free',
+  STARTER: 'Básico',
+  PRO: 'Profesional',
+  AGENCY: 'Agencia',
+};
 
 export default function StatsPage() {
-  const { token } = useAuthStore();
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats] = useState<AccountStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API}/api/v1/stats`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
-      .then((j) => setStats((j as { data: Stats }).data))
+    api.stats
+      .get()
+      .then(setStats)
       .catch(() => toast.error('Error al cargar estadísticas'))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) {
     return (
@@ -44,6 +44,24 @@ export default function StatsPage() {
     );
   }
 
+  const noActivity = !stats || stats.totalMessages === 0;
+  const usagePct = stats
+    ? Math.min(100, Math.round((stats.monthlyMessages / stats.planLimits.monthlyMessages) * 100))
+    : 0;
+
+  const cards = stats
+    ? [
+        { label: 'Mensajes hoy', value: stats.messagesToday, icon: MessageSquare, color: 'text-violet-600' },
+        { label: 'Mensajes este mes', value: stats.monthlyMessages, icon: TrendingUp, color: 'text-orange-600' },
+        { label: 'Mensajes históricos', value: stats.totalMessages, icon: MessagesSquare, color: 'text-blue-600' },
+        { label: 'Conversaciones', value: stats.totalConversations, icon: MessageSquare, color: 'text-green-600' },
+        { label: 'Bots activos', value: stats.activeBots, icon: Bot, color: 'text-violet-600' },
+        { label: 'Con WhatsApp', value: stats.botsWithWhatsApp, icon: Smartphone, color: 'text-green-600' },
+        { label: 'Docs procesados', value: stats.readyDocs, icon: FileText, color: 'text-blue-600' },
+        { label: 'Docs totales', value: stats.totalDocs, icon: FileText, color: 'text-muted-foreground' },
+      ]
+    : [];
+
   return (
     <div className="p-6 md:p-8">
       <div className="mb-6">
@@ -51,9 +69,57 @@ export default function StatsPage() {
         <p className="mt-1 text-sm text-muted-foreground">Resumen del uso de tu cuenta</p>
       </div>
 
+      {noActivity && (
+        <div className="mb-6 rounded-xl border border-dashed bg-muted/30 px-5 py-4">
+          <p className="text-sm font-medium">Todavía no hay actividad</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Las métricas aparecerán aquí cuando tu bot empiece a recibir mensajes. Probá el chat de
+            prueba de tu bot o conectá WhatsApp para arrancar.
+          </p>
+        </div>
+      )}
+
+      {stats && (
+        <Card className="mb-6">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Uso del plan {PLAN_LABEL[stats.plan]}
+              </CardTitle>
+              {stats.plan === 'FREE' && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" asChild>
+                  <Link href="/pricing">Mejorar plan</Link>
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline justify-between">
+              <p className="text-2xl font-bold">
+                {stats.monthlyMessages.toLocaleString('es-PY')}
+                <span className="text-sm font-normal text-muted-foreground">
+                  {' '}/ {stats.planLimits.monthlyMessages.toLocaleString('es-PY')} mensajes este mes
+                </span>
+              </p>
+              <span className={`text-sm font-medium ${usagePct >= 80 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                {usagePct}%
+              </span>
+            </div>
+            <Progress value={usagePct} className="mt-2" />
+            {usagePct >= 80 && (
+              <p className="mt-2 text-xs text-orange-600">
+                Estás cerca del límite mensual.{' '}
+                <Link href="/pricing" className="underline">Actualizá tu plan</Link> para no cortar
+                el servicio.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {STAT_CARDS.map(({ key, label, icon: Icon, color }) => (
-          <Card key={key}>
+        {cards.map(({ label, value, icon: Icon, color }) => (
+          <Card key={label}>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
@@ -61,7 +127,7 @@ export default function StatsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">{stats?.[key] ?? 0}</p>
+              <p className="text-3xl font-bold">{value.toLocaleString('es-PY')}</p>
             </CardContent>
           </Card>
         ))}
