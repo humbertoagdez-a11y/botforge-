@@ -823,6 +823,14 @@ function Footer() {
             <a href="mailto:hola@botforge.com.py" className="transition-colors hover:text-gray-300">
               Contacto
             </a>
+            <span className="text-gray-700">|</span>
+            <Link href="/terminos" className="transition-colors hover:text-gray-300">
+              Términos
+            </Link>
+            <span className="text-gray-700">|</span>
+            <Link href="/privacidad" className="transition-colors hover:text-gray-300">
+              Privacidad
+            </Link>
           </nav>
         </div>
         <div className="mt-8 border-t border-white/5 pt-6 text-center">

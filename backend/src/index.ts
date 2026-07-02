@@ -23,6 +23,7 @@ import assistantRouter from './routes/assistant';
 import assistantDashboardRouter from './routes/assistantDashboard';
 import testRouter from './routes/test';
 import statsRouter from './routes/stats';
+import activityRouter from './routes/activity';
 
 const uploadsDir = path.resolve(env.UPLOADS_DIR);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -56,6 +57,7 @@ app.use('/api/v1/bots/:botId/chat', chatRouter);
 app.use('/api/v1/whatsapp', whatsappRouter);
 app.use('/api/v1/stripe', stripeRouter);
 app.use('/api/v1/stats', statsRouter);
+app.use('/api/v1/activity', activityRouter);
 
 // Rutas públicas (widget embebido)
 app.use('/api/v1/public', publicRouter);

@@ -34,6 +34,39 @@ interface WhatsAppPanelProps {
   onDocDeleted: (docId: string) => void;
 }
 
+function BotStatusIndicator({ bot, docs }: { bot: BotType; docs: BotDocument[] }) {
+  const processing = docs.some((d) => d.status === 'PENDING' || d.status === 'PROCESSING');
+
+  let dotClass: string;
+  let label: string;
+
+  if (!bot.isActive) {
+    dotClass = 'bg-red-500';
+    label = 'Bot pausado';
+  } else if (processing) {
+    dotClass = 'bg-blue-500 animate-pulse';
+    label = 'Procesando documentos...';
+  } else if (bot.whatsappNumber) {
+    dotClass = 'bg-green-500';
+    label = 'Respondiendo mensajes en WhatsApp';
+  } else {
+    dotClass = 'bg-yellow-500';
+    label = 'Activo — WhatsApp no conectado';
+  }
+
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="relative flex h-2 w-2">
+        {bot.isActive && bot.whatsappNumber && !processing && (
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+        )}
+        <span className={`relative inline-flex h-2 w-2 rounded-full ${dotClass}`} />
+      </span>
+      {label}
+    </span>
+  );
+}
+
 function WhatsAppPanel({ bot, onUpdate, docs, onDocUploaded, onDocDeleted }: WhatsAppPanelProps) {
   return (
     <div className="space-y-4">
@@ -139,10 +172,11 @@ export default function BotDetailPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold">{bot.name}</h1>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <Badge variant={bot.isActive ? 'success' : 'outline'} className="text-[10px]">
                 {bot.isActive ? 'Activo' : 'Inactivo'}
               </Badge>
+              <BotStatusIndicator bot={bot} docs={docs} />
               <span className="text-xs text-muted-foreground">
                 {readyDocs} doc{readyDocs !== 1 ? 's' : ''} listos
               </span>

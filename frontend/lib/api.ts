@@ -47,6 +47,13 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface ActivityEvent {
+  type: 'message' | 'document' | 'whatsapp';
+  description: string;
+  botName: string;
+  createdAt: string;
+}
+
 export interface ConversationSummary {
   id: string;
   botId: string;
@@ -163,6 +170,16 @@ export const api = {
       }),
     me: () => request<User>('/api/v1/auth/me'),
     logout: () => request<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
+    updateProfile: (name: string) =>
+      request<User>('/api/v1/auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ name }),
+      }),
+    updatePassword: (currentPassword: string, newPassword: string) =>
+      request<{ success: boolean }>('/api/v1/auth/password', {
+        method: 'PUT',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      }),
   },
 
   bots: {
@@ -211,5 +228,9 @@ export const api = {
       ),
     conversation: (id: string) =>
       request<ConversationDetail>(`/api/v1/stats/conversations/${id}`),
+  },
+
+  activity: {
+    get: () => request<ActivityEvent[]>('/api/v1/activity'),
   },
 };

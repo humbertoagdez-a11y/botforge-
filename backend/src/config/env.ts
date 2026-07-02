@@ -22,6 +22,7 @@ const envSchema = z.object({
   STRIPE_PRICE_STARTER: z.string().optional(),
   STRIPE_PRICE_PRO: z.string().optional(),
   STRIPE_PRICE_AGENCY: z.string().optional(),
+  RESEND_API_KEY: z.string().optional().default(''),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   UPLOADS_DIR: z.string().default('./uploads'),

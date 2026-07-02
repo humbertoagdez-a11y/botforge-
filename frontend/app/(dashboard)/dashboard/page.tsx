@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import OnboardingGuide, { ONBOARDING_KEY } from '@/components/OnboardingGuide';
-import { api, type Bot as BotType, type AccountStats } from '@/lib/api';
+import { api, type Bot as BotType, type AccountStats, type ActivityEvent } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { formatDate } from '@/lib/utils';
 
@@ -162,6 +162,61 @@ function MetricsRow({ stats }: { stats: AccountStats }) {
   );
 }
 
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `hace ${days} día${days === 1 ? '' : 's'}`;
+}
+
+const ACTIVITY_ICON: Record<ActivityEvent['type'], { icon: typeof MessageSquare; className: string }> = {
+  message: { icon: MessageSquare, className: 'text-violet-400' },
+  document: { icon: FileText, className: 'text-blue-400' },
+  whatsapp: { icon: Smartphone, className: 'text-green-400' },
+};
+
+function ActivitySection({ events }: { events: ActivityEvent[] }) {
+  return (
+    <Card className="mb-8">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Actividad reciente</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {events.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Tu actividad reciente aparecerá aquí
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {events.slice(0, 8).map((ev, i) => {
+              const { icon: Icon, className } = ACTIVITY_ICON[ev.type];
+              return (
+                <div key={`${ev.createdAt}-${i}`} className="flex items-center gap-3 rounded-lg px-2 py-2">
+                  <Icon className={`h-4 w-4 shrink-0 ${className}`} />
+                  <p className="min-w-0 flex-1 truncate text-sm text-foreground/90">
+                    {ev.description}
+                    <span className="ml-1.5 text-xs text-muted-foreground">· {ev.botName}</span>
+                  </p>
+                  <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(ev.createdAt)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="mt-3 border-t pt-3 text-right">
+          <Link href="/dashboard/stats" className="text-xs font-medium text-primary hover:underline">
+            Ver estadísticas completas
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function RecentConversations({ stats }: { stats: AccountStats }) {
   if (stats.recentConversations.length === 0) return null;
 
@@ -214,15 +269,21 @@ export default function DashboardPage() {
   const { user } = useAuthStore();
   const [bots, setBots] = useState<BotType[]>([]);
   const [stats, setStats] = useState<AccountStats | null>(null);
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.bots.list(), api.stats.get().catch(() => null)])
-      .then(([b, s]) => {
+    Promise.all([
+      api.bots.list(),
+      api.stats.get().catch(() => null),
+      api.activity.get().catch(() => [] as ActivityEvent[]),
+    ])
+      .then(([b, s, a]) => {
         setBots(b);
         setStats(s);
+        setActivity(a);
         try {
           if (b.length === 0 && !localStorage.getItem(ONBOARDING_KEY)) {
             setShowGuide(true);
@@ -275,6 +336,7 @@ export default function DashboardPage() {
         <>
           {stats && <MetricsRow stats={stats} />}
           {stats && <RecentConversations stats={stats} />}
+          <ActivitySection events={activity} />
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {bots.map((bot) => (

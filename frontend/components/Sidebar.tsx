@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
-import { BarChart2, LayoutDashboard, LogOut, MessageSquare, Zap } from 'lucide-react';
+import { BarChart2, LayoutDashboard, LogOut, MessageSquare, UserCircle, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
 import { api, type AccountStats } from '@/lib/api';
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/dashboard', label: 'Mis Bots', icon: LayoutDashboard },
   { href: '/dashboard/conversations', label: 'Conversaciones', icon: MessageSquare },
   { href: '/dashboard/stats', label: 'Estadísticas', icon: BarChart2 },
+  { href: '/dashboard/perfil', label: 'Perfil', icon: UserCircle },
   { href: '/pricing', label: 'Planes', icon: Zap },
 ];
 
