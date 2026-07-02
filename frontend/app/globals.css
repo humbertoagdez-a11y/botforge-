@@ -56,6 +56,34 @@
   background-size: 26px 26px;
 }
 
+/* ─── Keyframes de animaciones del dashboard ───────────────────────────────── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes nav-indicator {
+  from { transform: translateY(-50%) scaleY(0); }
+  to { transform: translateY(-50%) scaleY(1); }
+}
+
+@keyframes logo-bounce {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(-4px); }
+  65% { transform: translateY(1px); }
+}
+
+/* El tooltip centrado del onboarding anima sin perder el translate de centrado */
+@media (prefers-reduced-motion: reduce) {
+  .theme-dashboard *,
+  .theme-dashboard *::before,
+  .theme-dashboard *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Scrollbar custom del asistente */
 .assistant-scroll::-webkit-scrollbar {
   width: 8px;

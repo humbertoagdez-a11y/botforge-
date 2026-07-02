@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Zap } from 'lucide-react';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -16,9 +15,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         className="pointer-events-none absolute -right-20 top-1/2 hidden w-80 -translate-y-1/2 opacity-30 lg:block xl:right-10 xl:opacity-60"
       />
       <Link href="/" className="relative mb-8 flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-          <Zap className="h-4 w-4 text-primary-foreground" />
-        </div>
+        <Image src="/logo-botforge.svg" alt="" width={32} height={32} unoptimized className="h-8 w-8" />
         <span className="text-xl font-bold">BotForge</span>
       </Link>
       <div className="relative">{children}</div>

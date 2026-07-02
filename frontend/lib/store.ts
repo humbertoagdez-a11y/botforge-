@@ -25,6 +25,13 @@ export const useAuthStore = create<AuthState>()(
         set({ token: null, user: null });
       },
     }),
-    { name: 'botforge-auth' },
+    {
+      name: 'botforge-auth',
+      // Re-sincroniza 'bf_token' (que lee api.ts) al rehidratar la sesion
+      onRehydrateStorage: () => (state) => {
+        if (typeof window === 'undefined') return;
+        if (state?.token) localStorage.setItem('bf_token', state.token);
+      },
+    },
   ),
 );

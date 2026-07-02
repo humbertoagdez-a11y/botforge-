@@ -60,13 +60,15 @@ function PlanUsage({ stats }: { stats: AccountStats }) {
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, clearAuth } = useAuthStore();
+  const { user, token, clearAuth } = useAuthStore();
   const [stats, setStats] = useState<AccountStats | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
 
   useEffect(() => {
+    // Guard: el Sidebar puede montarse antes de que el store rehidrate el token
+    if (!token) return;
     api.stats.get().then(setStats).catch(() => { /* la barra de uso es opcional */ });
-  }, []);
+  }, [token]);
 
   async function handleLogout() {
     try { await api.auth.logout(); } catch { /* ignore */ }
@@ -76,32 +78,45 @@ export default function Sidebar() {
 
   return (
     <aside className="flex h-full w-60 flex-col border-r bg-[#07070E]">
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
-          <Zap className="h-4 w-4 text-primary-foreground" />
-        </div>
+      <div className="group flex h-14 items-center gap-2 border-b px-4">
+        <Image
+          src="/logo-botforge.svg"
+          alt="BotForge"
+          width={28}
+          height={28}
+          unoptimized
+          className="h-7 w-7 transition-transform motion-safe:group-hover:animate-[logo-bounce_0.5s_ease]"
+        />
         <span className="font-semibold text-sm">BotForge</span>
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
-        {NAV.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
-                ? 'bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-            )}
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </Link>
-        ))}
+        {NAV.map(({ href, label, icon: Icon }) => {
+          const isActive =
+            pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              )}
+            >
+              {isActive && (
+                <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-cyan-400 motion-safe:animate-[nav-indicator_0.25s_ease]" />
+              )}
+              <Icon className="h-4 w-4" />
+              {label}
+            </Link>
+          );
+        })}
 
         <button
           type="button"
+          data-onboarding="assistant"
           onClick={() => setAssistantOpen(true)}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >

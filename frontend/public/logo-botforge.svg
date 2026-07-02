@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none" role="img" aria-label="BotForge">
+  <defs>
+    <linearGradient id="lbBody" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#4C1D95"/>
+    </linearGradient>
+    <style>
+      @keyframes lb-antenna { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @keyframes lb-eyes { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+      .lb-tip { animation: lb-antenna 2s ease-in-out infinite; }
+      .lb-eyes { animation: lb-eyes 3s ease-in-out infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .lb-tip, .lb-eyes { animation: none; }
+      }
+    </style>
+  </defs>
+
+  <!-- Antena -->
+  <line x1="16" y1="6" x2="16" y2="3.5" stroke="#22D3EE" stroke-width="1.6" stroke-linecap="round"/>
+  <circle cx="16" cy="2.6" r="1.5" fill="#22D3EE" class="lb-tip"/>
+
+  <!-- Cabeza compacta -->
+  <rect x="5" y="6" width="22" height="21" rx="7" fill="url(#lbBody)"/>
+  <rect x="5.6" y="6.6" width="20.8" height="19.8" rx="6.4" fill="none" stroke="#22D3EE" stroke-opacity="0.35" stroke-width="1"/>
+
+  <!-- Pantalla facial -->
+  <rect x="8.5" y="10.5" width="15" height="12" rx="4" fill="#0A0A14"/>
+
+  <!-- Ojos diamante -->
+  <g class="lb-eyes" fill="#22D3EE">
+    <path d="M12.5 13.4 L14.4 15.6 L12.5 17.8 L10.6 15.6 Z"/>
+    <path d="M19.5 13.4 L21.4 15.6 L19.5 17.8 L17.6 15.6 Z"/>
+  </g>
+
+  <!-- Boca de señal -->
+  <path d="M12 20 h8" stroke="#7C3AED" stroke-width="1.4" stroke-linecap="round"/>
+
+  <!-- Orejas laterales -->
+  <rect x="3" y="13.5" width="2" height="5" rx="1" fill="#22D3EE" opacity="0.8"/>
+  <rect x="27" y="13.5" width="2" height="5" rx="1" fill="#22D3EE" opacity="0.8"/>
+</svg>

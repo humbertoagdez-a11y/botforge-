@@ -94,7 +94,21 @@ export interface AccountStats {
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem('bf_token');
+  const direct = localStorage.getItem('bf_token');
+  if (direct) return direct;
+
+  // Fallback: sesion persistida por zustand ('botforge-auth') cuando
+  // 'bf_token' falta o quedo desincronizado — evita 401 con sesion valida
+  try {
+    const raw = localStorage.getItem('botforge-auth');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
+    const token = parsed.state?.token ?? null;
+    if (token) localStorage.setItem('bf_token', token);
+    return token;
+  } catch {
+    return null;
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
