@@ -131,24 +131,28 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       </nav>
 
       {/* Asistente: fuera de la nav, entre la navegacion y el uso del plan */}
-      <div className="px-3 pb-3">
+      <div className="border-t border-white/10">
         <button
           type="button"
           data-onboarding="assistant"
           onClick={() => {
+            // En movil el sidebar es un drawer: cerrarlo primero y abrir el
+            // asistente cuando termina la animacion (350ms) para no colisionar
+            const isMobile = window.matchMedia('(max-width: 767px)').matches;
             onClose();
-            setAssistantOpen(true);
+            if (isMobile) {
+              setTimeout(() => setAssistantOpen(true), 350);
+            } else {
+              setAssistantOpen(true);
+            }
           }}
-          className="flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-sm font-medium transition-colors hover:bg-cyan-500/15"
+          className="mx-3 my-3 flex min-h-[44px] w-[calc(100%-1.5rem)] cursor-pointer items-center gap-3 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 transition-colors hover:bg-cyan-500/15"
         >
           <Image src="/asistente-logo.svg" alt="" width={24} height={24} unoptimized className="h-6 w-6" />
-          <span className="flex-1 text-left">Asistente</span>
-          <span className="flex items-center gap-1">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
-            </span>
-            <span className="text-[10px] text-green-400">En línea</span>
+          <span className="flex-1 text-left text-sm text-white/80">Asistente</span>
+          <span className="ml-auto flex items-center gap-1.5 text-[10px] font-medium text-emerald-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            En línea
           </span>
         </button>
       </div>

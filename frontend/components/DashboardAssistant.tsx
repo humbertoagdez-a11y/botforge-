@@ -8,7 +8,7 @@ import {
   Download,
   Loader2,
   Paperclip,
-  Send,
+  SendHorizonal,
   X,
   XCircle,
 } from 'lucide-react';
@@ -47,9 +47,10 @@ interface ConfirmData {
 }
 
 interface AssistantMessage {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
-  /** Solo visual (bienvenida, avisos): nunca se envía al backend */
+  /** Solo visual (bienvenida, avisos): NUNCA se envía al backend */
   isLocal?: boolean;
   streaming?: boolean;
   instructivo?: string;
@@ -68,20 +69,39 @@ interface Props {
   botName?: string | null;
 }
 
+function newId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+}
+
 function buildWelcome(botName?: string | null): AssistantMessage {
   const content = botName
     ? `Hola. Estoy listo para gestionar '${botName}'. Puedo modificar su configuración, generar el instructivo, revisar conversaciones o lo que necesites. Por donde empezamos?`
     : 'Hola. Soy tu asistente de gestión. Puedo crear bots, modificar configuraciones, generar instructivos o resolver cualquier duda sobre la plataforma. Que necesitás?';
-  return { role: 'assistant', content, isLocal: true, ts: Date.now() };
+  return { id: 'welcome', role: 'assistant', content, isLocal: true, ts: Date.now() };
+}
+
+/** Segunda capa de defensa contra markdown en las respuestas del modelo */
+function sanitizeMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1') // **negrita**
+    .replace(/\*(.*?)\*/g, '$1') // *itálica*
+    .replace(/__(.*?)__/g, '$1') // __negrita__
+    .replace(/^#{1,6}\s+/gm, '') // # Títulos
+    .replace(/^[-*+]\s+/gm, '• ') // - bullets → punto simple
+    .replace(/`([^`]+)`/g, '$1'); // `código`
 }
 
 function splitAccumulated(accumulated: string): { content: string; instructivo?: string } {
   const markerIdx = accumulated.indexOf(INSTRUCTIVO_MARKER);
-  if (markerIdx < 0) return { content: accumulated };
+  if (markerIdx < 0) return { content: sanitizeMarkdown(accumulated) };
   const pre = accumulated.slice(0, markerIdx).trim();
+  // El instructivo NO se sanitiza: es texto plano por prompt y el regex
+  // de listas numeradas rompería precios o direcciones legítimas
   const instructivo = accumulated.slice(markerIdx + INSTRUCTIVO_MARKER.length).replace(/^\s+/, '');
   return {
-    content: pre || 'Tu instructivo está listo. Revisalo y descargalo:',
+    content: sanitizeMarkdown(pre) || 'Tu instructivo está listo. Revisalo y descargalo:',
     instructivo,
   };
 }
@@ -174,6 +194,16 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
   }, [messages]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Escape cierra el panel
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   function autoResize() {
     const el = textareaRef.current;
@@ -395,8 +425,8 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
 
     setMessages((prev) => [
       ...prev,
-      { role: 'user', content: userText, ts: Date.now(), ...(image ? { imageDataUrl: image.dataUrl } : {}) },
-      { role: 'assistant', content: '', streaming: true, ts: Date.now() },
+      { id: newId(), role: 'user', content: userText, ts: Date.now(), ...(image ? { imageDataUrl: image.dataUrl } : {}) },
+      { id: newId(), role: 'assistant', content: '', streaming: true, ts: Date.now() },
     ]);
 
     await runRequest({
@@ -421,7 +451,7 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
       ...prev.map((m, i) =>
         i === index ? { ...m, confirm: { ...m.confirm!, resolved: 'confirmed' as const } } : m,
       ),
-      { role: 'assistant', content: '', streaming: true, ts: Date.now() },
+      { id: newId(), role: 'assistant', content: '', streaming: true, ts: Date.now() },
     ]);
 
     await runRequest({
@@ -435,7 +465,7 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
   function cancelAction(index: number) {
     setMessages((prev) => [
       ...prev.filter((_, i) => i !== index),
-      { role: 'assistant', content: 'Acción cancelada.', isLocal: true, ts: Date.now() },
+      { id: newId(), role: 'assistant', content: 'Acción cancelada.', isLocal: true, ts: Date.now() },
     ]);
   }
 
@@ -450,40 +480,50 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
       />
 
       {/* Panel */}
-      <div className="absolute right-0 top-0 flex h-full w-full flex-col bg-[#080810] shadow-2xl shadow-cyan-950/40 motion-safe:animate-[assistant-slide-in_0.3s_cubic-bezier(0.4,0,0.2,1)] md:max-w-[420px]">
+      <div className="absolute right-0 top-0 flex h-full w-full flex-col border-l border-white/10 bg-[#080810] shadow-2xl shadow-black/50 motion-safe:animate-[assistant-slide-in_0.3s_cubic-bezier(0.4,0,0.2,1)] md:max-w-[480px]">
         {/* Header glassmorphism */}
-        <div className="flex h-[72px] shrink-0 items-center gap-3 border-b border-cyan-500/20 bg-black/60 px-4 backdrop-blur-xl">
+        <div className="flex h-[72px] shrink-0 items-center gap-3 border-b border-white/10 bg-black/40 px-5 py-4 backdrop-blur-xl">
           <Image src="/asistente-logo.svg" alt="" width={36} height={36} unoptimized className="h-9 w-9" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-[#E8E8F0]">Asistente BotForge</p>
-            {botName && (
-              <p className="truncate text-xs text-cyan-400/60">Gestionando: {botName}</p>
+            <p className="truncate text-sm font-semibold text-white">Asistente BotForge</p>
+            {botName ? (
+              <p className="truncate text-xs text-cyan-400/70">Gestionando: {botName}</p>
+            ) : (
+              <p className="truncate text-xs text-white/40">Listo para ayudarte</p>
             )}
           </div>
-          <span className="flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
-            </span>
-            <span className="text-[10px] text-green-400">En línea</span>
+          <span className="ml-auto flex items-center gap-1.5 text-[10px] font-medium text-emerald-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            En línea
           </span>
           <button
             type="button"
             onClick={onClose}
             aria-label="Cerrar asistente"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            className="ml-2 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-white/50 transition-colors hover:bg-white/10 hover:text-white"
           >
-            <X className="h-5 w-5" />
+            <X className="h-[18px] w-[18px]" />
           </button>
         </div>
 
         {/* Mensajes */}
-        <div ref={scrollRef} className="assistant-scroll flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <div
+          ref={scrollRef}
+          className={`assistant-scroll flex flex-1 flex-col gap-4 overflow-y-auto scroll-smooth px-4 py-4 ${
+            messages.length === 1 && messages[0]?.isLocal ? 'justify-center' : ''
+          }`}
+        >
+          {/* Empty state: solo la bienvenida, centrada con el robot grande */}
+          {messages.length === 1 && messages[0]?.isLocal && (
+            <div className="mb-2 flex justify-center">
+              <Image src="/asistente-logo.svg" alt="" width={64} height={64} unoptimized className="h-16 w-16" />
+            </div>
+          )}
           {messages.map((m, i) => {
             const isTyping = m.streaming && !m.content && !m.execSteps?.length && m.instructivo === undefined;
             const isUser = m.role === 'user';
             return (
-              <div key={i} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+              <div key={m.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                 <div className={m.instructivo !== undefined || m.execSteps?.length ? 'w-full max-w-[95%]' : isUser ? 'max-w-[80%]' : 'max-w-[85%]'}>
                   {/* Burbuja usuario */}
                   {isUser && (
@@ -601,7 +641,7 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
                   )}
 
                   {!isTyping && (
-                    <p className={`mt-1 text-[10px] text-white/30 ${isUser ? 'text-right' : ''}`}>
+                    <p className={`mt-1 px-1 text-[10px] text-white/25 ${isUser ? 'text-right' : ''}`}>
                       {formatTime(m.ts)}
                     </p>
                   )}
@@ -611,78 +651,87 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
           })}
         </div>
 
-        {/* Preview de imagen adjunta */}
-        {attached && (
-          <div className="mx-3 mb-2 flex items-center gap-2 rounded-xl bg-white/5 p-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={attached.dataUrl} alt="" className="h-12 w-12 rounded-lg object-cover" />
-            <p className="min-w-0 flex-1 truncate text-xs text-white/50">{attached.name}</p>
+        {/* Input area */}
+        <div className="shrink-0 border-t border-white/10 bg-black/40 p-4 backdrop-blur-xl">
+          {/* Preview de imagen adjunta */}
+          {attached && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl bg-white/5 p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={attached.dataUrl} alt="" className="h-11 w-11 rounded-lg object-cover" />
+              <p className="min-w-0 flex-1 truncate text-xs text-white/50">{attached.name}</p>
+              <button
+                type="button"
+                onClick={() => setAttached(null)}
+                aria-label="Quitar imagen"
+                className="p-1 text-white/40 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void sendMessage();
+            }}
+            className="flex items-end gap-2"
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPTED_IMAGE_TYPES.join(',')}
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+                e.target.value = '';
+              }}
+            />
             <button
               type="button"
-              onClick={() => setAttached(null)}
-              aria-label="Quitar imagen"
-              className="p-1 text-white/40 hover:text-white"
+              onClick={() => fileRef.current?.click()}
+              aria-label="Adjuntar imagen"
+              className="flex h-10 w-10 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl bg-white/5 transition-colors hover:bg-white/10"
             >
-              <X className="h-4 w-4" />
+              <Paperclip className="h-[18px] w-[18px] text-white/40" />
             </button>
-          </div>
-        )}
-
-        {/* Input */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void sendMessage();
-          }}
-          className="flex shrink-0 items-end gap-2 border-t border-cyan-500/20 bg-black/40 p-3 backdrop-blur-xl"
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ACCEPTED_IMAGE_TYPES.join(',')}
-            className="sr-only"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-              e.target.value = '';
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            aria-label="Adjuntar imagen"
-            className="flex h-10 w-10 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl bg-white/5 text-white/50 transition-colors hover:bg-white/10"
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              autoResize();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void sendMessage();
-              }
-            }}
-            rows={1}
-            placeholder="Escribí tu mensaje..."
-            maxLength={6000}
-            className="min-h-[44px] max-h-[120px] min-w-0 flex-1 resize-none rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-base leading-relaxed text-white placeholder:text-white/30 focus:border-cyan-500/40 focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={(!input.trim() && !attached) || sending}
-            aria-label="Enviar mensaje"
-            className="flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full text-black transition-transform hover:scale-105 disabled:opacity-40"
-            style={{ background: 'linear-gradient(135deg, #22D3EE, #7C3AED)' }}
-          >
-            <Send className="h-4 w-4" />
-          </button>
-        </form>
+            <div className="relative min-w-0 flex-1">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  autoResize();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void sendMessage();
+                  }
+                }}
+                rows={1}
+                placeholder="Escribí tu mensaje..."
+                maxLength={6000}
+                style={{ fontSize: '16px' }}
+                className="min-h-[42px] max-h-[120px] w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 leading-relaxed text-white transition-colors placeholder:text-white/30 focus:border-cyan-500/40 focus:outline-none"
+              />
+              {input.length > 500 && (
+                <span className="pointer-events-none absolute bottom-1.5 right-2.5 text-[10px] text-white/30">
+                  {input.length}/6000
+                </span>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={(!input.trim() && !attached) || sending}
+              aria-label="Enviar mensaje"
+              className="flex h-10 w-10 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-violet-600 transition-all hover:opacity-90 active:scale-95 disabled:opacity-30"
+            >
+              <SendHorizonal className="h-[18px] w-[18px] text-black" />
+            </button>
+          </form>
+        </div>
       </div>
 
       {/* Modal de imagen completa */}
