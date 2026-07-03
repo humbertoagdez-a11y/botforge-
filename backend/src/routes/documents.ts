@@ -7,33 +7,10 @@ import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { env } from '../config/env';
-import { cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
+import { cloudinary, isCloudinaryConfigured, uploadRawToCloudinary } from '../config/cloudinary';
 import { documentQueue } from '../lib/queue';
 import { deleteChunksByIds } from '../services/pinecone';
 import { checkDocLimit } from '../middleware/planLimits';
-
-/**
- * Sube el archivo a Cloudinary (raw) y devuelve la URL persistente.
- * Si Cloudinary no esta configurado o falla, devuelve null y el archivo
- * local queda como fallback (no rompe el flujo de subida).
- */
-async function uploadToCloudinary(localFilePath: string, documentId: string): Promise<string | null> {
-  if (!isCloudinaryConfigured()) {
-    console.warn('[documents] Cloudinary no configurado — el archivo queda solo en disco local (efímero en Railway)');
-    return null;
-  }
-  try {
-    const result = await cloudinary.uploader.upload(localFilePath, {
-      resource_type: 'raw',
-      folder: 'botforge/documents',
-      public_id: `doc_${documentId}`,
-    });
-    return result.secure_url;
-  } catch (err) {
-    console.error('[documents] Error al subir a Cloudinary, se mantiene el archivo local:', err);
-    return null;
-  }
-}
 
 const router = Router({ mergeParams: true });
 
@@ -117,7 +94,7 @@ router.post(
       });
 
       // Persistencia: Cloudinary como storage real, disco local como fallback
-      const url = await uploadToCloudinary(req.file.path, doc.id);
+      const url = await uploadRawToCloudinary(req.file.path, doc.id);
       if (url) {
         doc = await prisma.document.update({ where: { id: doc.id }, data: { url } });
         // El archivo local ya no hace falta: el procesador lee desde la URL

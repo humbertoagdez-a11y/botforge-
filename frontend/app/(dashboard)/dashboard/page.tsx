@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import OnboardingGuide, { ONBOARDING_KEY } from '@/components/OnboardingGuide';
+import DashboardAssistant from '@/components/DashboardAssistant';
 import { api, type Bot as BotType, type AccountStats, type ActivityEvent } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { formatDate } from '@/lib/utils';
@@ -273,6 +274,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -356,6 +358,18 @@ export default function DashboardPage() {
       >
         <Plus className="h-6 w-6" />
       </Link>
+
+      {/* FAB secundario en movil: asistente */}
+      <button
+        type="button"
+        aria-label="Abrir asistente"
+        onClick={() => setAssistantOpen(true)}
+        className="fixed bottom-20 right-4 z-40 mb-2 flex h-12 w-12 items-center justify-center rounded-full border border-cyan-400/30 bg-[#111120] shadow-lg shadow-cyan-950/40 transition-transform active:scale-95 md:hidden"
+      >
+        <Image src="/asistente-logo.svg" alt="" width={26} height={26} unoptimized className="h-[26px] w-[26px]" />
+      </button>
+
+      <DashboardAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)} botId={null} botName={null} />
 
       <OnboardingGuide open={showGuide} onFinish={() => setShowGuide(false)} />
 

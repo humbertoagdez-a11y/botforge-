@@ -168,6 +168,9 @@ Campos: `id`, `documentId`, `botId` (desnormalizado para filtrar en Pinecone), `
 Campos: `id`, `botId`, `channelId`, `channel` ('web' | 'whatsapp' | 'widget'), timestamps.
 Constraint: `@@unique([botId, channelId])` — en WhatsApp el channelId es `whatsapp:+595...`, así cada número de cliente tiene un solo hilo por bot. 1‑N Message.
 
+**NotificationConfig** — notificaciones por email configuradas desde el asistente.
+Campos: `id`, `userId`, `botId`, `event` ('human_requested' | 'new_conversation' | 'daily_summary'), `email`, `isActive` (default true), `createdAt`. Cascade con User y Bot. Constraint `@@unique([botId, event])` (una config por evento por bot; el asistente hace upsert). Hoy solo `human_requested` dispara emails (webhook de WhatsApp detecta frases tipo "hablar con una persona").
+
 **Message** — mensaje individual.
 Campos: `id`, `conversationId`, `role` (USER/ASSISTANT), `content`, `tokensUsed` (input+output de Claude, para límites de plan), `createdAt`. Cascade con Conversation.
 
@@ -211,7 +214,7 @@ Prefijo común: `/api/v1`. Todas responden `{ data, error, meta }`.
 | GET | /stats/conversations/:id | Sí | Hilo completo con mensajes |
 | GET | /activity | Sí | Últimos 20 eventos (mensajes/docs/whatsapp) |
 | POST | /assistant/chat | No (20/min por IP) | Aria (landing), SSE |
-| POST | /assistant/dashboard | Sí (30/min por usuario) | Asistente ATC, SSE, acepta imagen base64 |
+| POST | /assistant/dashboard | Sí (20/min por usuario) | Asistente agéntico con function calling (10 tools), SSE con eventos text/tool_start/tool_end/confirm_required/done, imágenes base64, confirmación stateless de acciones destructivas via `confirmedToolUseIds` |
 | POST | /public/bots/:botId/chat/stream | No | Chat SSE del widget embebible; respeta límite mensual del dueño del bot |
 | POST | /test/upload | No (solo dev) | Upload de prueba |
 
@@ -404,7 +407,9 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 11. ~~Inconsistencia landing vs límites reales~~ **RESUELTO (jul 2026)**: la landing muestra los números exactos de `planLimits.ts` (Básico 1 bot/1.000 msgs/10 docs, Profesional 10.000 msgs/50 docs, Agencia 100.000 msgs). Regla: `planLimits.ts` es la única fuente de verdad; si cambian los planes, tocar landing + pricing juntos.
 12. Bots creados antes del rediseño de personalidades conservan el prompt viejo copiado en la BD.
 13. Las imágenes adjuntas del asistente no se re-envían en turnos siguientes (solo el turno en que se mandan).
-14. Historial del DashboardAssistant se pierde al cerrar el drawer (por diseño de spec, pero molesto para soporte largo).
+14. Historial del DashboardAssistant se pierde al cerrar el drawer (por diseño de spec, pero molesto para soporte largo). Además, en el historial re-enviado los turnos con tools se colapsan a su texto final (los tool_use/results intermedios no se re-envían, salvo el turno pendiente de confirmación).
+14b. NotificationConfig: los eventos `new_conversation` y `daily_summary` se guardan pero no disparan emails todavía (solo `human_requested` está cableado al webhook). El asistente lo aclara al configurarlos.
+14c. La detección de "pide humano" es por keywords simples (puede tener falsos positivos con palabras como "agente").
 15. Onboarding paso 1 apunta al botón "Nuevo bot" del header, oculto en móvil → degrada a tooltip centrado.
 16. Dos pestañas simultáneas pueden desloguearse entre sí al competir por la rotación del refresh token (falta período de gracia).
 17. Refresh de sesión no cubre los fetch SSE directos (mitigado por el refresh proactivo del layout).
@@ -438,7 +443,8 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 **SEGURIDAD**
 - Passwords con bcrypt cost 12
 - JWT access 15 min; refresh 7 días en cookie httpOnly (SameSite=None+Secure en prod, path `/api/v1/auth/refresh`), con rotación en cada refresh
-- Verificar propiedad del recurso (`userId`) antes de cualquier operación (patrón `getOwnedBot`)
+- Verificar propiedad del recurso (`userId`) antes de cualquier operación (patrón `getOwnedBot`) — incluye TODAS las tools del asistente
+- Tools destructivas del asistente (update_bot_config, disconnect_whatsapp, delete_document) SIEMPRE piden confirmación explícita antes de ejecutar
 - Secretos solo en variables de entorno; nunca loguear tokens, passwords ni contenido de documentos
 - La ANTHROPIC_API_KEY vive solo en el backend; el browser habla con proxies de Next
 
@@ -454,27 +460,34 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 
 ## 14. TOOL REGISTRY DEL ASISTENTE DASHBOARD
 
-Estado actual: el DashboardAssistant es **conversacional puro** (system prompt +
-contexto de bot inyectado + visión). **No hay tool use implementado** — la única
-"acción" es la generación de instructivo por convención de marcador de texto.
-Este registro define las tools planeadas para convertirlo en agente:
+Estado actual (jul 2026): el DashboardAssistant es un **agente con function
+calling nativo** (bloques `tool_use`/`tool_result`, loop de hasta 5 rondas en
+`assistantDashboard.ts`, ejecución directa contra Prisma con verificación de
+propiedad por `userId` del JWT — nunca se confía en IDs que diga el modelo).
+Las tools destructivas cortan el turno con `confirm_required`; el frontend
+muestra confirmación y reanuda re-enviando los content blocks del turno +
+`confirmedToolUseIds` (protocolo stateless). Cancelar descarta el turno local.
 
-| Tool | Estado | Descripción | Endpoint |
-|------|--------|-------------|----------|
-| (contexto de bot en system prompt) | implementado | Nombre, personalidad, docs, WhatsApp, últimas 3 conversaciones se inyectan al abrir con botId | interno (buildBotContext) |
-| generate_instructivo | implementado (por marcador, no tool) | Genera instructivo en el chat con `===INSTRUCTIVO_LISTO===`; frontend lo hace editable/descargable | POST /api/v1/assistant/dashboard |
-| análisis de imágenes | implementado | Capturas o fotos del negocio como content block image | POST /api/v1/assistant/dashboard |
-| get_bot_info | pendiente | Obtener datos frescos del bot a demanda | GET /api/v1/bots/:id |
-| update_bot_personality | pendiente | Actualizar la personalidad desde el chat | PATCH /api/v1/bots/:id |
-| upload_document | pendiente | Subir el instructivo generado directo al bot sin salir del chat | POST /api/v1/bots/:botId/documents |
-| get_conversations | pendiente | Leer conversaciones para diagnóstico | GET /api/v1/stats/conversations |
-| get_stats | pendiente | Métricas de uso para responder consultas | GET /api/v1/stats |
-| disconnect_whatsapp | pendiente | Desconectar WhatsApp desde el chat | DELETE /api/v1/whatsapp/bots/:botId/connect |
-| request_whatsapp_connection | pendiente | Iniciar conexión de WhatsApp guiada | POST /api/v1/whatsapp/bots/:botId/request-connection |
+| Tool | Estado | Destructiva | Descripción |
+|------|--------|-------------|-------------|
+| get_bot_details | implementado | No | Bot + documentos + WhatsApp + últimas 3 conversaciones |
+| update_bot_config | implementado | Sí (confirma) | Nombre, personalidad, idioma, activar/pausar |
+| upload_instructivo_text | implementado | No | Crea documento .txt desde texto (respeta límite del plan, sube a Cloudinary, encola procesamiento) |
+| disconnect_whatsapp | implementado | Sí (confirma) | Expira conexiones y limpia whatsappNumber |
+| get_account_stats | implementado | No | Plan, contador mensual, mensajes hoy/mes/total, bots, docs, conversaciones |
+| get_conversations | implementado | No | Lista paginada con preview (filtro opcional por bot) |
+| send_notification_email | implementado | No | Upsert de NotificationConfig; hoy solo human_requested dispara emails reales |
+| create_new_bot | implementado | No | Crea bot respetando límite del plan |
+| delete_document | implementado | Sí (confirma) | Borra documento + chunks en Pinecone + archivo |
+| request_plan_upgrade | implementado | No | Info del plan objetivo + link a /pricing (no crea sesión de Stripe) |
+| análisis de imágenes | implementado | No | Content block image (base64, máx 5MB) |
+| generate_instructivo (marcador) | implementado | No | `===INSTRUCTIVO_LISTO===` → textarea editable + descarga + puede subirse con upload_instructivo_text |
 
-Nota de implementación futura: usar tool use de la API de Anthropic (bloques
-`tool_use`/`tool_result`) con loop en `assistantDashboard.ts`, validando SIEMPRE
-la propiedad del recurso con el `userId` del JWT, nunca con IDs que diga el modelo.
+Eventos SSE del endpoint: `text`, `tool_start`, `tool_end`,
+`assistant_blocks` (turno pendiente para reanudar), `confirm_required`, `done`.
+Pendientes: request_whatsapp_connection (conexión guiada desde el chat),
+eventos new_conversation y daily_summary de NotificationConfig (se guardan
+pero no disparan emails todavía).
 
 ---
 

@@ -46,8 +46,9 @@ model User {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  bots          Bot[]
-  refreshTokens RefreshToken[]
+  bots                Bot[]
+  refreshTokens       RefreshToken[]
+  notificationConfigs NotificationConfig[]
 
   @@map("users")
 }
@@ -79,8 +80,25 @@ model Bot {
   documents           Document[]
   conversations       Conversation[]
   whatsappConnections WhatsAppConnection[]
+  notificationConfigs NotificationConfig[]
 
   @@map("bots")
+}
+
+model NotificationConfig {
+  id        String   @id @default(uuid())
+  userId    String
+  botId     String
+  event     String // 'human_requested' | 'new_conversation' | 'daily_summary'
+  email     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot  Bot  @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, event])
+  @@map("notification_configs")
 }
 
 model WhatsAppConnection {

@@ -22,9 +22,14 @@
       @keyframes al-blink { 0%, 93%, 100% { transform: scaleY(1); } 95%, 97% { transform: scaleY(0.12); } }
       @keyframes al-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
       @keyframes al-antenna { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @keyframes al-eyecolor { 0%, 100% { fill: #22D3EE; } 50% { fill: #7C3AED; } }
       .al-eyes { animation: al-blink 4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
       .al-glow { animation: al-glow 2.6s ease-in-out infinite; }
+      .al-cycle { animation: al-eyecolor 3s ease-in-out infinite; }
       .al-tip { animation: al-antenna 1.8s ease-in-out infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .al-eyes, .al-glow, .al-cycle, .al-tip { animation: none; }
+      }
     </style>
   </defs>
 
@@ -38,8 +43,8 @@
 
   <!-- Ojos LED -->
   <g class="al-eyes">
-    <rect x="20" y="26" width="9" height="6" rx="1.5" fill="#F43F5E" filter="url(#alGlowRed)" class="al-glow"/>
-    <rect x="35" y="26" width="9" height="6" rx="1.5" fill="#38BDF8" filter="url(#alGlowBlue)" class="al-glow" style="animation-delay: 0.4s"/>
+    <rect x="20" y="26" width="9" height="6" rx="1.5" fill="#22D3EE" filter="url(#alGlowRed)" class="al-cycle"/>
+    <rect x="35" y="26" width="9" height="6" rx="1.5" fill="#22D3EE" filter="url(#alGlowBlue)" class="al-cycle" style="animation-delay: 0.4s"/>
   </g>
 
   <!-- Boca / rejilla -->

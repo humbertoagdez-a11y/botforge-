@@ -8,6 +8,66 @@ import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkWhatsAppAccess, assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 import { ragChat } from '../services/rag';
+import { sendEmail } from '../services/email';
+
+// ─── Notificación "el cliente pide un humano" ─────────────────────────────────
+
+const HUMAN_KEYWORDS = [
+  'hablar con una persona',
+  'hablar con alguien',
+  'quiero hablar con alguien',
+  'hablar con un humano',
+  'con un humano',
+  'persona real',
+  'un agente',
+  'atencion humana',
+  'atención humana',
+  'no sos una persona',
+  'sos un robot',
+];
+
+function wantsHuman(message: string): boolean {
+  const lower = message.toLowerCase();
+  return HUMAN_KEYWORDS.some((k) => lower.includes(k));
+}
+
+async function notifyHumanRequested(
+  bot: { id: string; name: string },
+  clientNumber: string,
+  message: string,
+): Promise<void> {
+  try {
+    const config = await prisma.notificationConfig.findUnique({
+      where: { botId_event: { botId: bot.id, event: 'human_requested' } },
+    });
+    if (!config?.isActive) return;
+
+    const preview = message.length > 200 ? `${message.slice(0, 200)}...` : message;
+    await sendEmail(
+      config.email,
+      'Tu bot necesita ayuda humana',
+      `<!DOCTYPE html>
+<html lang="es">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
+    <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
+      <p style="font-size:20px;font-weight:bold;color:#7C3AED;margin:0 0 20px;">BotForge</p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 8px;">
+        Un cliente pidió hablar con una persona en el bot <strong>${bot.name}</strong>.
+      </p>
+      <p style="font-size:14px;color:#333;margin:0 0 4px;">Número del cliente: <strong>${clientNumber}</strong></p>
+      <p style="font-size:14px;color:#333;margin:0 0 20px;">Mensaje: "${preview}"</p>
+      <a href="${env.FRONTEND_URL}/dashboard/conversations"
+         style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:10px 24px;border-radius:8px;">
+        Ver la conversación
+      </a>
+    </div>
+  </body>
+</html>`,
+    );
+  } catch (err) {
+    console.error('[whatsapp] Error al notificar pedido de humano:', err);
+  }
+}
 
 const router = Router();
 
@@ -267,6 +327,11 @@ router.post('/webhook', validateTwilioSignature, async (req: Request, res: Respo
     await prisma.message.create({
       data: { id: uuidv4(), conversationId: conversation.id, role: 'USER', content: msgBody },
     });
+
+    // Notificacion por email si el cliente pide hablar con una persona
+    if (wantsHuman(msgBody)) {
+      void notifyHumanRequested(bot, senderNumber, msgBody);
+    }
 
     const history = recentMsgs
       .reverse()

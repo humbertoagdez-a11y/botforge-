@@ -347,14 +347,14 @@ export default function BotDetailPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Boton flotante del asistente con contexto del bot */}
+      {/* Boton flotante: gestionar el bot con el asistente */}
       <button
         type="button"
         onClick={() => setAssistantOpen(true)}
-        className="fixed bottom-5 left-5 z-40 flex items-center gap-2 rounded-full border border-cyan-400/30 bg-[#111120] py-2 pl-2 pr-4 text-sm font-medium text-[#E8E8F0] shadow-lg shadow-cyan-950/30 transition-transform hover:scale-105 md:left-[16.5rem]"
+        className="fixed bottom-6 left-6 z-40 flex min-h-[44px] items-center gap-2 rounded-full border border-cyan-400/30 bg-[#111120] py-2 pl-2.5 pr-4 text-sm font-medium text-[#E8E8F0] shadow-lg shadow-cyan-950/30 transition-transform hover:scale-105 md:left-[16.5rem]"
       >
-        <Image src="/asistente-logo.svg" alt="" width={28} height={28} unoptimized className="h-7 w-7" />
-        Asistente
+        <Image src="/asistente-logo.svg" alt="" width={20} height={20} unoptimized className="h-5 w-5" />
+        Gestionar con IA
       </button>
 
       <DashboardAssistant
