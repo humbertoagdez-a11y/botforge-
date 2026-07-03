@@ -202,7 +202,7 @@ Prefijo común: `/api/v1`. Todas responden `{ data, error, meta }`.
 | POST | /whatsapp/bots/:botId/request-connection | Sí + checkWhatsAppAccess | Genera código BF-XXXXXX (TTL 10 min); 403 si el plan no incluye WhatsApp |
 | GET | /whatsapp/bots/:botId/connection-status | Sí | Estado para polling (IDLE/PENDING/ACTIVE/EXPIRED) |
 | DELETE | /whatsapp/bots/:botId/connect | Sí | Desconecta número |
-| POST | /whatsapp/webhook | No (⚠ sin firma) | Webhook Twilio: verifica códigos o responde con RAG (TwiML); respeta límite mensual del dueño del bot |
+| POST | /whatsapp/webhook | Firma Twilio (X-Twilio-Signature contra BACKEND_URL; se salta con warn si falta TWILIO_AUTH_TOKEN) | Webhook Twilio: verifica códigos o responde con RAG (TwiML); respeta límite mensual del dueño del bot |
 | POST | /stripe/checkout | Sí | Crea sesión de Stripe Checkout (subscription) |
 | POST | /stripe/portal | Sí | Portal de facturación |
 | POST | /stripe/webhook | No (firma Stripe) | checkout.completed / subscription.updated / deleted → actualiza plan |
@@ -361,7 +361,7 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 | PINECONE_API_KEY | **Sí** | Vector DB |
 | PINECONE_INDEX | No (default botforge) | Índice (dimensión 384) |
 | TWILIO_ACCOUNT_SID | No | WhatsApp sandbox |
-| TWILIO_AUTH_TOKEN | No | Firma de webhooks (hoy sin usar) |
+| TWILIO_AUTH_TOKEN | No | Firma de webhooks (si falta, la validación se salta con warn) |
 | TWILIO_WHATSAPP_FROM | No | Número sandbox (whatsapp:+14155238886) |
 | STRIPE_SECRET_KEY | No | Pagos (503 si se usa checkout sin configurar) |
 | STRIPE_WEBHOOK_SECRET | No | Firma del webhook Stripe |
@@ -369,6 +369,7 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 | RESEND_API_KEY | No | Email de bienvenida (se omite con log si falta) |
 | REDIS_URL | No (default localhost) | Cola Bull |
 | FRONTEND_URL | No (default localhost:3000) | CORS + links en emails + redirects Stripe |
+| BACKEND_URL | **Sí en prod** (default localhost:3001) | URL pública del backend para validar la firma de Twilio. En Railway: `https://botforge-production-b16f.up.railway.app` |
 | UPLOADS_DIR | No (default ./uploads) | Archivos subidos (⚠ disco local, ver sección 12) |
 
 **FRONTEND (.env.local / variables Railway)**:
@@ -383,7 +384,7 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 ## 12. PENDIENTES Y DEUDA TÉCNICA
 
 **Seguridad / enforcement**
-1. **Validación de firma de Twilio deshabilitada** en `/whatsapp/webhook` (código comentado en `whatsapp.ts`). Cualquiera que conozca la URL puede inyectar mensajes. Motivo probable: detrás del proxy de Railway la URL reconstruida no coincide con la firma; requiere `app.set('trust proxy', ...)` + prueba real antes de habilitar.
+1. ~~Validación de firma de Twilio deshabilitada~~ **RESUELTO (jul 2026)**: middleware `validateTwilioSignature` activo en el webhook, validando contra `BACKEND_URL` fija (evita el problema del proxy de Railway). ⚠ Pendiente operativo: setear `BACKEND_URL` en Railway y probar con un mensaje real de Twilio; si rechaza (403), los logs de debug imprimen la URL usada y la firma recibida. Si falta `TWILIO_AUTH_TOKEN` la validación se salta con warn (no bloquea dev).
 2. ~~checkMessageLimit / checkWhatsAppAccess sin montar~~ **RESUELTO (jul 2026)**: enforcement completo en chat, whatsapp, webhook y widget público con contador mensual en User (ver sección 8). Nota: los chats del asistente ATC y de Aria NO descuentan del límite (decisión: son soporte de la plataforma, no mensajes del bot del cliente).
 3. El widget público (`/public/bots/:botId/chat/stream`) no tiene rate limit propio más allá del global de 100/15min por IP.
 4. `express.json` global a 10mb (por las imágenes del asistente) amplía la superficie de payloads grandes en todos los endpoints.

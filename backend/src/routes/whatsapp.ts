@@ -145,22 +145,36 @@ router.delete(
   },
 );
 
-// ─── POST /webhook ─────────────────────────────────────────────────────────────
-router.post('/webhook', async (req: Request, res: Response) => {
-  // Signature validation deshabilitada temporalmente
-  // if (env.NODE_ENV === 'production' && env.TWILIO_AUTH_TOKEN) {
-  //   const valid = twilio.validateRequest(
-  //     env.TWILIO_AUTH_TOKEN,
-  //     (req.headers['x-twilio-signature'] as string) ?? '',
-  //     `${req.protocol}://${req.get('host')}${req.originalUrl}`,
-  //     req.body as Record<string, string>,
-  //   );
-  //   if (!valid) {
-  //     res.status(403).send('Forbidden');
-  //     return;
-  //   }
-  // }
+// ─── Validación de firma Twilio ───────────────────────────────────────────────
+// Usa BACKEND_URL fija (no reconstruye la URL del request): detras del proxy
+// de Railway req.protocol/host no coinciden con la URL publica que firma Twilio
+function validateTwilioSignature(req: Request, res: Response, next: NextFunction): void {
+  const authToken = env.TWILIO_AUTH_TOKEN;
+  if (!authToken) {
+    console.warn('[webhook] TWILIO_AUTH_TOKEN no configurado, saltando validación');
+    next();
+    return;
+  }
 
+  const signature = (req.headers['x-twilio-signature'] as string | undefined) ?? '';
+  const url = `${env.BACKEND_URL}/api/v1/whatsapp/webhook`;
+  const params = req.body as Record<string, string>;
+
+  const isValid = twilio.validateRequest(authToken, signature, url, params);
+
+  if (!isValid) {
+    console.warn('[webhook] Firma Twilio inválida — request rechazado');
+    console.log('[webhook] URL usada para validar:', url);
+    console.log('[webhook] Signature recibida:', signature);
+    res.status(403).send('Forbidden');
+    return;
+  }
+
+  next();
+}
+
+// ─── POST /webhook ─────────────────────────────────────────────────────────────
+router.post('/webhook', validateTwilioSignature, async (req: Request, res: Response) => {
   const body = req.body as Record<string, string>;
   const from = body.From ?? '';
   const msgBody = (body.Body ?? '').trim();

@@ -25,6 +25,9 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional().default(''),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
+  // URL publica del backend: la usa la validacion de firma de Twilio.
+  // En Railway DEBE ser https://botforge-production-b16f.up.railway.app
+  BACKEND_URL: z.string().default('http://localhost:3001'),
   UPLOADS_DIR: z.string().default('./uploads'),
 });
 
