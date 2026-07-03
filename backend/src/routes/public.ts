@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { ragStream } from '../services/rag';
 import { AppError } from '../middleware/errorHandler';
+import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 
 const router = Router();
 
@@ -21,6 +22,9 @@ router.post('/bots/:botId/chat/stream', async (req: Request, res: Response, next
 
     const readyDocs = await prisma.document.count({ where: { botId: bot.id, status: 'READY' } });
     if (readyDocs === 0) throw new AppError(400, 'El bot no tiene documentos listos');
+
+    // Limite mensual del plan del dueño del bot (antes de abrir el stream)
+    await assertMessageLimit(bot.userId);
 
     let conversation = conversationId
       ? await prisma.conversation.findUnique({ where: { id: conversationId } })
@@ -77,6 +81,7 @@ router.post('/bots/:botId/chat/stream', async (req: Request, res: Response, next
         const msg = await prisma.message.create({
           data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
         });
+        await incrementMessageUsage(bot.userId);
         send({ type: 'done', conversationId: conversation.id, messageId: msg.id });
       }
     } catch {

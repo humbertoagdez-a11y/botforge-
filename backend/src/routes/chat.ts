@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { checkMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 import { ragChat, ragStream } from '../services/rag';
 
 const router = Router({ mergeParams: true });
@@ -66,7 +67,7 @@ async function getHistory(conversationId: string, userMessage: string) {
 }
 
 // ─── POST /  (standard JSON response) ───────────────────────────────────────
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', checkMessageLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { message, conversationId } = chatSchema.parse(req.body);
     const { bot, conversation } = await resolveConversation(
@@ -90,6 +91,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
     });
 
+    await incrementMessageUsage(req.user!.userId);
+
     res.json({ data: { conversationId: conversation.id, message: assistantMsg }, error: null, meta: null });
   } catch (err) {
     next(err);
@@ -97,7 +100,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 });
 
 // ─── POST /stream  (Server-Sent Events) ─────────────────────────────────────
-router.post('/stream', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/stream', checkMessageLimit, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { message, conversationId } = chatSchema.parse(req.body);
     const { bot, conversation } = await resolveConversation(
@@ -145,6 +148,7 @@ router.post('/stream', async (req: Request, res: Response, next: NextFunction) =
             tokensUsed,
           },
         });
+        await incrementMessageUsage(req.user!.userId);
         sendEvent({ type: 'done', conversationId: conversation.id, messageId: assistantMsg.id, tokensUsed });
       }
     } catch (streamErr) {

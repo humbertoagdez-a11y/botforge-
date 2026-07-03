@@ -33,16 +33,18 @@ enum MessageRole {
 }
 
 model User {
-  id                   String    @id @default(uuid())
-  email                String    @unique
-  passwordHash         String
-  name                 String
-  plan                 Plan      @default(FREE)
-  stripeCustomerId     String?   @unique
-  stripeSubscriptionId String?   @unique
-  planExpiresAt        DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  passwordHash          String
+  name                  String
+  plan                  Plan      @default(FREE)
+  stripeCustomerId      String?   @unique
+  stripeSubscriptionId  String?   @unique
+  planExpiresAt         DateTime?
+  messagesUsedThisMonth Int       @default(0)
+  messagesResetAt       DateTime  @default(now())
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   bots          Bot[]
   refreshTokens RefreshToken[]

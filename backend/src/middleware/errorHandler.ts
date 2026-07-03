@@ -5,6 +5,8 @@ export class AppError extends Error {
   constructor(
     public statusCode: number,
     message: string,
+    public code: string = 'APP_ERROR',
+    public data: unknown = null,
   ) {
     super(message);
     this.name = 'AppError';
@@ -38,8 +40,8 @@ export function errorHandler(
 
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
-      data: null,
-      error: { code: 'APP_ERROR', message: err.message },
+      data: err.data ?? null,
+      error: { code: err.code, message: err.message },
       meta: null,
     });
     return;

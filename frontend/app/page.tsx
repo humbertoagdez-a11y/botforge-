@@ -168,14 +168,14 @@ const PLANES = [
     name: 'FREE',
     price: 'Gs. 0',
     highlight: false,
-    features: ['1 bot activo', '100 mensajes por mes', '1 documento', 'Chat web'],
+    features: ['1 bot activo', '100 mensajes por mes', '3 documentos', 'Chat web'],
     cta: 'Empezar gratis',
   },
   {
     name: 'BASICO',
     price: 'Gs. 150.000',
     highlight: false,
-    features: ['2 bots activos', '1.000 mensajes por mes', '5 documentos', 'WhatsApp incluido'],
+    features: ['1 bot activo', '1.000 mensajes por mes', '10 documentos por bot', 'WhatsApp incluido'],
     cta: 'Elegir Basico',
   },
   {
@@ -184,8 +184,8 @@ const PLANES = [
     highlight: true,
     features: [
       '5 bots activos',
-      '5.000 mensajes por mes',
-      'Documentos ilimitados',
+      '10.000 mensajes por mes',
+      '50 documentos por bot',
       'WhatsApp + Chat web',
       'Panel de estadisticas',
     ],
@@ -197,7 +197,8 @@ const PLANES = [
     highlight: false,
     features: [
       'Bots ilimitados',
-      'Mensajes ilimitados',
+      '100.000 mensajes por mes',
+      'Documentos ilimitados',
       'Todo lo del plan Profesional',
       'Soporte prioritario',
       'Acceso a API',

@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { useAuthStore } from './store';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -197,11 +198,32 @@ async function fetchWithAuth(path: string, options: RequestInit = {}): Promise<R
   return res;
 }
 
+interface ApiErrorBody {
+  code?: string;
+  message: string;
+}
+
+// Toast global cuando un limite del plan se alcanza (429/403 PLAN_LIMIT_EXCEEDED)
+function notifyPlanLimit(error: ApiErrorBody | null): void {
+  if (typeof window === 'undefined') return;
+  if (error?.code !== 'PLAN_LIMIT_EXCEEDED') return;
+  toast.error(error.message, {
+    action: {
+      label: 'Mejorar plan',
+      onClick: () => {
+        window.location.href = '/pricing';
+      },
+    },
+    duration: 8000,
+  });
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetchWithAuth(path, options);
-  const json = (await res.json()) as { data: T; error: { message: string } | null };
+  const json = (await res.json()) as { data: T; error: ApiErrorBody | null };
 
   if (!res.ok) {
+    notifyPlanLimit(json.error);
     const err: ApiError = new Error(json.error?.message ?? 'Error desconocido');
     err.statusCode = res.status;
     throw err;
@@ -212,9 +234,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 async function requestWithMeta<T, M>(path: string): Promise<{ data: T; meta: M }> {
   const res = await fetchWithAuth(path);
-  const json = (await res.json()) as { data: T; error: { message: string } | null; meta: M };
+  const json = (await res.json()) as { data: T; error: ApiErrorBody | null; meta: M };
 
   if (!res.ok) {
+    notifyPlanLimit(json.error);
     const err: ApiError = new Error(json.error?.message ?? 'Error desconocido');
     err.statusCode = res.status;
     throw err;

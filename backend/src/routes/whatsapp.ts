@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { checkWhatsAppAccess, assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 import { ragChat } from '../services/rag';
 
 const router = Router();
@@ -32,6 +33,7 @@ const connectionSchema = z.object({
 router.post(
   '/bots/:botId/request-connection',
   requireAuth,
+  checkWhatsAppAccess,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { phoneNumber } = connectionSchema.parse(req.body);
@@ -220,6 +222,18 @@ router.post('/webhook', async (req: Request, res: Response) => {
       return;
     }
 
+    // Limite mensual del plan del dueño del bot
+    try {
+      await assertMessageLimit(bot.userId);
+    } catch (limitErr) {
+      if (limitErr instanceof AppError && limitErr.statusCode === 429) {
+        twiml.message('Este bot alcanzó el límite mensual de mensajes de su plan. El negocio ya fue notificado.');
+        res.type('text/xml').send(twiml.toString());
+        return;
+      }
+      throw limitErr;
+    }
+
     const channelId = from;
     let conversation = await prisma.conversation.findUnique({
       where: { botId_channelId: { botId: bot.id, channelId } },
@@ -251,6 +265,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
     await prisma.message.create({
       data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
     });
+
+    await incrementMessageUsage(bot.userId);
 
     twiml.message(content);
   } catch (err) {

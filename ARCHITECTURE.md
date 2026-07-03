@@ -145,7 +145,7 @@ botforge/
 ## 4. MODELOS DE BASE DE DATOS
 
 **User** — cuenta del cliente.
-Campos: `id` (uuid), `email` (unique), `passwordHash` (bcrypt 12), `name`, `plan` (enum FREE/STARTER/PRO/AGENCY, default FREE), `stripeCustomerId?` (unique), `stripeSubscriptionId?` (unique), `planExpiresAt?`, timestamps.
+Campos: `id` (uuid), `email` (unique), `passwordHash` (bcrypt 12), `name`, `plan` (enum FREE/STARTER/PRO/AGENCY, default FREE), `stripeCustomerId?` (unique), `stripeSubscriptionId?` (unique), `planExpiresAt?`, `messagesUsedThisMonth` (contador de enforcement, default 0), `messagesResetAt` (para reset mensual), timestamps.
 Relaciones: 1‑N `Bot`, 1‑N `RefreshToken`.
 
 **RefreshToken** — tokens de refresh persistidos (rotación en cada uso).
@@ -196,13 +196,13 @@ Prefijo común: `/api/v1`. Todas responden `{ data, error, meta }`.
 | GET | /bots/:botId/documents | Sí | Lista documentos con chunks count |
 | POST | /bots/:botId/documents | Sí + checkDocLimit | Upload (multer 20MB) → encola en Bull |
 | DELETE | /bots/:botId/documents/:docId | Sí | Borra doc + vectores en Pinecone |
-| POST | /bots/:botId/chat | Sí | Chat JSON (RAG + Claude) |
-| POST | /bots/:botId/chat/stream | Sí | Chat SSE streaming |
+| POST | /bots/:botId/chat | Sí + checkMessageLimit | Chat JSON (RAG + Claude); incrementa contador al responder |
+| POST | /bots/:botId/chat/stream | Sí + checkMessageLimit | Chat SSE streaming; incrementa contador al responder |
 | GET | /bots/:botId/chat/history/:conversationId | Sí | Hilo de una conversación |
-| POST | /whatsapp/bots/:botId/request-connection | Sí | Genera código BF-XXXXXX (TTL 10 min) |
+| POST | /whatsapp/bots/:botId/request-connection | Sí + checkWhatsAppAccess | Genera código BF-XXXXXX (TTL 10 min); 403 si el plan no incluye WhatsApp |
 | GET | /whatsapp/bots/:botId/connection-status | Sí | Estado para polling (IDLE/PENDING/ACTIVE/EXPIRED) |
 | DELETE | /whatsapp/bots/:botId/connect | Sí | Desconecta número |
-| POST | /whatsapp/webhook | No (⚠ sin firma) | Webhook Twilio: verifica códigos o responde con RAG (TwiML) |
+| POST | /whatsapp/webhook | No (⚠ sin firma) | Webhook Twilio: verifica códigos o responde con RAG (TwiML); respeta límite mensual del dueño del bot |
 | POST | /stripe/checkout | Sí | Crea sesión de Stripe Checkout (subscription) |
 | POST | /stripe/portal | Sí | Portal de facturación |
 | POST | /stripe/webhook | No (firma Stripe) | checkout.completed / subscription.updated / deleted → actualiza plan |
@@ -212,7 +212,7 @@ Prefijo común: `/api/v1`. Todas responden `{ data, error, meta }`.
 | GET | /activity | Sí | Últimos 20 eventos (mensajes/docs/whatsapp) |
 | POST | /assistant/chat | No (20/min por IP) | Aria (landing), SSE |
 | POST | /assistant/dashboard | Sí (30/min por usuario) | Asistente ATC, SSE, acepta imagen base64 |
-| POST | /public/bots/:botId/chat/stream | No | Chat SSE del widget embebible |
+| POST | /public/bots/:botId/chat/stream | No | Chat SSE del widget embebible; respeta límite mensual del dueño del bot |
 | POST | /test/upload | No (solo dev) | Upload de prueba |
 
 Proxies de Next.js (mismo dominio del frontend): `POST /api/assistant` → assistant/chat, `POST /api/assistant/dashboard` → assistant/dashboard (reenvía Authorization).
@@ -288,14 +288,17 @@ Valores reales de `backend/src/middleware/planLimits.ts`:
 | PRO (Profesional) | 5 | 50 | 10.000 | Sí |
 | AGENCY (Agencia) | ∞ | ∞ | 100.000 | Sí |
 
-⚠ Inconsistencias con el marketing (ver sección 12): la landing anuncia Básico con
-"2 bots" y Profesional con "5.000 mensajes"; los límites reales son los de arriba.
-Precios mostrados: Free Gs. 0 / Básico Gs. 150.000 (USD 20) / Profesional Gs. 350.000
-(USD 47) / Agencia Gs. 750.000 (USD 99).
+Precios: Free Gs. 0 / Básico Gs. 150.000 (USD 20) / Profesional Gs. 350.000
+(USD 47) / Agencia Gs. 750.000 (USD 99). Landing y pricing alineados con estos números.
 
-Enforcement actual: `checkBotLimit` (crear bot) y `checkDocLimit` (subir doc) SÍ se
-aplican. `checkMessageLimit` y `checkWhatsAppAccess` existen pero NO están montados
-en ninguna ruta (ver sección 12).
+Enforcement (completo desde jul 2026): `checkBotLimit` (crear bot), `checkDocLimit`
+(subir doc), `checkMessageLimit` (chat autenticado) y `checkWhatsAppAccess`
+(request-connection). El webhook de WhatsApp y el widget público validan por
+`bot.userId` via `assertMessageLimit()`. Contador: `User.messagesUsedThisMonth`
+con reset al cambiar el mes (`messagesResetAt`), incrementado por
+`incrementMessageUsage()` solo tras respuesta exitosa. Errores de límite:
+429/403 con `error.code = 'PLAN_LIMIT_EXCEEDED'` y `data = {limit, used, plan}`;
+el frontend (api.ts) muestra toast con acción "Mejorar plan" → /pricing.
 
 ---
 
@@ -381,7 +384,7 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 
 **Seguridad / enforcement**
 1. **Validación de firma de Twilio deshabilitada** en `/whatsapp/webhook` (código comentado en `whatsapp.ts`). Cualquiera que conozca la URL puede inyectar mensajes. Motivo probable: detrás del proxy de Railway la URL reconstruida no coincide con la firma; requiere `app.set('trust proxy', ...)` + prueba real antes de habilitar.
-2. **`checkMessageLimit` y `checkWhatsAppAccess` NO están montados en ninguna ruta.** Consecuencia real: los límites de mensajes por plan no se aplican (un FREE puede pasar de 100 mensajes) y un FREE puede conectar WhatsApp aunque su plan no lo incluye. Montarlos en `chat.ts`, `public.ts` y `whatsapp.ts` (el webhook necesita una variante por bot, no por req.user).
+2. ~~checkMessageLimit / checkWhatsAppAccess sin montar~~ **RESUELTO (jul 2026)**: enforcement completo en chat, whatsapp, webhook y widget público con contador mensual en User (ver sección 8). Nota: los chats del asistente ATC y de Aria NO descuentan del límite (decisión: son soporte de la plataforma, no mensajes del bot del cliente).
 3. El widget público (`/public/bots/:botId/chat/stream`) no tiene rate limit propio más allá del global de 100/15min por IP.
 4. `express.json` global a 10mb (por las imágenes del asistente) amplía la superficie de payloads grandes en todos los endpoints.
 
@@ -394,7 +397,7 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 
 **Producto / UX**
 10. Contadores de la landing (1.247 / 43 / 2 seg) son estáticos, no vienen de la BD.
-11. Inconsistencia landing vs límites reales: landing dice Básico "2 bots" y Profesional "5.000 mensajes"; `planLimits.ts` dice 1 bot y 10.000. Unificar (decidir cuál es la verdad y tocar landing + pricing + planLimits juntos).
+11. ~~Inconsistencia landing vs límites reales~~ **RESUELTO (jul 2026)**: la landing muestra los números exactos de `planLimits.ts` (Básico 1 bot/1.000 msgs/10 docs, Profesional 10.000 msgs/50 docs, Agencia 100.000 msgs). Regla: `planLimits.ts` es la única fuente de verdad; si cambian los planes, tocar landing + pricing juntos.
 12. Bots creados antes del rediseño de personalidades conservan el prompt viejo copiado en la BD.
 13. Las imágenes adjuntas del asistente no se re-envían en turnos siguientes (solo el turno en que se mandan).
 14. Historial del DashboardAssistant se pierde al cerrar el drawer (por diseño de spec, pero molesto para soporte largo).
