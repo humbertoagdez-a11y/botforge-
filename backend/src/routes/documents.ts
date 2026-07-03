@@ -1,14 +1,39 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { env } from '../config/env';
+import { cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
 import { documentQueue } from '../lib/queue';
 import { deleteChunksByIds } from '../services/pinecone';
 import { checkDocLimit } from '../middleware/planLimits';
+
+/**
+ * Sube el archivo a Cloudinary (raw) y devuelve la URL persistente.
+ * Si Cloudinary no esta configurado o falla, devuelve null y el archivo
+ * local queda como fallback (no rompe el flujo de subida).
+ */
+async function uploadToCloudinary(localFilePath: string, documentId: string): Promise<string | null> {
+  if (!isCloudinaryConfigured()) {
+    console.warn('[documents] Cloudinary no configurado — el archivo queda solo en disco local (efímero en Railway)');
+    return null;
+  }
+  try {
+    const result = await cloudinary.uploader.upload(localFilePath, {
+      resource_type: 'raw',
+      folder: 'botforge/documents',
+      public_id: `doc_${documentId}`,
+    });
+    return result.secure_url;
+  } catch (err) {
+    console.error('[documents] Error al subir a Cloudinary, se mantiene el archivo local:', err);
+    return null;
+  }
+}
 
 const router = Router({ mergeParams: true });
 
@@ -79,7 +104,7 @@ router.post(
       if (!req.file) throw new AppError(400, 'No se recibió ningún archivo');
       await getOwnedBot(req.params.botId, req.user!.userId);
 
-      const doc = await prisma.document.create({
+      let doc = await prisma.document.create({
         data: {
           id: uuidv4(),
           botId: req.params.botId,
@@ -90,6 +115,18 @@ router.post(
           status: 'PENDING',
         },
       });
+
+      // Persistencia: Cloudinary como storage real, disco local como fallback
+      const url = await uploadToCloudinary(req.file.path, doc.id);
+      if (url) {
+        doc = await prisma.document.update({ where: { id: doc.id }, data: { url } });
+        // El archivo local ya no hace falta: el procesador lee desde la URL
+        try {
+          await fs.unlink(req.file.path);
+        } catch {
+          // si no se pudo borrar no pasa nada, es solo limpieza
+        }
+      }
 
       await documentQueue.add({ documentId: doc.id });
       res.status(201).json({ data: doc, error: null, meta: null });
@@ -110,6 +147,21 @@ router.delete('/:docId', async (req: Request, res: Response, next: NextFunction)
       select: { pineconeId: true },
     });
     await deleteChunksByIds(chunks.map((c) => c.pineconeId));
+
+    // Limpieza best-effort del archivo en Cloudinary y en disco
+    if (doc.url && isCloudinaryConfigured()) {
+      try {
+        await cloudinary.uploader.destroy(`botforge/documents/doc_${doc.id}`, { resource_type: 'raw' });
+      } catch (err) {
+        console.error('[documents] No se pudo borrar el archivo de Cloudinary:', err);
+      }
+    }
+    try {
+      await fs.unlink(doc.filePath);
+    } catch {
+      // el archivo local puede no existir (ya subido a Cloudinary o redeploy)
+    }
+
     await prisma.document.delete({ where: { id: req.params.docId } });
     res.json({ data: { ok: true }, error: null, meta: null });
   } catch (err) {

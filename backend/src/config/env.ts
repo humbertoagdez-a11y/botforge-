@@ -23,6 +23,9 @@ const envSchema = z.object({
   STRIPE_PRICE_PRO: z.string().optional(),
   STRIPE_PRICE_AGENCY: z.string().optional(),
   RESEND_API_KEY: z.string().optional().default(''),
+  CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),
+  CLOUDINARY_API_KEY: z.string().optional().default(''),
+  CLOUDINARY_API_SECRET: z.string().optional().default(''),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   // URL publica del backend: la usa la validacion de firma de Twilio.

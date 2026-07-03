@@ -1,9 +1,37 @@
+import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { documentQueue, type ProcessDocumentJobData } from '../lib/queue';
 import { extractAndChunk } from '../services/documentProcessor';
 import { getEmbedding } from '../services/embeddings';
 import { upsertChunks, deleteChunksByIds, type ChunkVector } from '../services/pinecone';
+
+/**
+ * Obtiene el contenido del documento: primero del disco local (upload
+ * reciente o fallback sin Cloudinary), si no de la URL de Cloudinary.
+ */
+async function loadDocumentBuffer(doc: {
+  filePath: string;
+  url: string | null;
+}): Promise<Buffer> {
+  try {
+    return await fs.readFile(doc.filePath);
+  } catch {
+    // no esta en disco (redeploy o ya fue borrado tras subir a Cloudinary)
+  }
+
+  if (doc.url) {
+    const res = await fetch(doc.url);
+    if (!res.ok) {
+      throw new Error(`No se pudo descargar el documento de Cloudinary (HTTP ${res.status})`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  throw new Error(
+    'El archivo no está disponible: se perdió del disco (redeploy) y no tiene copia en Cloudinary. Volvé a subirlo.',
+  );
+}
 
 documentQueue.process(async (job) => {
   const { documentId } = job.data;
@@ -28,7 +56,8 @@ documentQueue.process(async (job) => {
 
     await job.progress(10);
 
-    const textChunks = await extractAndChunk(doc.filePath, doc.mimeType);
+    const buffer = await loadDocumentBuffer(doc);
+    const textChunks = await extractAndChunk(buffer, doc.mimeType);
     const vectors: ChunkVector[] = [];
 
     for (let i = 0; i < textChunks.length; i++) {

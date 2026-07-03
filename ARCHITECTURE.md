@@ -69,7 +69,7 @@ botforge/
 │       ├── routes/
 │       │   ├── auth.ts          # register (+email Resend), login, refresh (rotación), logout, me, PUT profile, PUT password. Cookies httpOnly SameSite=None en prod
 │       │   ├── bots.ts          # CRUD de bots + POST /:id/generate-instructivo (Claude)
-│       │   ├── documents.ts     # Bajo /bots/:botId/documents: list, upload (multer→Bull), delete (+Pinecone). MIME: pdf/docx/xlsx/xls/txt/csv, 20MB
+│       │   ├── documents.ts     # Bajo /bots/:botId/documents: list, upload (multer→Cloudinary raw→borra local→Bull), delete (+Pinecone+Cloudinary). MIME: pdf/docx/xlsx/xls/txt/csv, 20MB
 │       │   ├── chat.ts          # Bajo /bots/:botId/chat: POST / (JSON), POST /stream (SSE), GET /history/:conversationId. RAG + Claude
 │       │   ├── whatsapp.ts      # request-connection (código BF-XXXXXX, TTL 10min), connection-status (polling), DELETE connect, POST /webhook (Twilio, ⚠ firma deshabilitada)
 │       │   ├── stripe.ts        # checkout (sesión), portal, webhook (firma verificada, actualiza plan del user)
@@ -159,7 +159,7 @@ Relaciones: N‑1 User (cascade), 1‑N Document, 1‑N Conversation, 1‑N What
 Campos: `id`, `botId`, `phoneNumber`, `verificationCode` (unique, formato BF-XXXXXX), `status` (PENDING/ACTIVE/EXPIRED), `expiresAt` (10 min). Cascade con Bot.
 
 **Document** — archivo subido para entrenar.
-Campos: `id`, `botId`, `name`, `mimeType`, `filePath` (disco local `backend/uploads/`), `fileSize`, `status` (PENDING/PROCESSING/READY/ERROR), `errorMsg?`, timestamps. Cascade con Bot. 1‑N Chunk.
+Campos: `id`, `botId`, `name`, `mimeType`, `filePath` (disco local, solo fallback), `url?` (Cloudinary raw — storage persistente real), `fileSize`, `status` (PENDING/PROCESSING/READY/ERROR), `errorMsg?`, timestamps. Cascade con Bot. 1‑N Chunk.
 
 **Chunk** — fragmento vectorizado de un documento.
 Campos: `id`, `documentId`, `botId` (desnormalizado para filtrar en Pinecone), `content`, `tokenCount`, `chunkIndex`, `pineconeId` (unique — id del vector en Pinecone). Cascade con Document.
@@ -367,6 +367,9 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 | STRIPE_WEBHOOK_SECRET | No | Firma del webhook Stripe |
 | STRIPE_PRICE_STARTER / _PRO / _AGENCY | No | Price IDs de suscripción |
 | RESEND_API_KEY | No | Email de bienvenida (se omite con log si falta) |
+| CLOUDINARY_CLOUD_NAME | **Sí en prod** | Storage persistente de documentos (sin ella, uploads quedan en disco efímero) |
+| CLOUDINARY_API_KEY | **Sí en prod** | Cloudinary |
+| CLOUDINARY_API_SECRET | **Sí en prod** | Cloudinary |
 | REDIS_URL | No (default localhost) | Cola Bull |
 | FRONTEND_URL | No (default localhost:3000) | CORS + links en emails + redirects Stripe |
 | BACKEND_URL | **Sí en prod** (default localhost:3001) | URL pública del backend para validar la firma de Twilio. En Railway: `https://botforge-production-b16f.up.railway.app` |
@@ -392,7 +395,7 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 **Infraestructura**
 5. `RESEND_API_KEY` sin configurar en Railway + dominio `botforge.com.py` sin verificar en Resend (el remitente `noreply@botforge.com.py` no saldrá hasta verificar DNS).
 6. Stripe sin price IDs reales (`STRIPE_PRICE_*`); checkout devuelve 400 hasta configurarlos.
-7. Uploads en disco local de Railway (`UPLOADS_DIR`) — efímero entre deploys; producción real necesita S3 o volumen persistente.
+7. ~~Uploads en disco local efímero~~ **RESUELTO (jul 2026)**: los documentos se suben a Cloudinary (raw, carpeta `botforge/documents`, public_id `doc_<id>`) tras recibirse; el archivo local se borra y el procesador descarga desde `Document.url` (disco local queda como fallback si Cloudinary no está configurado o falla). ⚠ Pendiente operativo: setear `CLOUDINARY_*` en Railway; documentos viejos sin `url` se pierden en el próximo redeploy (re-subirlos). Nota de seguridad: las URLs de Cloudinary son públicas-por-URL (uuid inadivinable, pero sin auth) — si los documentos son sensibles, migrar a signed URLs.
 8. Cookies SameSite=None requieren `NODE_ENV=production` en el backend de Railway (verificar).
 9. `metadataBase` del frontend apunta a `https://botforge.ai` (dominio placeholder); actualizar cuando exista dominio propio.
 

@@ -1,4 +1,3 @@
-import fs from 'fs/promises';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
@@ -12,9 +11,7 @@ export interface TextChunk {
   chunkIndex: number;
 }
 
-async function extractText(filePath: string, mimeType: string): Promise<string> {
-  const buffer = await fs.readFile(filePath);
-
+async function extractText(buffer: Buffer, mimeType: string): Promise<string> {
   if (mimeType === 'application/pdf') {
     const data = await pdfParse(buffer);
     return data.text;
@@ -59,8 +56,8 @@ function chunkText(text: string): TextChunk[] {
   return chunks;
 }
 
-export async function extractAndChunk(filePath: string, mimeType: string): Promise<TextChunk[]> {
-  const raw = await extractText(filePath, mimeType);
+export async function extractAndChunk(buffer: Buffer, mimeType: string): Promise<TextChunk[]> {
+  const raw = await extractText(buffer, mimeType);
   const cleaned = raw.replace(/\s+/g, ' ').trim();
   if (!cleaned) throw new Error('El documento no contiene texto extraíble');
   return chunkText(cleaned);

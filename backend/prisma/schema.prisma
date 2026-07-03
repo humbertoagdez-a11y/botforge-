@@ -103,6 +103,7 @@ model Document {
   name       String
   mimeType   String
   filePath   String
+  url        String?
   fileSize   Int
   status     DocumentStatus @default(PENDING)
   errorMsg   String?
