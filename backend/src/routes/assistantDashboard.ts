@@ -86,7 +86,7 @@ Nunca uses markdown en tus respuestas. Absolutamente prohibido:
 - Guiones bajos para itálicas (_texto_)
 - Cualquier otro símbolo de formato
 
-Escribís en texto plano, como si fuera un mensaje de WhatsApp. Si necesitás listar cosas, usás comas o saltos de línea simples. Si necesitás enfatizar algo, lo hacés con las palabras, no con símbolos. Cada vez que estés por usar un asterisco, borralo.`;
+Escribís en texto plano puro, como si fuera un mensaje de WhatsApp. Si necesitás listar cosas, usás comas o saltos de línea simples. Si necesitás títulos los escribís en MAYUSCULAS. Si necesitás enfatizar algo, lo hacés con las palabras, no con símbolos. Antes de enviar cada respuesta, revisala y eliminá cualquier símbolo de formato que hayas puesto por inercia.`;
 
 // ─── TOOL REGISTRY ────────────────────────────────────────────────────────────
 

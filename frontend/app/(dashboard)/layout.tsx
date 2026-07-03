@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
+import DashboardAssistant from '@/components/DashboardAssistant';
 import TechBackground from '@/components/TechBackground';
 import { useAuthStore } from '@/lib/store';
 import { refreshSession } from '@/lib/api';
@@ -103,6 +104,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </div>
+
+      {/* Asistente global: FUERA del sidebar y del main. El aside tiene
+          transform (drawer), que crea un containing block y atrapaba al
+          panel fixed dentro de sus 240px — por eso vive aca, en el root */}
+      <DashboardAssistant withTrigger />
     </div>
   );
 }

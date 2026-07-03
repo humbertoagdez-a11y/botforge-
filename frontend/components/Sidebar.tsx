@@ -6,11 +6,10 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { BarChart2, LayoutDashboard, LogOut, MessageSquare, UserCircle, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useAssistantStore } from '@/lib/store';
 import { api, type AccountStats } from '@/lib/api';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
-import DashboardAssistant from './DashboardAssistant';
 
 const NAV = [
   { href: '/dashboard', label: 'Mis Bots', icon: LayoutDashboard },
@@ -67,8 +66,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, token, clearAuth } = useAuthStore();
+  const { openAssistant } = useAssistantStore();
   const [stats, setStats] = useState<AccountStats | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState(false);
 
   useEffect(() => {
     // Guard: el Sidebar puede montarse antes de que el store rehidrate el token
@@ -141,9 +140,9 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             const isMobile = window.matchMedia('(max-width: 767px)').matches;
             onClose();
             if (isMobile) {
-              setTimeout(() => setAssistantOpen(true), 350);
+              setTimeout(() => openAssistant(), 350);
             } else {
-              setAssistantOpen(true);
+              openAssistant();
             }
           }}
           className="mx-3 my-3 flex min-h-[44px] w-[calc(100%-1.5rem)] cursor-pointer items-center gap-3 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 transition-colors hover:bg-cyan-500/15"
@@ -176,8 +175,6 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           Salir
         </Button>
       </div>
-
-      <DashboardAssistant open={assistantOpen} onClose={() => setAssistantOpen(false)} botId={null} botName={null} />
     </aside>
   );
 }

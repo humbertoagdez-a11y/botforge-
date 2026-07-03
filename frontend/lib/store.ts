@@ -11,6 +11,26 @@ interface AuthState {
   clearAuth: () => void;
 }
 
+// ─── Estado global del Asistente (NO persistido: es estado de UI) ────────────
+
+interface AssistantState {
+  assistantOpen: boolean;
+  assistantBotId: string | null;
+  assistantBotName: string | null;
+  openAssistant: (botId?: string | null, botName?: string | null) => void;
+  closeAssistant: () => void;
+}
+
+export const useAssistantStore = create<AssistantState>()((set) => ({
+  assistantOpen: false,
+  assistantBotId: null,
+  assistantBotName: null,
+  openAssistant: (botId, botName) =>
+    set({ assistantOpen: true, assistantBotId: botId ?? null, assistantBotName: botName ?? null }),
+  closeAssistant: () =>
+    set({ assistantOpen: false, assistantBotId: null, assistantBotName: null }),
+}));
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

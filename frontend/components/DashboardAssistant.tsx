@@ -13,7 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useAssistantStore } from '@/lib/store';
 
 const INSTRUCTIVO_MARKER = '===INSTRUCTIVO_LISTO===';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -46,11 +46,11 @@ interface ConfirmData {
   resolved?: 'confirmed' | 'cancelled';
 }
 
-interface AssistantMessage {
+interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  /** Solo visual (bienvenida, avisos): NUNCA se envía al backend */
+  /** true = solo visual (bienvenida, avisos): NUNCA se envía al backend */
   isLocal?: boolean;
   streaming?: boolean;
   instructivo?: string;
@@ -63,23 +63,24 @@ interface AssistantMessage {
 }
 
 interface Props {
-  open: boolean;
-  onClose: () => void;
+  /** Modo controlado (paginas existentes). Sin props: modo store global. */
+  open?: boolean;
+  onClose?: () => void;
   botId?: string | null;
   botName?: string | null;
+  /** Solo la instancia global del layout renderiza el trigger flotante */
+  withTrigger?: boolean;
 }
 
-function newId(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
+function newId(prefix = 'msg'): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildWelcome(botName?: string | null): AssistantMessage {
+function buildWelcome(botName?: string | null): ChatMessage {
   const content = botName
     ? `Hola. Estoy listo para gestionar '${botName}'. Puedo modificar su configuración, generar el instructivo, revisar conversaciones o lo que necesites. Por donde empezamos?`
     : 'Hola. Soy tu asistente de gestión. Puedo crear bots, modificar configuraciones, generar instructivos o resolver cualquier duda sobre la plataforma. Que necesitás?';
-  return { id: 'welcome', role: 'assistant', content, isLocal: true, ts: Date.now() };
+  return { id: newId('welcome'), role: 'assistant', content, isLocal: true, ts: Date.now() };
 }
 
 /** Segunda capa de defensa contra markdown en las respuestas del modelo */
@@ -90,15 +91,16 @@ function sanitizeMarkdown(text: string): string {
     .replace(/__(.*?)__/g, '$1') // __negrita__
     .replace(/^#{1,6}\s+/gm, '') // # Títulos
     .replace(/^[-*+]\s+/gm, '• ') // - bullets → punto simple
-    .replace(/`([^`]+)`/g, '$1'); // `código`
+    .replace(/`([^`]+)`/g, '$1') // `código`
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // [link](url) → link
 }
 
 function splitAccumulated(accumulated: string): { content: string; instructivo?: string } {
   const markerIdx = accumulated.indexOf(INSTRUCTIVO_MARKER);
   if (markerIdx < 0) return { content: sanitizeMarkdown(accumulated) };
   const pre = accumulated.slice(0, markerIdx).trim();
-  // El instructivo NO se sanitiza: es texto plano por prompt y el regex
-  // de listas numeradas rompería precios o direcciones legítimas
+  // El instructivo NO se sanitiza: es texto plano por prompt y los regex
+  // romperian contenido legitimo (numeraciones, guiones de precios)
   const instructivo = accumulated.slice(markerIdx + INSTRUCTIVO_MARKER.length).replace(/^\s+/, '');
   return {
     content: sanitizeMarkdown(pre) || 'Tu instructivo está listo. Revisalo y descargalo:',
@@ -163,71 +165,90 @@ function ToolExecutionLog({ steps }: { steps: ExecStep[] }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function DashboardAssistant({ open, onClose, botId, botName }: Props) {
+export default function DashboardAssistant(props: Props) {
   const { token } = useAuthStore();
-  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const store = useAssistantStore();
+
+  // Modo dual: controlado por props (paginas existentes) o por store (global)
+  const controlled = props.open !== undefined;
+  const isOpen = controlled ? !!props.open : store.assistantOpen;
+  const botId = controlled ? (props.botId ?? null) : store.assistantBotId;
+  const botName = controlled ? (props.botName ?? null) : store.assistantBotName;
+  const close = controlled ? (props.onClose ?? (() => undefined)) : store.closeAssistant;
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
-  const [attached, setAttached] = useState<{ dataUrl: string; base64: string; mediaType: string; name: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{
+    data: string;
+    mediaType: string;
+    preview: string;
+    name: string;
+  } | null>(null);
   const [imageModal, setImageModal] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Bienvenida al abrir; limpieza total al cerrar
   useEffect(() => {
-    if (open) {
+    if (isOpen) {
       setMessages([buildWelcome(botName)]);
     } else {
       abortRef.current?.abort();
       setMessages([]);
       setInput('');
-      setSending(false);
-      setAttached(null);
+      setIsLoading(false);
+      setSelectedImage(null);
       setImageModal(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [isOpen]);
 
+  // Auto-scroll al fondo con cada mensaje o actualizacion
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   // Escape cierra el panel
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOpen, close]);
 
-  function autoResize() {
-    const el = textareaRef.current;
-    if (!el) return;
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setInput(e.target.value);
+    const el = e.target;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }
 
-  function handleFile(file: File) {
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
       toast.error('Formato no soportado. Usá JPG, PNG, WebP o GIF.');
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      toast.error('La imagen supera el límite de 5 MB.');
+      toast.error('La imagen no puede superar 5MB');
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setAttached({
-        dataUrl,
-        base64: dataUrl.split(',')[1] ?? '',
+      const preview = reader.result as string;
+      setSelectedImage({
+        data: preview.split(',')[1] ?? '',
         mediaType: file.type,
+        preview,
         name: file.name,
       });
     };
@@ -245,8 +266,8 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
     URL.revokeObjectURL(url);
   }
 
-  /** Historial para el backend: turnos reales como texto (nunca los locales) */
-  function buildHistory(msgs: AssistantMessage[]): { role: 'user' | 'assistant'; content: string }[] {
+  /** Historial para el backend — CRÍTICO: excluye todo mensaje isLocal */
+  function buildHistory(msgs: ChatMessage[]): { role: 'user' | 'assistant'; content: string }[] {
     return msgs
       .filter((m) => !m.isLocal && !m.streaming && !m.confirm && !m.blocks)
       .map((m) => ({
@@ -258,13 +279,13 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
       .filter((m) => m.content.trim().length > 0);
   }
 
-  /** Nucleo: envia el request al backend y procesa el stream de eventos */
+  /** Nucleo: envia el request y procesa el stream de eventos SSE */
   async function runRequest(body: Record<string, unknown>) {
-    setSending(true);
+    setIsLoading(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const updatePlaceholder = (updater: (last: AssistantMessage) => AssistantMessage) => {
+    const updatePlaceholder = (updater: (last: ChatMessage) => ChatMessage) => {
       setMessages((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
@@ -288,7 +309,7 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
         signal: controller.signal,
       });
 
-      if (!res.ok || !res.body) throw new Error('respuesta no disponible');
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -401,57 +422,64 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
         updatePlaceholder((last) => ({
           ...last,
           streaming: false,
-          content: last.content || 'Tuve un problema de conexión. Probá de nuevo en unos segundos.',
+          content: last.content || 'Error al conectar. Intentá de nuevo.',
         }));
       }
     } finally {
-      setSending(false);
+      setIsLoading(false);
       abortRef.current = null;
     }
   }
 
-  async function sendMessage() {
-    const text = input.trim();
-    if ((!text && !attached) || sending) return;
+  async function handleSend() {
+    const trimmed = input.trim();
+    if ((!trimmed && !selectedImage) || isLoading) return;
 
-    const userText = text || 'Mirá esta imagen';
-    const image = attached;
+    const userText = trimmed || 'Mirá esta imagen';
+    const image = selectedImage;
     setInput('');
-    setAttached(null);
+    setSelectedImage(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
-    const history = buildHistory(messages);
-    const outgoing = [...history, { role: 'user' as const, content: userText }];
+    // 1) Mensaje del usuario al display ANTES del fetch
+    const userMsg: ChatMessage = {
+      id: newId('user'),
+      role: 'user',
+      content: userText,
+      ts: Date.now(),
+      ...(image ? { imageDataUrl: image.preview } : {}),
+    };
 
+    // 2) Historial para el backend: los isLocal NUNCA viajan
+    const historyForBackend = buildHistory([...messages, userMsg]);
+
+    // 3) Placeholder del asistente (typing hasta el primer token)
     setMessages((prev) => [
       ...prev,
-      { id: newId(), role: 'user', content: userText, ts: Date.now(), ...(image ? { imageDataUrl: image.dataUrl } : {}) },
-      { id: newId(), role: 'assistant', content: '', streaming: true, ts: Date.now() },
+      userMsg,
+      { id: newId('assistant'), role: 'assistant', content: '', streaming: true, ts: Date.now() },
     ]);
 
     await runRequest({
-      messages: outgoing,
+      messages: historyForBackend,
       ...(botId ? { botId } : {}),
-      ...(image ? { image: { data: image.base64, mediaType: image.mediaType } } : {}),
+      ...(image ? { image: { data: image.data, mediaType: image.mediaType } } : {}),
     });
   }
 
-  /** Confirmar una accion destructiva: reanuda con los blocks + id confirmado */
+  /** Confirmar accion destructiva: reanuda con los blocks + id confirmado */
   async function confirmAction(index: number) {
     const msg = messages[index];
     if (!msg?.confirm || !msg.blocks) return;
 
     const history = buildHistory(messages.slice(0, index));
-    const outgoing = [
-      ...history,
-      { role: 'assistant' as const, content: msg.blocks },
-    ];
+    const outgoing = [...history, { role: 'assistant' as const, content: msg.blocks }];
 
     setMessages((prev) => [
       ...prev.map((m, i) =>
         i === index ? { ...m, confirm: { ...m.confirm!, resolved: 'confirmed' as const } } : m,
       ),
-      { id: newId(), role: 'assistant', content: '', streaming: true, ts: Date.now() },
+      { id: newId('assistant'), role: 'assistant', content: '', streaming: true, ts: Date.now() },
     ]);
 
     await runRequest({
@@ -465,75 +493,98 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
   function cancelAction(index: number) {
     setMessages((prev) => [
       ...prev.filter((_, i) => i !== index),
-      { id: newId(), role: 'assistant', content: 'Acción cancelada.', isLocal: true, ts: Date.now() },
+      { id: newId('local'), role: 'assistant', content: 'Acción cancelada.', isLocal: true, ts: Date.now() },
     ]);
   }
 
-  if (!open) return null;
+  const showEmptyState = messages.length === 1 && messages[0]?.isLocal;
 
   return (
-    <div className="fixed inset-0 z-50">
-      {/* Overlay */}
+    <>
+      {/* ── TRIGGER FLOTANTE (solo instancia global, oculto con panel abierto) ── */}
+      {props.withTrigger && !isOpen && (
+        <button
+          type="button"
+          onClick={() => store.openAssistant()}
+          aria-label="Abrir asistente"
+          className="fixed bottom-20 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.08] md:bottom-6 md:right-6"
+          style={{
+            background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
+            boxShadow: '0 8px 32px rgba(124,58,237,0.4)',
+          }}
+        >
+          <Image src="/asistente-logo.svg" alt="" width={28} height={28} unoptimized className="h-7 w-7" />
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+        </button>
+      )}
+
+      {/* ── OVERLAY ── */}
       <div
-        className="absolute inset-0 bg-black/60 motion-safe:animate-[overlay-fade-in_0.3s_ease]"
-        onClick={onClose}
+        aria-hidden
+        onClick={close}
+        className={`fixed inset-0 z-[49] bg-black/65 backdrop-blur-sm transition-opacity duration-300 ${
+          isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
       />
 
-      {/* Panel */}
-      <div className="absolute right-0 top-0 flex h-full w-full flex-col border-l border-white/10 bg-[#080810] shadow-2xl shadow-black/50 motion-safe:animate-[assistant-slide-in_0.3s_cubic-bezier(0.4,0,0.2,1)] md:max-w-[480px]">
-        {/* Header glassmorphism */}
-        <div className="flex h-[72px] shrink-0 items-center gap-3 border-b border-white/10 bg-black/40 px-5 py-4 backdrop-blur-xl">
-          <Image src="/asistente-logo.svg" alt="" width={36} height={36} unoptimized className="h-9 w-9" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white">Asistente BotForge</p>
-            {botName ? (
-              <p className="truncate text-xs text-cyan-400/70">Gestionando: {botName}</p>
-            ) : (
-              <p className="truncate text-xs text-white/40">Listo para ayudarte</p>
-            )}
+      {/* ── PANEL: sheet desde abajo en movil, drawer desde la derecha en desktop ── */}
+      <div
+        className={`fixed inset-0 z-50 flex flex-col border-l border-white/[0.08] bg-[#070711] transition-transform duration-[320ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] md:inset-y-0 md:left-auto md:right-0 md:w-[440px] ${
+          isOpen
+            ? 'translate-x-0 translate-y-0'
+            : 'pointer-events-none translate-y-full md:translate-x-full md:translate-y-0'
+        }`}
+        role="dialog"
+        aria-hidden={!isOpen}
+      >
+        {/* HEADER */}
+        <header className="flex h-[68px] shrink-0 items-center gap-3 border-b border-white/[0.06] bg-black/50 px-5 backdrop-blur-xl">
+          <div className="relative shrink-0">
+            <Image src="/asistente-logo.svg" alt="" width={40} height={40} unoptimized className="h-10 w-10" />
           </div>
-          <span className="ml-auto flex items-center gap-1.5 text-[10px] font-medium text-emerald-400">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm font-semibold leading-tight text-white">
+              Asistente BotForge
+            </span>
+            <span className="truncate text-[11px] text-white/40">
+              {botName ? `Gestionando: ${botName}` : 'Listo para ayudarte'}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-            En línea
-          </span>
+            <span className="text-[11px] font-medium text-emerald-400">En línea</span>
+          </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             aria-label="Cerrar asistente"
-            className="ml-2 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            className="ml-1 shrink-0 rounded-xl p-2 transition-colors hover:bg-white/10"
           >
-            <X className="h-[18px] w-[18px]" />
+            <X className="h-4 w-4 text-white/50" />
           </button>
-        </div>
+        </header>
 
-        {/* Mensajes */}
+        {/* MENSAJES */}
         <div
-          ref={scrollRef}
-          className={`assistant-scroll flex flex-1 flex-col gap-4 overflow-y-auto scroll-smooth px-4 py-4 ${
-            messages.length === 1 && messages[0]?.isLocal ? 'justify-center' : ''
-          }`}
+          ref={messagesRef}
+          className={`flex-1 space-y-4 overflow-y-auto px-4 py-5 ${showEmptyState ? 'flex flex-col justify-center' : ''}`}
+          style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(34,211,238,0.15) transparent' }}
         >
-          {/* Empty state: solo la bienvenida, centrada con el robot grande */}
-          {messages.length === 1 && messages[0]?.isLocal && (
+          {showEmptyState && (
             <div className="mb-2 flex justify-center">
               <Image src="/asistente-logo.svg" alt="" width={64} height={64} unoptimized className="h-16 w-16" />
             </div>
           )}
+
           {messages.map((m, i) => {
             const isTyping = m.streaming && !m.content && !m.execSteps?.length && m.instructivo === undefined;
             const isUser = m.role === 'user';
-            return (
-              <div key={m.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                <div className={m.instructivo !== undefined || m.execSteps?.length ? 'w-full max-w-[95%]' : isUser ? 'max-w-[80%]' : 'max-w-[85%]'}>
-                  {/* Burbuja usuario */}
-                  {isUser && (
-                    <div
-                      className="px-4 py-3 text-sm leading-relaxed text-white"
-                      style={{
-                        background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
-                        borderRadius: '20px 20px 4px 20px',
-                      }}
-                    >
+
+            if (isUser) {
+              return (
+                <div key={m.id} className="flex justify-end">
+                  <div className="max-w-[78%]">
+                    <div className="rounded-[20px_20px_5px_20px] bg-gradient-to-br from-violet-600 to-indigo-700 px-4 py-3 text-sm leading-relaxed text-white">
                       {m.imageDataUrl && (
                         <button
                           type="button"
@@ -547,103 +598,105 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
                       )}
                       <span className="whitespace-pre-wrap">{m.content}</span>
                     </div>
+                    <p className="mt-1 px-1 text-right text-[10px] text-white/25">{formatTime(m.ts)}</p>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={m.id} className="flex items-end justify-start gap-2">
+                <Image
+                  src="/asistente-logo.svg"
+                  alt=""
+                  width={24}
+                  height={24}
+                  unoptimized
+                  className="mb-5 h-6 w-6 shrink-0 opacity-70"
+                />
+                <div className={m.instructivo !== undefined || m.execSteps?.length ? 'min-w-0 flex-1' : 'max-w-[82%]'}>
+                  {isTyping ? (
+                    <div className="w-fit rounded-[20px_20px_20px_5px] border border-white/[0.08] bg-white/[0.07] px-5 py-4">
+                      <div className="flex items-center gap-1.5">
+                        {[0, 1, 2].map((d) => (
+                          <span
+                            key={d}
+                            className="h-2 w-2 animate-bounce rounded-full bg-cyan-400/50"
+                            style={{ animationDelay: `${d * 160}ms` }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    m.content && (
+                      <div className="whitespace-pre-wrap rounded-[20px_20px_20px_5px] border border-white/[0.08] bg-white/[0.07] px-4 py-3 text-sm leading-relaxed text-[#E2E2F0]">
+                        {m.content}
+                      </div>
+                    )
                   )}
 
-                  {/* Burbuja asistente */}
-                  {!isUser && (
-                    <>
-                      {isTyping ? (
-                        <div
-                          className="flex w-fit items-center gap-1.5 border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-sm"
-                          style={{ borderRadius: '20px 20px 20px 4px' }}
-                        >
-                          {[0, 1, 2].map((d) => (
-                            <span
-                              key={d}
-                              className="h-1.5 w-1.5 animate-bounce rounded-full bg-cyan-400/70"
-                              style={{ animationDelay: `${d * 150}ms` }}
-                            />
-                          ))}
-                        </div>
+                  {m.execSteps && m.execSteps.length > 0 && <ToolExecutionLog steps={m.execSteps} />}
+
+                  {m.confirm && (
+                    <div className="mt-2 rounded-xl border border-red-500/30 bg-[rgba(239,68,68,0.08)] p-4">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-orange-400" />
+                        <p className="text-sm font-semibold text-[#E8E8F0]">Confirmar acción</p>
+                      </div>
+                      <p className="mt-1.5 text-xs leading-relaxed text-white/70">{m.confirm.message}</p>
+                      {m.confirm.resolved === 'confirmed' ? (
+                        <p className="mt-3 text-xs text-green-400">Confirmado — ejecutando...</p>
                       ) : (
-                        m.content && (
-                          <div
-                            className="whitespace-pre-wrap border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-relaxed text-[#E8E8F0] backdrop-blur-sm"
-                            style={{ borderRadius: '20px 20px 20px 4px' }}
-                          >
-                            {m.content}
-                          </div>
-                        )
-                      )}
-
-                      {/* Terminal de ejecucion */}
-                      {m.execSteps && m.execSteps.length > 0 && <ToolExecutionLog steps={m.execSteps} />}
-
-                      {/* Confirmacion de accion destructiva */}
-                      {m.confirm && (
-                        <div className="mt-2 rounded-xl border border-red-500/30 bg-[rgba(239,68,68,0.08)] p-4">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="h-4 w-4 shrink-0 text-orange-400" />
-                            <p className="text-sm font-semibold text-[#E8E8F0]">Confirmar acción</p>
-                          </div>
-                          <p className="mt-1.5 text-xs leading-relaxed text-white/70">{m.confirm.message}</p>
-                          {m.confirm.resolved === 'confirmed' ? (
-                            <p className="mt-3 text-xs text-green-400">Confirmado — ejecutando...</p>
-                          ) : (
-                            <div className="mt-3 flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => cancelAction(i)}
-                                disabled={sending}
-                                className="min-h-[44px] rounded-lg bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/10 disabled:opacity-40"
-                              >
-                                Cancelar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void confirmAction(i)}
-                                disabled={sending}
-                                className="min-h-[44px] rounded-lg bg-red-500/80 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-40"
-                              >
-                                Confirmar
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Instructivo editable */}
-                      {m.instructivo !== undefined && (
-                        <div className="mt-2 space-y-2">
-                          <textarea
-                            value={m.instructivo}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setMessages((prev) =>
-                                prev.map((msg, idx) => (idx === i ? { ...msg, instructivo: value } : msg)),
-                              );
-                            }}
-                            rows={14}
-                            spellCheck={false}
-                            className="assistant-scroll w-full resize-y rounded-xl border border-cyan-400/30 bg-[#0D0D1A] p-3 font-mono text-xs leading-relaxed text-gray-200 focus:border-cyan-400/60 focus:outline-none"
-                          />
+                        <div className="mt-3 flex justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => downloadInstructivo(m.instructivo ?? '')}
-                            className="flex min-h-[44px] items-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2 text-xs font-semibold text-black transition-colors hover:bg-cyan-300"
+                            onClick={() => cancelAction(i)}
+                            disabled={isLoading}
+                            className="min-h-[44px] rounded-lg bg-white/5 px-4 py-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/10 disabled:opacity-40"
                           >
-                            <Download className="h-3.5 w-3.5" />
-                            Descargar instructivo .txt
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void confirmAction(i)}
+                            disabled={isLoading}
+                            className="min-h-[44px] rounded-lg bg-red-500/80 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-40"
+                          >
+                            Confirmar
                           </button>
                         </div>
                       )}
-                    </>
+                    </div>
+                  )}
+
+                  {m.instructivo !== undefined && (
+                    <div className="mt-2 space-y-2">
+                      <textarea
+                        value={m.instructivo}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setMessages((prev) =>
+                            prev.map((msg, idx) => (idx === i ? { ...msg, instructivo: value } : msg)),
+                          );
+                        }}
+                        rows={14}
+                        spellCheck={false}
+                        className="w-full resize-y rounded-xl border border-cyan-400/30 bg-[#0D0D1A] p-3 font-mono text-xs leading-relaxed text-gray-200 focus:border-cyan-400/60 focus:outline-none"
+                        style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(34,211,238,0.15) transparent' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => downloadInstructivo(m.instructivo ?? '')}
+                        className="flex min-h-[44px] items-center gap-2 rounded-lg bg-cyan-400 px-3.5 py-2 text-xs font-semibold text-black transition-colors hover:bg-cyan-300"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Descargar instructivo .txt
+                      </button>
+                    </div>
                   )}
 
                   {!isTyping && (
-                    <p className={`mt-1 px-1 text-[10px] text-white/25 ${isUser ? 'text-right' : ''}`}>
-                      {formatTime(m.ts)}
-                    </p>
+                    <p className="mt-1 px-1 text-[10px] text-white/25">{formatTime(m.ts)}</p>
                   )}
                 </div>
               </div>
@@ -651,70 +704,56 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
           })}
         </div>
 
-        {/* Input area */}
-        <div className="shrink-0 border-t border-white/10 bg-black/40 p-4 backdrop-blur-xl">
-          {/* Preview de imagen adjunta */}
-          {attached && (
-            <div className="mb-3 flex items-center gap-2 rounded-xl bg-white/5 p-2">
+        {/* INPUT AREA */}
+        <div className="shrink-0 border-t border-white/[0.06] bg-black/30 px-4 pb-5 pt-3 backdrop-blur-sm">
+          {selectedImage && (
+            <div className="mb-3 flex items-center gap-2 rounded-2xl bg-white/[0.05] p-2.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={attached.dataUrl} alt="" className="h-11 w-11 rounded-lg object-cover" />
-              <p className="min-w-0 flex-1 truncate text-xs text-white/50">{attached.name}</p>
+              <img src={selectedImage.preview} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
+              <span className="min-w-0 flex-1 truncate text-xs text-white/40">{selectedImage.name}</span>
               <button
                 type="button"
-                onClick={() => setAttached(null)}
+                onClick={() => setSelectedImage(null)}
                 aria-label="Quitar imagen"
-                className="p-1 text-white/40 hover:text-white"
+                className="rounded-lg p-1 hover:bg-white/10"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5 text-white/40" />
               </button>
             </div>
           )}
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void sendMessage();
-            }}
-            className="flex items-end gap-2"
-          >
+          <div className="flex items-end gap-2.5">
             <input
               ref={fileRef}
               type="file"
               accept={ACCEPTED_IMAGE_TYPES.join(',')}
               className="sr-only"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-                e.target.value = '';
-              }}
+              onChange={handleFileSelect}
             />
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               aria-label="Adjuntar imagen"
-              className="flex h-10 w-10 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl bg-white/5 transition-colors hover:bg-white/10"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.06] transition-colors hover:bg-white/[0.10]"
             >
-              <Paperclip className="h-[18px] w-[18px] text-white/40" />
+              <Paperclip className="h-4 w-4 text-white/40" />
             </button>
             <div className="relative min-w-0 flex-1">
               <textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  autoResize();
-                }}
+                onChange={handleInputChange}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    void sendMessage();
+                    void handleSend();
                   }
                 }}
                 rows={1}
                 placeholder="Escribí tu mensaje..."
                 maxLength={6000}
                 style={{ fontSize: '16px' }}
-                className="min-h-[42px] max-h-[120px] w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 leading-relaxed text-white transition-colors placeholder:text-white/30 focus:border-cyan-500/40 focus:outline-none"
+                className="max-h-[120px] min-h-[44px] w-full resize-none overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] px-4 py-3 leading-relaxed text-white transition-colors placeholder:text-white/30 focus:border-cyan-500/40 focus:outline-none"
               />
               {input.length > 500 && (
                 <span className="pointer-events-none absolute bottom-1.5 right-2.5 text-[10px] text-white/30">
@@ -723,21 +762,22 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
               )}
             </div>
             <button
-              type="submit"
-              disabled={(!input.trim() && !attached) || sending}
+              type="button"
+              onClick={() => void handleSend()}
+              disabled={(!input.trim() && !selectedImage) || isLoading}
               aria-label="Enviar mensaje"
-              className="flex h-10 w-10 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-violet-600 transition-all hover:opacity-90 active:scale-95 disabled:opacity-30"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-violet-600 transition-all duration-150 hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
             >
-              <SendHorizonal className="h-[18px] w-[18px] text-black" />
+              <SendHorizonal className="h-4 w-4 text-white" />
             </button>
-          </form>
+          </div>
         </div>
       </div>
 
       {/* Modal de imagen completa */}
       {imageModal && (
         <div
-          className="absolute inset-0 z-10 flex items-center justify-center bg-black/85 p-6"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-6"
           onClick={() => setImageModal(null)}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -752,6 +792,6 @@ export default function DashboardAssistant({ open, onClose, botId, botName }: Pr
           </button>
         </div>
       )}
-    </div>
+    </>
   );
 }
