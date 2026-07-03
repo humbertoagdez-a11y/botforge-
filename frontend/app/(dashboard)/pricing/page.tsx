@@ -5,9 +5,8 @@ import { Check, Loader2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { api, type ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 const PLANS = [
   {
@@ -68,16 +67,15 @@ export default function PricingPage() {
     if (!token) { toast.error('Tenés que iniciar sesión'); return; }
     setLoading(planId);
     try {
-      const res = await fetch(`${API}/api/v1/stripe/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ plan: planId }),
-      });
-      const data = (await res.json()) as { data?: { url: string }; error?: { message: string } };
-      if (!res.ok || !data.data?.url) throw new Error(data.error?.message ?? 'Error al crear sesión de pago');
-      window.location.href = data.data.url;
+      const { url } = await api.stripe.checkout(planId);
+      if (!url) throw new Error('Error al crear sesión de pago');
+      window.location.href = url;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error al procesar el pago');
+      if ((err as ApiError).code === 'STRIPE_NOT_CONFIGURED') {
+        toast.info('Los pagos estarán disponibles pronto');
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Error al procesar el pago');
+      }
       setLoading(null);
     }
   }

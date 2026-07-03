@@ -394,7 +394,7 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 
 **Infraestructura**
 5. `RESEND_API_KEY` sin configurar en Railway + dominio `botforge.com.py` sin verificar en Resend (el remitente `noreply@botforge.com.py` no saldrá hasta verificar DNS).
-6. Stripe sin price IDs reales (`STRIPE_PRICE_*`); checkout devuelve 400 hasta configurarlos.
+6. Stripe: código completo (checkout con Customer persistido, portal, webhook con firma, `?upgrade=success` con toast y refresh de plan en el dashboard; sin configurar devuelve 503 `STRIPE_NOT_CONFIGURED` y el frontend muestra "Los pagos estarán disponibles pronto"). ⚠ Pendiente operativo: crear productos/precios en Stripe y setear `STRIPE_SECRET_KEY`, `STRIPE_PRICE_STARTER/PRO/AGENCY` (mapeo: Básico=STARTER, Profesional=PRO, Agencia=AGENCY) y `STRIPE_WEBHOOK_SECRET` en Railway + registrar el endpoint del webhook en Stripe.
 7. ~~Uploads en disco local efímero~~ **RESUELTO (jul 2026)**: los documentos se suben a Cloudinary (raw, carpeta `botforge/documents`, public_id `doc_<id>`) tras recibirse; el archivo local se borra y el procesador descarga desde `Document.url` (disco local queda como fallback si Cloudinary no está configurado o falla). ⚠ Pendiente operativo: setear `CLOUDINARY_*` en Railway; documentos viejos sin `url` se pierden en el próximo redeploy (re-subirlos). Nota de seguridad: las URLs de Cloudinary son públicas-por-URL (uuid inadivinable, pero sin auth) — si los documentos son sensibles, migrar a signed URLs.
 8. Cookies SameSite=None requieren `NODE_ENV=production` en el backend de Railway (verificar).
 9. `metadataBase` del frontend apunta a `https://botforge.ai` (dominio placeholder); actualizar cuando exista dominio propio.

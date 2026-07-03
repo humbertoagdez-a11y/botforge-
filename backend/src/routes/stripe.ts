@@ -10,7 +10,9 @@ import type { Plan } from '@prisma/client';
 const router = Router();
 
 function getStripe(): Stripe {
-  if (!env.STRIPE_SECRET_KEY) throw new AppError(503, 'Pagos no configurados');
+  if (!env.STRIPE_SECRET_KEY) {
+    throw new AppError(503, 'Pagos no configurados aún', 'STRIPE_NOT_CONFIGURED');
+  }
   return new Stripe(env.STRIPE_SECRET_KEY);
 }
 
@@ -22,7 +24,9 @@ function getPriceId(plan: 'STARTER' | 'PRO' | 'AGENCY'): string {
     AGENCY: env.STRIPE_PRICE_AGENCY,
   };
   const id = prices[plan];
-  if (!id) throw new AppError(400, `Plan ${plan} no tiene precio configurado`);
+  if (!id) {
+    throw new AppError(503, 'Pagos no configurados aún', 'STRIPE_NOT_CONFIGURED');
+  }
   return id;
 }
 
@@ -53,7 +57,7 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response, next: 
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: getPriceId(plan), quantity: 1 }],
-      success_url: `${env.FRONTEND_URL}/dashboard?plan_success=1`,
+      success_url: `${env.FRONTEND_URL}/dashboard?upgrade=success`,
       cancel_url: `${env.FRONTEND_URL}/pricing`,
       metadata: { userId: user.id, plan },
       subscription_data: { metadata: { userId: user.id, plan } },

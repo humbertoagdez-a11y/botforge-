@@ -5,6 +5,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export interface ApiError extends Error {
   statusCode?: number;
+  code?: string;
 }
 
 export interface User {
@@ -226,6 +227,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     notifyPlanLimit(json.error);
     const err: ApiError = new Error(json.error?.message ?? 'Error desconocido');
     err.statusCode = res.status;
+    err.code = json.error?.code;
     throw err;
   }
 
@@ -240,6 +242,7 @@ async function requestWithMeta<T, M>(path: string): Promise<{ data: T; meta: M }
     notifyPlanLimit(json.error);
     const err: ApiError = new Error(json.error?.message ?? 'Error desconocido');
     err.statusCode = res.status;
+    err.code = json.error?.code;
     throw err;
   }
 
@@ -322,5 +325,14 @@ export const api = {
 
   activity: {
     get: () => request<ActivityEvent[]>('/api/v1/activity'),
+  },
+
+  stripe: {
+    checkout: (plan: 'STARTER' | 'PRO' | 'AGENCY') =>
+      request<{ url: string }>('/api/v1/stripe/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ plan }),
+      }),
+    portal: () => request<{ url: string }>('/api/v1/stripe/portal', { method: 'POST' }),
   },
 };

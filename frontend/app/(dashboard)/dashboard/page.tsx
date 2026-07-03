@@ -266,7 +266,7 @@ function RecentConversations({ stats }: { stats: AccountStats }) {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuthStore();
+  const { user, setAuth } = useAuthStore();
   const [bots, setBots] = useState<BotType[]>([]);
   const [stats, setStats] = useState<AccountStats | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -292,6 +292,30 @@ export default function DashboardPage() {
       })
       .catch(() => toast.error('Error al cargar los bots'))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Vuelta del checkout de Stripe: confirmar y refrescar el plan del usuario
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('upgrade') !== 'success') return;
+
+    toast.success('Plan actualizado exitosamente');
+    // Limpia el query param para no repetir el toast al recargar
+    window.history.replaceState({}, '', '/dashboard');
+
+    // El webhook de Stripe puede tardar unos segundos en actualizar el plan
+    const refreshUser = async (attempt: number) => {
+      try {
+        const fresh = await api.auth.me();
+        const currentToken = useAuthStore.getState().token;
+        if (currentToken) setAuth(currentToken, fresh);
+        if (fresh.plan === 'FREE' && attempt < 3) {
+          setTimeout(() => void refreshUser(attempt + 1), 3000);
+        }
+      } catch { /* el sidebar lo refresca en la proxima carga */ }
+    };
+    void refreshUser(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function confirmDelete(id: string) {
