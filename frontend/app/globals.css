@@ -73,16 +73,12 @@
   display: none;
 }
 
-/* Inputs a 16px en movil (evita auto-zoom de iOS) + target tactil de 44px */
+/* Inputs a 16px en movil para evitar el auto-zoom de iOS */
 @media (max-width: 767px) {
   .theme-dashboard input,
   .theme-dashboard textarea,
   .theme-dashboard select {
     font-size: 16px;
-  }
-  .theme-dashboard input:not([type='checkbox']):not([type='radio']),
-  .theme-dashboard select {
-    min-height: 44px;
   }
 }
 

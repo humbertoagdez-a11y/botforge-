@@ -24,7 +24,6 @@ import OnboardingGuide, { ONBOARDING_KEY } from '@/components/OnboardingGuide';
 import { api, type Bot as BotType, type AccountStats, type ActivityEvent } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { formatDate } from '@/lib/utils';
-import { Z } from '@/lib/z-index';
 
 function AnimatedNumber({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
@@ -341,24 +340,15 @@ export default function DashboardPage() {
             Gestioná tus asistentes de IA
           </p>
         </div>
-        <Button asChild data-onboarding="new-bot" className="hidden md:inline-flex">
+        {/* En movil vive en el flujo del header (unico flotante: el asistente);
+            en desktop conserva su tamano normal */}
+        <Button asChild data-onboarding="new-bot" className="shrink-0">
           <Link href="/dashboard/bots/new">
             <Plus className="h-4 w-4" />
             Nuevo bot
           </Link>
         </Button>
       </div>
-
-      {/* FAB para crear bot en movil (posicion escalonada: el trigger global
-          del asistente vive en bottom-20 right-4) */}
-      <Link
-        href="/dashboard/bots/new"
-        aria-label="Nuevo bot"
-        style={{ zIndex: Z.fab }}
-        className="mb-safe fixed bottom-6 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#7C3AED] text-white shadow-lg shadow-violet-900/50 transition-transform active:scale-95 md:hidden"
-      >
-        <Plus className="h-6 w-6" />
-      </Link>
 
       <OnboardingGuide open={showGuide} onFinish={() => setShowGuide(false)} />
 

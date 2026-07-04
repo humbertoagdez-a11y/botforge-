@@ -78,7 +78,7 @@ function PersonalidadCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'relative flex max-h-[140px] flex-col items-center gap-1.5 overflow-hidden rounded-xl border p-3 text-center transition-all hover:border-primary/50 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:max-h-none sm:gap-2 sm:p-4',
+        'relative flex w-full flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-all hover:border-primary/50 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:gap-2 sm:p-4',
         selected
           ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary'
           : 'border-border bg-card',
@@ -162,7 +162,7 @@ export default function NewBotPage() {
   }
 
   return (
-    <div className={cn('mx-auto p-6 md:p-8', step === 1 ? 'max-w-3xl' : 'max-w-xl')}>
+    <div className={cn('mx-auto w-full max-w-full overflow-x-hidden px-4 py-6 sm:px-6 md:p-8', step === 1 ? 'md:max-w-3xl' : 'md:max-w-xl')}>
       <Button
         variant="ghost"
         size="sm"
@@ -197,7 +197,7 @@ export default function NewBotPage() {
                   defaultValue={step1Data.language}
                   onValueChange={(v) => form1.setValue('language', v as 'es' | 'en' | 'pt')}
                 >
-                  <SelectTrigger className="min-h-[44px] sm:min-h-0">
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="theme-dashboard">
@@ -209,7 +209,7 @@ export default function NewBotPage() {
               </div>
             </CardContent>
             <div className="flex flex-col p-6 pt-0 sm:flex-row sm:justify-end">
-              <Button type="submit" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto">
+              <Button type="submit" className="w-full sm:w-auto">
                 Siguiente <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -244,7 +244,7 @@ export default function NewBotPage() {
             <Button
               type="button"
               variant="ghost"
-              className="min-h-[44px] w-full gap-1.5 text-muted-foreground sm:min-h-0 sm:w-auto"
+              className="w-full gap-1.5 text-muted-foreground sm:w-auto"
               onClick={skipToStep2}
             >
               <Pencil className="h-4 w-4" />
@@ -254,7 +254,7 @@ export default function NewBotPage() {
               type="button"
               disabled={!selectedPersonalidad}
               onClick={goToStep2WithTemplate}
-              className="min-h-[44px] w-full sm:min-h-0 sm:w-auto"
+              className="w-full sm:w-auto"
             >
               Usar esta personalidad <ArrowRight className="h-4 w-4" />
             </Button>
@@ -301,10 +301,10 @@ export default function NewBotPage() {
               </p>
             </CardContent>
             <div className="flex flex-col-reverse gap-3 p-6 pt-0 sm:flex-row sm:justify-between sm:gap-2">
-              <Button type="button" variant="outline" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto" onClick={() => setStep(1)}>
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep(1)}>
                 <ArrowLeft className="h-4 w-4" /> Cambiar plantilla
               </Button>
-              <Button type="submit" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto">
+              <Button type="submit" className="w-full sm:w-auto">
                 Siguiente <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -346,10 +346,10 @@ export default function NewBotPage() {
             </div>
           </CardContent>
           <div className="flex flex-col-reverse gap-3 p-6 pt-0 sm:flex-row sm:justify-between sm:gap-2">
-            <Button type="button" variant="outline" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto" onClick={() => setStep(2)}>
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep(2)}>
               <ArrowLeft className="h-4 w-4" /> Atrás
             </Button>
-            <Button onClick={handleCreate} disabled={loading} className="min-h-[44px] w-full sm:min-h-0 sm:w-auto">
+            <Button onClick={handleCreate} disabled={loading} className="w-full sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Crear bot
             </Button>

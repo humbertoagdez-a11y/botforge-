@@ -620,7 +620,7 @@ export default function DashboardAssistant(props: Props) {
           type="button"
           onClick={() => store.openAssistant()}
           aria-label="Abrir asistente"
-          className="mb-safe fixed bottom-20 right-4 flex h-14 w-14 items-center justify-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.08] md:bottom-6 md:right-6"
+          className="mb-safe fixed bottom-6 right-4 flex h-14 w-14 items-center justify-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.08] md:right-6"
           style={{
             zIndex: Z.fab,
             background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
