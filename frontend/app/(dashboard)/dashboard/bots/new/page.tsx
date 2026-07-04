@@ -162,7 +162,7 @@ export default function NewBotPage() {
   }
 
   return (
-    <div className={cn('mx-auto w-full max-w-full overflow-x-hidden px-4 py-6 sm:px-6 md:p-8', step === 1 ? 'md:max-w-3xl' : 'md:max-w-xl')}>
+    <div className={cn('mx-auto w-full max-w-full px-4 py-6 sm:px-6 md:p-8', step === 1 ? 'md:max-w-3xl' : 'md:max-w-xl')}>
       <Button
         variant="ghost"
         size="sm"
@@ -227,7 +227,7 @@ export default function NewBotPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 max-md:pb-[120px] sm:grid-cols-4">
             {PERSONALIDADES.map((p) => (
               <PersonalidadCard
                 key={p.id}
@@ -240,7 +240,7 @@ export default function NewBotPage() {
             ))}
           </div>
 
-          <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+          <div className="flex flex-col-reverse gap-3 border-t pt-4 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:-mx-4 max-md:bg-[#09090F] max-md:px-4 max-md:[padding-bottom:max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:gap-2">
             <Button
               type="button"
               variant="ghost"
