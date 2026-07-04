@@ -17,7 +17,9 @@ const createBotSchema = z.object({
   language: z.enum(['es', 'en', 'pt']).default('es'),
 });
 
-const updateBotSchema = createBotSchema.partial();
+const updateBotSchema = createBotSchema.partial().extend({
+  isActive: z.boolean().optional(),
+});
 
 async function getOwnedBot(botId: string, userId: string) {
   const bot = await prisma.bot.findUnique({ where: { id: botId } });

@@ -1,0 +1,87 @@
+'use client';
+
+import { Settings } from 'lucide-react';
+
+export interface UIComponent {
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_image';
+  title: string;
+  description: string;
+  data: Record<string, unknown>;
+  isActive: boolean;
+  actionLabel: string;
+  undoLabel: string;
+  undoPayload?: Record<string, unknown>;
+  applyPayload?: Record<string, unknown>;
+  /** true cuando la accion ya no puede re-aplicarse (ej: documento borrado) */
+  disabled?: boolean;
+}
+
+interface Props {
+  component: UIComponent;
+  onToggle: () => void;
+}
+
+export default function GenerativeUICard({ component, onToggle }: Props) {
+  return (
+    <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0A0A1A]">
+      {/* Header estilo terminal */}
+      <div className="flex items-center gap-2 border-b border-white/[0.06] bg-[#111128] px-3 py-2">
+        <span className="h-2 w-2 rounded-full bg-red-500/80" />
+        <span className="h-2 w-2 rounded-full bg-yellow-500/80" />
+        <span className="h-2 w-2 rounded-full bg-green-500/80" />
+        <span className="ml-1 font-mono text-[10px] text-cyan-400/60">botforge.execute()</span>
+        <span className="ml-auto flex items-center gap-1">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          <span className="font-mono text-[9px] font-semibold tracking-wider text-emerald-400">LIVE</span>
+        </span>
+      </div>
+
+      {/* Cuerpo */}
+      <div className="p-4">
+        <div className="flex items-start gap-2.5">
+          <Settings className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">{component.title}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-white/50">{component.description}</p>
+          </div>
+        </div>
+
+        {/* Preview de datos en formato codigo */}
+        <div className="mt-3 rounded-lg bg-black/40 p-3 font-mono text-[10px] leading-relaxed">
+          {Object.entries(component.data).map(([key, value]) => (
+            <div key={key} className="break-all">
+              <span className="text-violet-400">{key}</span>
+              <span className="text-white/30">: </span>
+              <span className="text-emerald-300">{String(value)}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Toggle */}
+        <div className="mt-3 flex items-center justify-between">
+          <span className={`text-xs ${component.isActive ? 'text-white/70' : 'text-white/35'}`}>
+            {component.isActive ? component.actionLabel : component.undoLabel}
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={component.isActive}
+            aria-label={component.isActive ? component.undoLabel : component.actionLabel}
+            disabled={component.disabled}
+            onClick={onToggle}
+            className={`relative h-5 w-10 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40 ${
+              component.isActive ? 'bg-cyan-500' : 'bg-white/20'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
+                component.isActive ? 'translate-x-[22px]' : 'translate-x-0.5'
+              }`}
+              style={{ willChange: 'transform' }}
+            />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

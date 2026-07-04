@@ -185,6 +185,31 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'update_bot_personality',
+    description: 'Actualiza las instrucciones o personalidad del bot. Usá esto cuando el usuario pida cambiar cómo habla el bot, su tono o sus instrucciones. Siempre generará un componente UI con opción de deshacer.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+        personality: { type: 'string', description: 'Nuevas instrucciones completas del bot' },
+        changeDescription: { type: 'string', description: 'Descripción del cambio en máximo 1 línea' },
+      },
+      required: ['botId', 'personality', 'changeDescription'],
+    },
+  },
+  {
+    name: 'toggle_bot_active',
+    description: 'Activa o pausa un bot.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+        isActive: { type: 'boolean', description: 'true para activar, false para pausar' },
+      },
+      required: ['botId', 'isActive'],
+    },
+  },
+  {
     name: 'request_plan_upgrade',
     description: 'Inicia el proceso de upgrade de plan. Muestra info del plan objetivo y link de pago.',
     input_schema: {
@@ -256,6 +281,15 @@ const toolInputSchemas = {
   }),
   delete_document: z.object({ documentId: z.string().min(1), botId: z.string().min(1) }),
   request_plan_upgrade: z.object({ targetPlan: z.enum(['STARTER', 'PRO', 'AGENCY']) }),
+  update_bot_personality: z.object({
+    botId: z.string().min(1),
+    personality: z.string().min(10).max(5000),
+    changeDescription: z.string().min(1).max(200),
+  }),
+  toggle_bot_active: z.object({
+    botId: z.string().min(1),
+    isActive: z.boolean(),
+  }),
 } as const;
 
 type ToolName = keyof typeof toolInputSchemas;
@@ -269,11 +303,29 @@ async function getOwnedBot(botId: string, userId: string) {
   return bot;
 }
 
+/** Componente de Generative UI que el frontend renderiza en el chat */
+interface GenUIComponent {
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_image';
+  title: string;
+  description: string;
+  data: Record<string, unknown>;
+  isActive: boolean;
+  actionLabel: string;
+  undoLabel: string;
+  undoPayload?: Record<string, unknown>;
+  applyPayload?: Record<string, unknown>;
+}
+
+interface ToolExecution {
+  result: unknown;
+  ui?: GenUIComponent;
+}
+
 async function executeToolCall(
   toolName: string,
   rawInput: unknown,
   userId: string,
-): Promise<unknown> {
+): Promise<ToolExecution> {
   if (!(toolName in toolInputSchemas)) {
     throw new Error(`Herramienta desconocida: ${toolName}`);
   }
@@ -308,21 +360,23 @@ async function executeToolCall(
         }),
       ]);
       return {
-        bot: {
-          id: bot.id,
-          name: bot.name,
-          language: bot.language,
-          isActive: bot.isActive,
-          whatsappNumber: bot.whatsappNumber,
-          personality: bot.personality,
+        result: {
+          bot: {
+            id: bot.id,
+            name: bot.name,
+            language: bot.language,
+            isActive: bot.isActive,
+            whatsappNumber: bot.whatsappNumber,
+            personality: bot.personality,
+          },
+          documents: docs,
+          whatsappConnection: connections,
+          recentConversations: conversations.map((c) => ({
+            channel: c.channel,
+            messages: c._count.messages,
+            lastMessage: c.messages[0]?.content.slice(0, 120) ?? null,
+          })),
         },
-        documents: docs,
-        whatsappConnection: connections,
-        recentConversations: conversations.map((c) => ({
-          channel: c.channel,
-          messages: c._count.messages,
-          lastMessage: c.messages[0]?.content.slice(0, 120) ?? null,
-        })),
       };
     }
 
@@ -334,11 +388,15 @@ async function executeToolCall(
       if (input.personality !== undefined) data.personality = input.personality;
       if (input.language !== undefined) data.language = input.language;
       if (input.isActive !== undefined) data.isActive = input.isActive;
-      if (Object.keys(data).length === 0) return { updated: false, reason: 'No se indicó ningún cambio' };
+      if (Object.keys(data).length === 0) {
+        return { result: { updated: false, reason: 'No se indicó ningún cambio' } };
+      }
       const updated = await prisma.bot.update({ where: { id: input.botId }, data });
       return {
-        updated: true,
-        bot: { id: updated.id, name: updated.name, language: updated.language, isActive: updated.isActive },
+        result: {
+          updated: true,
+          bot: { id: updated.id, name: updated.name, language: updated.language, isActive: updated.isActive },
+        },
       };
     }
 
@@ -380,19 +438,43 @@ async function executeToolCall(
       }
 
       await documentQueue.add({ documentId: doc.id });
-      return { uploaded: true, documentId: doc.id, name: doc.name, status: doc.status, note: 'El documento se está procesando; en 1-2 minutos queda listo.' };
+      return {
+        result: {
+          uploaded: true,
+          documentId: doc.id,
+          name: doc.name,
+          status: doc.status,
+          note: 'El documento se está procesando; en 1-2 minutos queda listo.',
+        },
+        ui: {
+          kind: 'instructivo_preview',
+          title: 'Instructivo subido',
+          description: `Documento "${doc.name}" en procesamiento`,
+          data: {
+            archivo: doc.name,
+            estado: 'PROCESANDO',
+            preview: `${input.content.slice(0, 100)}...`,
+          },
+          isActive: true,
+          actionLabel: 'Documento activo',
+          undoLabel: 'Eliminar documento',
+          undoPayload: { botId: bot.id, documentId: doc.id },
+        },
+      };
     }
 
     case 'disconnect_whatsapp': {
       const { botId } = parsed.data as z.infer<typeof toolInputSchemas.disconnect_whatsapp>;
       const bot = await getOwnedBot(botId, userId);
-      if (!bot.whatsappNumber) return { disconnected: false, reason: 'El bot no tiene WhatsApp conectado' };
+      if (!bot.whatsappNumber) {
+        return { result: { disconnected: false, reason: 'El bot no tiene WhatsApp conectado' } };
+      }
       await prisma.whatsAppConnection.updateMany({
         where: { botId: bot.id, status: 'ACTIVE' },
         data: { status: 'EXPIRED' },
       });
       await prisma.bot.update({ where: { id: bot.id }, data: { whatsappNumber: null } });
-      return { disconnected: true, previousNumber: bot.whatsappNumber };
+      return { result: { disconnected: true, previousNumber: bot.whatsappNumber } };
     }
 
     case 'get_account_stats': {
@@ -415,15 +497,17 @@ async function executeToolCall(
 
       const limits = LIMITS[user.plan];
       return {
-        plan: user.plan,
-        monthlyLimit: limits.monthlyMessages,
-        messagesUsedThisMonth: user.messagesUsedThisMonth,
-        messagesToday,
-        monthlyMessages,
-        totalMessages,
-        totalBots,
-        totalConversations,
-        readyDocs,
+        result: {
+          plan: user.plan,
+          monthlyLimit: limits.monthlyMessages,
+          messagesUsedThisMonth: user.messagesUsedThisMonth,
+          messagesToday,
+          monthlyMessages,
+          totalMessages,
+          totalBots,
+          totalConversations,
+          readyDocs,
+        },
       };
     }
 
@@ -444,15 +528,17 @@ async function executeToolCall(
         },
       });
       return {
-        page,
-        conversations: conversations.map((c) => ({
-          id: c.id,
-          bot: c.bot.name,
-          channel: c.channel,
-          messages: c._count.messages,
-          updatedAt: c.updatedAt,
-          preview: c.messages[0]?.content.slice(0, 120) ?? null,
-        })),
+        result: {
+          page,
+          conversations: conversations.map((c) => ({
+            id: c.id,
+            bot: c.bot.name,
+            channel: c.channel,
+            messages: c._count.messages,
+            updatedAt: c.updatedAt,
+            preview: c.messages[0]?.content.slice(0, 120) ?? null,
+          })),
+        },
       };
     }
 
@@ -475,7 +561,7 @@ async function executeToolCall(
         input.event === 'human_requested'
           ? 'Notificación activa: cuando un cliente pida hablar con una persona, llega un email.'
           : 'Configuración guardada. Este tipo de evento se activará próximamente.';
-      return { configured: true, event: config.event, email: config.email, note };
+      return { result: { configured: true, event: config.event, email: config.email, note } };
     }
 
     case 'create_new_bot': {
@@ -491,7 +577,9 @@ async function executeToolCall(
       const bot = await prisma.bot.create({
         data: { id: uuidv4(), userId, name: input.name, language: input.language, personality: input.personality },
       });
-      return { created: true, bot: { id: bot.id, name: bot.name, language: bot.language }, url: `/dashboard/bots/${bot.id}` };
+      return {
+        result: { created: true, bot: { id: bot.id, name: bot.name, language: bot.language }, url: `/dashboard/bots/${bot.id}` },
+      };
     }
 
     case 'delete_document': {
@@ -506,7 +594,7 @@ async function executeToolCall(
       await deleteChunksByIds(chunks.map((c) => c.pineconeId));
       try { await fs.unlink(doc.filePath); } catch { /* puede no existir */ }
       await prisma.document.delete({ where: { id: doc.id } });
-      return { deleted: true, name: doc.name };
+      return { result: { deleted: true, name: doc.name } };
     }
 
     case 'request_plan_upgrade': {
@@ -517,10 +605,59 @@ async function executeToolCall(
         AGENCY: { label: 'Agencia', price: 'Gs. 750.000/mes', incluye: 'Bots ilimitados, 100.000 mensajes/mes, documentos ilimitados, soporte prioritario' },
       }[input.targetPlan];
       return {
-        targetPlan: input.targetPlan,
-        ...info,
-        checkoutUrl: '/pricing',
-        note: 'El pago se completa desde /pricing con el botón Contratar del plan elegido.',
+        result: {
+          targetPlan: input.targetPlan,
+          ...info,
+          checkoutUrl: '/pricing',
+          note: 'El pago se completa desde /pricing con el botón Contratar del plan elegido.',
+        },
+      };
+    }
+
+    case 'update_bot_personality': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.update_bot_personality>;
+      const bot = await getOwnedBot(input.botId, userId);
+      const previousPersonality = bot.personality;
+      await prisma.bot.update({ where: { id: bot.id }, data: { personality: input.personality } });
+      return {
+        result: { updated: true, botId: bot.id, changeDescription: input.changeDescription },
+        ui: {
+          kind: 'config_change',
+          title: 'Personalidad actualizada',
+          description: input.changeDescription,
+          data: {
+            bot: bot.name,
+            preview: `${input.personality.slice(0, 100)}...`,
+          },
+          isActive: true,
+          actionLabel: 'Cambio aplicado',
+          undoLabel: 'Deshacer cambio',
+          undoPayload: { botId: bot.id, personality: previousPersonality },
+          applyPayload: { botId: bot.id, personality: input.personality },
+        },
+      };
+    }
+
+    case 'toggle_bot_active': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.toggle_bot_active>;
+      const bot = await getOwnedBot(input.botId, userId);
+      const updated = await prisma.bot.update({
+        where: { id: bot.id },
+        data: { isActive: input.isActive },
+      });
+      return {
+        result: { botId: bot.id, isActive: updated.isActive },
+        ui: {
+          kind: 'bot_status',
+          title: updated.isActive ? 'Bot activado' : 'Bot pausado',
+          description: `${bot.name} está ${updated.isActive ? 'respondiendo mensajes' : 'en pausa'}`,
+          data: { bot: bot.name, estado: updated.isActive ? 'ACTIVO' : 'PAUSADO' },
+          isActive: updated.isActive,
+          actionLabel: updated.isActive ? 'Bot activo' : 'Bot pausado',
+          undoLabel: updated.isActive ? 'Pausar bot' : 'Activar bot',
+          undoPayload: { botId: bot.id, isActive: !updated.isActive },
+          applyPayload: { botId: bot.id, isActive: updated.isActive },
+        },
       };
     }
   }
@@ -683,9 +820,11 @@ router.post(
         for (const tu of toolUses) {
           send({ type: 'tool_start', tool: tu.name, input: tu.input });
           try {
-            const result = await executeToolCall(tu.name, tu.input, userId);
-            send({ type: 'tool_end', tool: tu.name, success: true, result });
-            results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(result) });
+            const exec = await executeToolCall(tu.name, tu.input, userId);
+            send({ type: 'tool_end', tool: tu.name, success: true, result: exec.result });
+            // Componente interactivo en el chat (Generative UI)
+            if (exec.ui) send({ type: 'generative_ui', component: exec.ui });
+            results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(exec.result) });
           } catch (err) {
             const msg = err instanceof Error ? err.message : 'Error desconocido';
             send({ type: 'tool_end', tool: tu.name, success: false, result: msg });

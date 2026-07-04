@@ -280,7 +280,7 @@ export const api = {
     get: (id: string) => request<Bot>(`/api/v1/bots/${id}`),
     create: (data: { name: string; personality?: string; language: string }) =>
       request<Bot>('/api/v1/bots', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: Partial<{ name: string; personality: string; language: string }>) =>
+    update: (id: string, data: Partial<{ name: string; personality: string; language: string; isActive: boolean }>) =>
       request<Bot>(`/api/v1/bots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<{ ok: boolean }>(`/api/v1/bots/${id}`, { method: 'DELETE' }),

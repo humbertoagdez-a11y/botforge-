@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore, useAssistantStore } from '@/lib/store';
+import { api } from '@/lib/api';
+import GenerativeUICard, { type UIComponent } from '@/components/GenerativeUICard';
 
 const INSTRUCTIVO_MARKER = '===INSTRUCTIVO_LISTO===';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -70,6 +72,8 @@ interface ChatMessage {
   confirm?: ConfirmData;
   /** Content blocks crudos del turno assistant pendiente de confirmación */
   blocks?: unknown[];
+  /** Componente interactivo de Generative UI */
+  uiComponent?: UIComponent;
   ts: number;
 }
 
@@ -390,6 +394,7 @@ export default function DashboardAssistant(props: Props) {
             toolUseId?: string;
             message?: string;
             blocks?: unknown[];
+            component?: UIComponent;
           };
           try {
             ev = JSON.parse(line.slice(6));
@@ -438,6 +443,21 @@ export default function DashboardAssistant(props: Props) {
                 }
                 return { ...last, execSteps: steps };
               });
+              break;
+
+            case 'generative_ui':
+              // Se inserta ANTES del placeholder para que el stream de texto
+              // siga actualizando el ultimo mensaje
+              if (ev.component) {
+                const uiMsg: ChatMessage = {
+                  id: newId('ui'),
+                  role: 'assistant',
+                  content: '',
+                  uiComponent: { ...ev.component, isActive: true },
+                  ts: Date.now(),
+                };
+                setMessages((prev) => [...prev.slice(0, -1), uiMsg, prev[prev.length - 1]]);
+              }
               break;
 
             case 'assistant_blocks':
@@ -543,6 +563,44 @@ export default function DashboardAssistant(props: Props) {
     });
   }
 
+  /** Toggle de un componente Generative UI: deshacer o re-aplicar el cambio */
+  async function handleToggleUI(messageId: string, component: UIComponent) {
+    const goingOff = component.isActive;
+    const payload = goingOff ? component.undoPayload : component.applyPayload;
+    if (!payload) return;
+
+    try {
+      const botIdTarget = String(payload.botId ?? '');
+      if (component.kind === 'config_change') {
+        await api.bots.update(botIdTarget, { personality: String(payload.personality ?? '') });
+      } else if (component.kind === 'bot_status') {
+        await api.bots.update(botIdTarget, { isActive: Boolean(payload.isActive) });
+      } else if (component.kind === 'instructivo_preview') {
+        // Solo deshacer (borrar el documento); no se puede re-crear desde aca
+        if (!goingOff) return;
+        await api.documents.delete(botIdTarget, String(payload.documentId ?? ''));
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId && m.uiComponent
+            ? {
+                ...m,
+                uiComponent: {
+                  ...m.uiComponent,
+                  isActive: !m.uiComponent.isActive,
+                  ...(component.kind === 'instructivo_preview' && goingOff ? { disabled: true } : {}),
+                },
+              }
+            : m,
+        ),
+      );
+      toast.success(goingOff ? 'Cambio deshecho' : 'Cambio re-aplicado');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo aplicar el cambio');
+    }
+  }
+
   /** Cancelar: descarta el turno pendiente (nunca viajo al backend como hecho) */
   function cancelAction(index: number) {
     setMessages((prev) => [
@@ -633,6 +691,26 @@ export default function DashboardAssistant(props: Props) {
           {messages.map((m, i) => {
             const isTyping = m.streaming && !m.content && !m.execSteps?.length && m.instructivo === undefined;
             const isUser = m.role === 'user';
+
+            // Componente interactivo de Generative UI
+            if (m.uiComponent) {
+              return (
+                <div key={m.id} className="flex items-end justify-start gap-2">
+                  <Image
+                    src="/asistente-logo.svg"
+                    alt=""
+                    width={24}
+                    height={24}
+                    unoptimized
+                    className="mb-1 h-6 w-6 shrink-0 opacity-70"
+                  />
+                  <GenerativeUICard
+                    component={m.uiComponent}
+                    onToggle={() => void handleToggleUI(m.id, m.uiComponent!)}
+                  />
+                </div>
+              );
+            }
 
             if (isUser) {
               return (
