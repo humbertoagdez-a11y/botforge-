@@ -19,6 +19,17 @@ const INSTRUCTIVO_MARKER = '===INSTRUCTIVO_LISTO===';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
+export const THINKING_MESSAGES = [
+  'Analizando tu consulta...',
+  'Revisando la información del bot...',
+  'Buscando la mejor respuesta...',
+  'Procesando los detalles...',
+  'Consultando el sistema...',
+  'Preparando una respuesta útil...',
+  'Verificando los datos...',
+  'Casi listo...',
+];
+
 const TOOL_LABELS: Record<string, string> = {
   get_bot_details: 'Leyendo configuración del bot...',
   update_bot_config: 'Actualizando configuración...',
@@ -86,13 +97,16 @@ function buildWelcome(botName?: string | null): ChatMessage {
 /** Segunda capa de defensa contra markdown en las respuestas del modelo */
 function sanitizeMarkdown(text: string): string {
   return text
-    .replace(/\*\*(.*?)\*\*/g, '$1') // **negrita**
-    .replace(/\*(.*?)\*/g, '$1') // *itálica*
-    .replace(/__(.*?)__/g, '$1') // __negrita__
-    .replace(/^#{1,6}\s+/gm, '') // # Títulos
-    .replace(/^[-*+]\s+/gm, '• ') // - bullets → punto simple
-    .replace(/`([^`]+)`/g, '$1') // `código`
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // [link](url) → link
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/_{2}([^_]+)_{2}/g, '$1')
+    .replace(/_([^_\n]+)_/g, '$1')
+    .trim();
 }
 
 function splitAccumulated(accumulated: string): { content: string; instructivo?: string } {
@@ -110,6 +124,46 @@ function splitAccumulated(accumulated: string): { content: string; instructivo?:
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─── Indicador de pensamiento con mensajes rotativos ──────────────────────────
+
+export function ThinkingIndicator({ light = false }: { light?: boolean }) {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisible(false);
+      const swap = setTimeout(() => {
+        setIdx((i) => (i + 1) % THINKING_MESSAGES.length);
+        setVisible(true);
+      }, 250);
+      return () => clearTimeout(swap);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5">
+        {[0, 1, 2].map((d) => (
+          <span
+            key={d}
+            className={`h-2 w-2 animate-bounce rounded-full ${light ? 'bg-primary/50' : 'bg-cyan-400/50'}`}
+            style={{ animationDelay: `${d * 160}ms` }}
+          />
+        ))}
+      </div>
+      <span
+        className={`text-xs transition-opacity duration-500 ${visible ? 'opacity-100' : 'opacity-0'} ${
+          light ? 'text-muted-foreground' : 'text-white/50'
+        }`}
+      >
+        {THINKING_MESSAGES[idx]}
+      </span>
+    </div>
+  );
 }
 
 // ─── Terminal de ejecución ────────────────────────────────────────────────────
@@ -616,16 +670,8 @@ export default function DashboardAssistant(props: Props) {
                 />
                 <div className={m.instructivo !== undefined || m.execSteps?.length ? 'min-w-0 flex-1' : 'max-w-[82%]'}>
                   {isTyping ? (
-                    <div className="w-fit rounded-[20px_20px_20px_5px] border border-white/[0.08] bg-white/[0.07] px-5 py-4">
-                      <div className="flex items-center gap-1.5">
-                        {[0, 1, 2].map((d) => (
-                          <span
-                            key={d}
-                            className="h-2 w-2 animate-bounce rounded-full bg-cyan-400/50"
-                            style={{ animationDelay: `${d * 160}ms` }}
-                          />
-                        ))}
-                      </div>
+                    <div className="w-fit rounded-[20px_20px_20px_5px] border border-white/[0.08] bg-white/[0.07] px-4 py-3">
+                      <ThinkingIndicator />
                     </div>
                   ) : (
                     m.content && (

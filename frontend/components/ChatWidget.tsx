@@ -7,6 +7,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
+import { ThinkingIndicator } from './DashboardAssistant';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -179,10 +180,8 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
               )}
             >
               {msg.streaming && msg.content === '' ? (
-                <div className="flex items-center gap-1 py-0.5">
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:120ms]" />
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:240ms]" />
+                <div className="py-0.5">
+                  <ThinkingIndicator light />
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap leading-relaxed">
