@@ -50,6 +50,13 @@
   border-radius: 2px;
 }
 
+/* Safe area de iOS para elementos fijos al fondo */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+}
+
 /* Ocultar scrollbar (tabs con scroll horizontal) */
 .scrollbar-hide {
   scrollbar-width: none;

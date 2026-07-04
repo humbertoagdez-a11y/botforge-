@@ -705,7 +705,7 @@ export default function DashboardAssistant(props: Props) {
         </div>
 
         {/* INPUT AREA */}
-        <div className="shrink-0 border-t border-white/[0.06] bg-black/30 px-4 pb-5 pt-3 backdrop-blur-sm">
+        <div className="pb-safe shrink-0 border-t border-white/[0.06] bg-black/30 px-4 pb-5 pt-3 backdrop-blur-sm">
           {selectedImage && (
             <div className="mb-3 flex items-center gap-2 rounded-2xl bg-white/[0.05] p-2.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}

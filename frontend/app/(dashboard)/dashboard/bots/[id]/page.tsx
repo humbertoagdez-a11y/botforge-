@@ -21,10 +21,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import DocumentUploader, { DocumentRow } from '@/components/DocumentUploader';
 import DocumentDropzone from '@/components/DocumentDropzone';
 import InstructivoWizard from '@/components/InstructivoWizard';
-import DashboardAssistant from '@/components/DashboardAssistant';
 import ChatWidget from '@/components/ChatWidget';
 import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
+import { useAssistantStore } from '@/lib/store';
 
 interface WhatsAppPanelProps {
   bot: BotType;
@@ -106,7 +106,7 @@ export default function BotDetailPage() {
   const [loadingBot, setLoadingBot] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [activeTab, setActiveTab] = useState('documents');
-  const [assistantOpen, setAssistantOpen] = useState(false);
+  const { openAssistant } = useAssistantStore();
 
   const form = useForm<UpdateData>({ resolver: zodResolver(updateSchema) });
 
@@ -188,6 +188,16 @@ export default function BotDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Gestionar con IA en el header (solo movil) */}
+        <button
+          type="button"
+          onClick={() => openAssistant(id, bot.name)}
+          className="mt-3 inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-cyan-400/30 bg-[#111120] px-3.5 py-2 text-xs font-medium text-[#E8E8F0] transition-colors hover:bg-cyan-500/10 md:hidden"
+        >
+          <Image src="/asistente-logo.svg" alt="" width={18} height={18} unoptimized className="h-[18px] w-[18px]" />
+          Gestionar con IA
+        </button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -347,22 +357,16 @@ export default function BotDetailPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Boton flotante: gestionar el bot con el asistente */}
+      {/* Gestionar con IA: FAB solo en desktop (en movil vive en el header
+          para no colisionar con el trigger global del asistente) */}
       <button
         type="button"
-        onClick={() => setAssistantOpen(true)}
-        className="fixed bottom-6 left-6 z-40 flex min-h-[44px] items-center gap-2 rounded-full border border-cyan-400/30 bg-[#111120] py-2 pl-2.5 pr-4 text-sm font-medium text-[#E8E8F0] shadow-lg shadow-cyan-950/30 transition-transform hover:scale-105 md:left-[16.5rem]"
+        onClick={() => openAssistant(id, bot.name)}
+        className="fixed bottom-6 left-[16.5rem] z-40 hidden min-h-[44px] items-center gap-2 rounded-full border border-cyan-400/30 bg-[#111120] py-2 pl-2.5 pr-4 text-sm font-medium text-[#E8E8F0] shadow-lg shadow-cyan-950/30 transition-transform hover:scale-105 md:flex"
       >
         <Image src="/asistente-logo.svg" alt="" width={20} height={20} unoptimized className="h-5 w-5" />
         Gestionar con IA
       </button>
-
-      <DashboardAssistant
-        open={assistantOpen}
-        onClose={() => setAssistantOpen(false)}
-        botId={id}
-        botName={bot.name}
-      />
     </div>
   );
 }

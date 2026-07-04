@@ -78,7 +78,7 @@ function PersonalidadCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'relative flex flex-col items-center gap-2 rounded-xl border p-4 text-center transition-all hover:border-primary/50 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+        'relative flex max-h-[140px] flex-col items-center gap-1.5 overflow-hidden rounded-xl border p-3 text-center transition-all hover:border-primary/50 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:max-h-none sm:gap-2 sm:p-4',
         selected
           ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary'
           : 'border-border bg-card',
@@ -89,10 +89,10 @@ function PersonalidadCard({
           <Check className="h-3 w-3 text-primary-foreground" />
         </span>
       )}
-      <p.icon className="h-12 w-12" />
-      <span className="text-sm font-semibold leading-tight">{p.nombre}</span>
-      <span className="text-xs leading-snug text-muted-foreground">{p.descripcion}</span>
-      <span className="mt-auto rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">
+      <p.icon className="h-9 w-9 sm:h-12 sm:w-12" />
+      <span className="text-xs font-semibold leading-tight sm:text-sm">{p.nombre}</span>
+      <span className="text-[11px] leading-snug text-muted-foreground sm:text-xs">{p.descripcion}</span>
+      <span className="mt-auto hidden rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-violet-400 sm:inline-flex">
         {p.badge}
       </span>
     </button>
@@ -240,11 +240,11 @@ export default function NewBotPage() {
             ))}
           </div>
 
-          <div className="flex items-center justify-between border-t pt-4">
+          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
             <Button
               type="button"
               variant="ghost"
-              className="gap-1.5 text-muted-foreground"
+              className="w-full gap-1.5 text-muted-foreground sm:w-auto"
               onClick={skipToStep2}
             >
               <Pencil className="h-4 w-4" />
@@ -254,6 +254,7 @@ export default function NewBotPage() {
               type="button"
               disabled={!selectedPersonalidad}
               onClick={goToStep2WithTemplate}
+              className="w-full sm:w-auto"
             >
               Usar esta personalidad <ArrowRight className="h-4 w-4" />
             </Button>
@@ -299,11 +300,11 @@ export default function NewBotPage() {
                 El contexto de tus documentos se agrega automáticamente a cada respuesta.
               </p>
             </CardContent>
-            <div className="flex justify-between p-6 pt-0">
-              <Button type="button" variant="outline" onClick={() => setStep(1)}>
+            <div className="flex flex-col-reverse gap-2 p-6 pt-0 sm:flex-row sm:justify-between">
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep(1)}>
                 <ArrowLeft className="h-4 w-4" /> Cambiar plantilla
               </Button>
-              <Button type="submit">
+              <Button type="submit" className="w-full sm:w-auto">
                 Siguiente <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -344,11 +345,11 @@ export default function NewBotPage() {
               </p>
             </div>
           </CardContent>
-          <div className="flex justify-between p-6 pt-0">
-            <Button type="button" variant="outline" onClick={() => setStep(2)}>
+          <div className="flex flex-col-reverse gap-2 p-6 pt-0 sm:flex-row sm:justify-between">
+            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep(2)}>
               <ArrowLeft className="h-4 w-4" /> Atrás
             </Button>
-            <Button onClick={handleCreate} disabled={loading}>
+            <Button onClick={handleCreate} disabled={loading} className="w-full sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Crear bot
             </Button>
