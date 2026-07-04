@@ -10,9 +10,13 @@ import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { LIMITS } from '../middleware/planLimits';
-import { uploadRawToCloudinary } from '../config/cloudinary';
+import twilio from 'twilio';
+import { uploadRawToCloudinary, cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
 import { documentQueue } from '../lib/queue';
 import { deleteChunksByIds } from '../services/pinecone';
+import { searchWeb } from '../services/webSearch';
+import { scrapeUrl } from '../services/webScraper';
+import { downloadFileAsBase64 } from '../services/googleDrive';
 
 const router = Router();
 
@@ -210,6 +214,44 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'search_web',
+    description: 'Busca información actualizada en internet. Usá esto cuando el usuario pregunte por datos que pueden haber cambiado: precios, noticias, información actual, tipo de cambio, clima, etc.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Consulta de búsqueda en español' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'scrape_website',
+    description: 'Extrae el contenido de un sitio web y lo sube como documento de entrenamiento del bot. Usá esto cuando el usuario proporcione la URL de su negocio y quiera que el bot aprenda de ella.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL completa del sitio web' },
+        botId: { type: 'string', description: 'ID del bot donde subir el contenido' },
+      },
+      required: ['url', 'botId'],
+    },
+  },
+  {
+    name: 'send_drive_image',
+    description: 'Busca una imagen en la carpeta de Drive del bot y la manda al cliente de WhatsApp. Usá esto cuando el cliente pida ver un producto específico. Requiere que el bot tenga Google Drive conectado.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+        fileId: { type: 'string', description: 'ID del archivo en Drive' },
+        fileName: { type: 'string' },
+        caption: { type: 'string', description: 'Texto que acompaña la imagen' },
+        clientPhone: { type: 'string', description: 'Número del cliente con prefijo whatsapp:' },
+      },
+      required: ['botId', 'fileId', 'caption', 'clientPhone'],
+    },
+  },
+  {
     name: 'request_plan_upgrade',
     description: 'Inicia el proceso de upgrade de plan. Muestra info del plan objetivo y link de pago.',
     input_schema: {
@@ -289,6 +331,18 @@ const toolInputSchemas = {
   toggle_bot_active: z.object({
     botId: z.string().min(1),
     isActive: z.boolean(),
+  }),
+  search_web: z.object({ query: z.string().min(2).max(400) }),
+  scrape_website: z.object({
+    url: z.string().url().max(500),
+    botId: z.string().min(1),
+  }),
+  send_drive_image: z.object({
+    botId: z.string().min(1),
+    fileId: z.string().min(1).max(200),
+    fileName: z.string().max(200).optional(),
+    caption: z.string().min(1).max(1000),
+    clientPhone: z.string().min(5).max(30),
   }),
 } as const;
 
@@ -659,6 +713,127 @@ async function executeToolCall(
           applyPayload: { botId: bot.id, isActive: updated.isActive },
         },
       };
+    }
+
+    case 'search_web': {
+      const { query } = parsed.data as z.infer<typeof toolInputSchemas.search_web>;
+      const answer = await searchWeb(query);
+      return { result: { query, answer } };
+    }
+
+    case 'scrape_website': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.scrape_website>;
+      const bot = await getOwnedBot(input.botId, userId);
+
+      // Limite de documentos del plan (mismo criterio que upload_instructivo_text)
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      const docCount = await prisma.document.count({ where: { botId: bot.id } });
+      const limit = LIMITS[user.plan].docsPerBot;
+      if (docCount >= limit) {
+        throw new Error(`Límite de documentos alcanzado (${docCount}/${limit} del plan ${user.plan}). Eliminá alguno o mejorá el plan.`);
+      }
+
+      const content = await scrapeUrl(input.url);
+      if (!content) {
+        return { result: { scraped: false, reason: 'No se pudo extraer contenido de esa URL (sitio inaccesible o scraping no configurado).' } };
+      }
+
+      const hostname = new URL(input.url).hostname;
+      const docId = uuidv4();
+      const finalName = `sitio-${hostname.replace(/[^a-zA-Z0-9.-]/g, '-')}.txt`;
+      const filePath = path.join(env.UPLOADS_DIR, `${docId}.txt`);
+      await fs.mkdir(env.UPLOADS_DIR, { recursive: true });
+      await fs.writeFile(filePath, `Contenido extraído de ${input.url}\n\n${content}`, 'utf-8');
+
+      let doc = await prisma.document.create({
+        data: {
+          id: docId,
+          botId: bot.id,
+          name: finalName,
+          mimeType: 'text/plain',
+          filePath,
+          url: input.url,
+          fileSize: Buffer.byteLength(content, 'utf-8'),
+          status: 'PENDING',
+        },
+      });
+
+      const cloudUrl = await uploadRawToCloudinary(filePath, doc.id);
+      if (cloudUrl) {
+        doc = await prisma.document.update({ where: { id: doc.id }, data: { url: cloudUrl } });
+        try { await fs.unlink(filePath); } catch { /* limpieza best-effort */ }
+      }
+
+      await documentQueue.add({ documentId: doc.id });
+      return {
+        result: {
+          scraped: true,
+          documentId: doc.id,
+          name: doc.name,
+          chars: content.length,
+          note: 'El contenido del sitio se está procesando como documento; en 1-2 minutos el bot lo puede usar.',
+        },
+        ui: {
+          kind: 'instructivo_preview',
+          title: 'Sitio web importado',
+          description: `Contenido de ${hostname} en procesamiento`,
+          data: {
+            url: input.url,
+            archivo: doc.name,
+            estado: 'PROCESANDO',
+          },
+          isActive: true,
+          actionLabel: 'Documento activo',
+          undoLabel: 'Eliminar documento',
+          undoPayload: { botId: bot.id, documentId: doc.id },
+        },
+      };
+    }
+
+    case 'send_drive_image': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.send_drive_image>;
+      const bot = await getOwnedBot(input.botId, userId);
+
+      const connection = await prisma.driveConnection.findUnique({ where: { botId: bot.id } });
+      if (!connection?.isActive) {
+        return { result: { sent: false, reason: 'Este bot no tiene Google Drive conectado. Se configura desde el panel del bot.' } };
+      }
+      if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_WHATSAPP_FROM) {
+        return { result: { sent: false, reason: 'Twilio no está configurado en el servidor.' } };
+      }
+      if (!isCloudinaryConfigured()) {
+        return { result: { sent: false, reason: 'Cloudinary no está configurado (necesario para hospedar la imagen).' } };
+      }
+
+      // Solo se puede mandar a clientes con conversacion existente en este bot
+      const to = input.clientPhone.startsWith('whatsapp:') ? input.clientPhone : `whatsapp:${input.clientPhone}`;
+      const conversation = await prisma.conversation.findFirst({
+        where: { botId: bot.id, channelId: to },
+      });
+      if (!conversation) {
+        return { result: { sent: false, reason: `No hay ninguna conversación de este bot con ${to}. Solo se pueden mandar imágenes a clientes existentes.` } };
+      }
+
+      const { data, mimeType } = await downloadFileAsBase64(connection.accessToken, input.fileId);
+      if (!mimeType.startsWith('image/')) {
+        return { result: { sent: false, reason: 'El archivo de Drive no es una imagen.' } };
+      }
+
+      const uploadRes = await cloudinary.uploader.upload(`data:${mimeType};base64,${data}`, {
+        folder: 'botforge/drive-images',
+        resource_type: 'image',
+        public_id: `drive_${input.fileId}`,
+      });
+
+      const twilioClient = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+      await twilioClient.messages.create({
+        from: env.TWILIO_WHATSAPP_FROM,
+        to,
+        body: input.caption,
+        mediaUrl: [uploadRes.secure_url],
+      });
+
+      return { result: { sent: true, file: input.fileName ?? input.fileId, to } };
     }
   }
 }

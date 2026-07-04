@@ -237,8 +237,98 @@ function validateTwilioSignature(req: Request, res: Response, next: NextFunction
 router.post('/webhook', validateTwilioSignature, async (req: Request, res: Response) => {
   const body = req.body as Record<string, string>;
   const from = body.From ?? '';
-  const msgBody = (body.Body ?? '').trim();
+  let msgBody = (body.Body ?? '').trim();
   const fromNumber = from.replace('whatsapp:', '');
+
+  // ── Media entrante: audios (Deepgram) e imagenes (Google Vision) ───────────
+  const mediaType = body.MediaContentType0 ?? '';
+  const mediaUrl = body.MediaUrl0 ?? '';
+  let imageContext = '';
+
+  const twilioAuthHeader =
+    env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN
+      ? `Basic ${Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64')}`
+      : null;
+
+  if (mediaType.startsWith('audio/') && mediaUrl && env.DEEPGRAM_API_KEY && twilioAuthHeader) {
+    try {
+      const audioRes = await fetch(mediaUrl, { headers: { Authorization: twilioAuthHeader } });
+      const audioBuffer = await audioRes.arrayBuffer();
+
+      const dgRes = await fetch(
+        'https://api.deepgram.com/v1/listen?model=nova-3&language=es',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
+            'Content-Type': mediaType,
+          },
+          body: audioBuffer,
+        },
+      );
+      const dgData = (await dgRes.json()) as {
+        results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string }> }> };
+      };
+      const transcript = dgData.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
+
+      if (transcript) {
+        msgBody = transcript;
+        console.log('[deepgram] Audio transcripto:', transcript.slice(0, 120));
+      }
+    } catch (err) {
+      console.warn('[deepgram] Error transcribiendo audio:', err);
+    }
+  }
+
+  if (mediaType.startsWith('image/') && mediaUrl && env.GOOGLE_VISION_API_KEY && twilioAuthHeader) {
+    try {
+      const imgRes = await fetch(mediaUrl, { headers: { Authorization: twilioAuthHeader } });
+      const imgBuffer = await imgRes.arrayBuffer();
+      const base64 = Buffer.from(imgBuffer).toString('base64');
+
+      const visionRes = await fetch(
+        `https://vision.googleapis.com/v1/images:annotate?key=${env.GOOGLE_VISION_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requests: [
+              {
+                image: { content: base64 },
+                features: [
+                  { type: 'TEXT_DETECTION', maxResults: 1 },
+                  { type: 'LABEL_DETECTION', maxResults: 5 },
+                  { type: 'OBJECT_LOCALIZATION', maxResults: 5 },
+                ],
+              },
+            ],
+          }),
+        },
+      );
+      const visionData = (await visionRes.json()) as {
+        responses?: Array<{
+          fullTextAnnotation?: { text?: string };
+          labelAnnotations?: Array<{ description: string }>;
+          localizedObjectAnnotations?: Array<{ name: string }>;
+        }>;
+      };
+      const response = visionData.responses?.[0];
+
+      const text = response?.fullTextAnnotation?.text ?? '';
+      const labels = (response?.labelAnnotations ?? []).map((l) => l.description).join(', ');
+      const objects = (response?.localizedObjectAnnotations ?? []).map((o) => o.name).join(', ');
+
+      imageContext = '[El cliente mandó una imagen.';
+      if (text) imageContext += ` Texto detectado: "${text.slice(0, 200)}".`;
+      if (labels) imageContext += ` Elementos: ${labels}.`;
+      if (objects) imageContext += ` Objetos: ${objects}.`;
+      imageContext += ']';
+
+      console.log('[vision] Imagen analizada:', imageContext.slice(0, 200));
+    } catch (err) {
+      console.warn('[vision] Error analizando imagen:', err);
+    }
+  }
 
   console.log('[webhook] from:', from);
   console.log('[webhook] senderNumber:', from.replace('whatsapp:', ''));
@@ -324,8 +414,13 @@ router.post('/webhook', validateTwilioSignature, async (req: Request, res: Respo
       take: 10,
     });
 
+    // El contexto de la imagen (si hubo) enriquece el mensaje para el RAG
+    const finalMessage = imageContext
+      ? `${imageContext}\n\nMensaje del cliente: ${msgBody}`
+      : msgBody;
+
     await prisma.message.create({
-      data: { id: uuidv4(), conversationId: conversation.id, role: 'USER', content: msgBody },
+      data: { id: uuidv4(), conversationId: conversation.id, role: 'USER', content: finalMessage },
     });
 
     // Notificacion por email si el cliente pide hablar con una persona
@@ -338,7 +433,7 @@ router.post('/webhook', validateTwilioSignature, async (req: Request, res: Respo
       .map((m) => ({ role: m.role.toLowerCase() as 'user' | 'assistant', content: m.content }));
 
     const { content, tokensUsed } = await ragChat(
-      bot.id, bot.name, bot.personality, bot.language, history, msgBody,
+      bot.id, bot.name, bot.personality, bot.language, history, finalMessage,
     );
 
     await prisma.message.create({

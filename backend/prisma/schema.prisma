@@ -81,8 +81,24 @@ model Bot {
   conversations       Conversation[]
   whatsappConnections WhatsAppConnection[]
   notificationConfigs NotificationConfig[]
+  driveConnection     DriveConnection?
 
   @@map("bots")
+}
+
+model DriveConnection {
+  id           String   @id @default(uuid())
+  botId        String   @unique
+  accessToken  String
+  refreshToken String
+  folderName   String   @default("catálogo")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@map("drive_connections")
 }
 
 model NotificationConfig {

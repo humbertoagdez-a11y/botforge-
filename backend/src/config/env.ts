@@ -26,6 +26,12 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),
   CLOUDINARY_API_KEY: z.string().optional().default(''),
   CLOUDINARY_API_SECRET: z.string().optional().default(''),
+  TAVILY_API_KEY: z.string().optional().default(''),
+  FIRECRAWL_API_KEY: z.string().optional().default(''),
+  DEEPGRAM_API_KEY: z.string().optional().default(''),
+  GOOGLE_VISION_API_KEY: z.string().optional().default(''),
+  GOOGLE_CLIENT_ID: z.string().optional().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
   // URL publica del backend: la usa la validacion de firma de Twilio.
