@@ -197,7 +197,7 @@ export default function NewBotPage() {
                   defaultValue={step1Data.language}
                   onValueChange={(v) => form1.setValue('language', v as 'es' | 'en' | 'pt')}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="min-h-[44px] sm:min-h-0">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="theme-dashboard">
@@ -208,8 +208,8 @@ export default function NewBotPage() {
                 </Select>
               </div>
             </CardContent>
-            <div className="flex justify-end p-6 pt-0">
-              <Button type="submit">
+            <div className="flex flex-col p-6 pt-0 sm:flex-row sm:justify-end">
+              <Button type="submit" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto">
                 Siguiente <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -240,11 +240,11 @@ export default function NewBotPage() {
             ))}
           </div>
 
-          <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
             <Button
               type="button"
               variant="ghost"
-              className="w-full gap-1.5 text-muted-foreground sm:w-auto"
+              className="min-h-[44px] w-full gap-1.5 text-muted-foreground sm:min-h-0 sm:w-auto"
               onClick={skipToStep2}
             >
               <Pencil className="h-4 w-4" />
@@ -254,7 +254,7 @@ export default function NewBotPage() {
               type="button"
               disabled={!selectedPersonalidad}
               onClick={goToStep2WithTemplate}
-              className="w-full sm:w-auto"
+              className="min-h-[44px] w-full sm:min-h-0 sm:w-auto"
             >
               Usar esta personalidad <ArrowRight className="h-4 w-4" />
             </Button>
@@ -300,11 +300,11 @@ export default function NewBotPage() {
                 El contexto de tus documentos se agrega automáticamente a cada respuesta.
               </p>
             </CardContent>
-            <div className="flex flex-col-reverse gap-2 p-6 pt-0 sm:flex-row sm:justify-between">
-              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep(1)}>
+            <div className="flex flex-col-reverse gap-3 p-6 pt-0 sm:flex-row sm:justify-between sm:gap-2">
+              <Button type="button" variant="outline" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto" onClick={() => setStep(1)}>
                 <ArrowLeft className="h-4 w-4" /> Cambiar plantilla
               </Button>
-              <Button type="submit" className="w-full sm:w-auto">
+              <Button type="submit" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto">
                 Siguiente <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -345,11 +345,11 @@ export default function NewBotPage() {
               </p>
             </div>
           </CardContent>
-          <div className="flex flex-col-reverse gap-2 p-6 pt-0 sm:flex-row sm:justify-between">
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep(2)}>
+          <div className="flex flex-col-reverse gap-3 p-6 pt-0 sm:flex-row sm:justify-between sm:gap-2">
+            <Button type="button" variant="outline" className="min-h-[44px] w-full sm:min-h-0 sm:w-auto" onClick={() => setStep(2)}>
               <ArrowLeft className="h-4 w-4" /> Atrás
             </Button>
-            <Button onClick={handleCreate} disabled={loading} className="w-full sm:w-auto">
+            <Button onClick={handleCreate} disabled={loading} className="min-h-[44px] w-full sm:min-h-0 sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Crear bot
             </Button>

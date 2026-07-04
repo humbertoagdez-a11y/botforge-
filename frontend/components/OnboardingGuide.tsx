@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { Z } from '@/lib/z-index';
 
 export const ONBOARDING_KEY = 'botforge_onboarding_done';
 
@@ -116,7 +117,7 @@ export default function OnboardingGuide({ open, onFinish }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-[70]">
+    <div style={{ zIndex: Z.toast }} className="fixed inset-0">
       {/* Overlay + spotlight: el box-shadow gigante oscurece todo menos el recorte */}
       {hasSpotlight && rect ? (
         <div

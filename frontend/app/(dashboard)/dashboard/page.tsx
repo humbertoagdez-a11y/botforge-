@@ -24,6 +24,7 @@ import OnboardingGuide, { ONBOARDING_KEY } from '@/components/OnboardingGuide';
 import { api, type Bot as BotType, type AccountStats, type ActivityEvent } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { formatDate } from '@/lib/utils';
+import { Z } from '@/lib/z-index';
 
 function AnimatedNumber({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
@@ -353,7 +354,8 @@ export default function DashboardPage() {
       <Link
         href="/dashboard/bots/new"
         aria-label="Nuevo bot"
-        className="fixed bottom-6 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#7C3AED] text-white shadow-lg shadow-violet-900/50 transition-transform active:scale-95 md:hidden"
+        style={{ zIndex: Z.fab }}
+        className="mb-safe fixed bottom-6 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#7C3AED] text-white shadow-lg shadow-violet-900/50 transition-transform active:scale-95 md:hidden"
       >
         <Plus className="h-6 w-6" />
       </Link>

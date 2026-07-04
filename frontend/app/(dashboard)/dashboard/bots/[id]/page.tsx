@@ -25,6 +25,7 @@ import ChatWidget from '@/components/ChatWidget';
 import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
 import { useAssistantStore } from '@/lib/store';
+import { Z } from '@/lib/z-index';
 
 interface WhatsAppPanelProps {
   bot: BotType;
@@ -362,7 +363,8 @@ export default function BotDetailPage() {
       <button
         type="button"
         onClick={() => openAssistant(id, bot.name)}
-        className="fixed bottom-6 left-[16.5rem] z-40 hidden min-h-[44px] items-center gap-2 rounded-full border border-cyan-400/30 bg-[#111120] py-2 pl-2.5 pr-4 text-sm font-medium text-[#E8E8F0] shadow-lg shadow-cyan-950/30 transition-transform hover:scale-105 md:flex"
+        style={{ zIndex: Z.fab }}
+        className="fixed bottom-6 left-[16.5rem] hidden min-h-[44px] items-center gap-2 rounded-full border border-cyan-400/30 bg-[#111120] py-2 pl-2.5 pr-4 text-sm font-medium text-[#E8E8F0] shadow-lg shadow-cyan-950/30 transition-transform hover:scale-105 md:flex"
       >
         <Image src="/asistente-logo.svg" alt="" width={20} height={20} unoptimized className="h-5 w-5" />
         Gestionar con IA

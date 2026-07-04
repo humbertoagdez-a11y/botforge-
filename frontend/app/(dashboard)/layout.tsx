@@ -9,6 +9,7 @@ import DashboardAssistant from '@/components/DashboardAssistant';
 import TechBackground from '@/components/TechBackground';
 import { useAuthStore } from '@/lib/store';
 import { refreshSession } from '@/lib/api';
+import { Z } from '@/lib/z-index';
 
 const REFRESH_MARGIN_MS = 2 * 60 * 1000;
 
@@ -74,10 +75,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Overlay del drawer en movil */}
+      {/* Overlay del drawer en movil (justo debajo del sidebar) */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+          style={{ zIndex: Z.sidebar - 1 }}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}

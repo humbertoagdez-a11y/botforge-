@@ -15,6 +15,7 @@ import {
 import { toast } from 'sonner';
 import { useAuthStore, useAssistantStore } from '@/lib/store';
 import { api } from '@/lib/api';
+import { Z } from '@/lib/z-index';
 import GenerativeUICard, { type UIComponent } from '@/components/GenerativeUICard';
 
 const INSTRUCTIVO_MARKER = '===INSTRUCTIVO_LISTO===';
@@ -619,8 +620,9 @@ export default function DashboardAssistant(props: Props) {
           type="button"
           onClick={() => store.openAssistant()}
           aria-label="Abrir asistente"
-          className="fixed bottom-20 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.08] md:bottom-6 md:right-6"
+          className="mb-safe fixed bottom-20 right-4 flex h-14 w-14 items-center justify-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.08] md:bottom-6 md:right-6"
           style={{
+            zIndex: Z.fab,
             background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
             boxShadow: '0 8px 32px rgba(124,58,237,0.4)',
           }}
@@ -634,14 +636,16 @@ export default function DashboardAssistant(props: Props) {
       <div
         aria-hidden
         onClick={close}
-        className={`fixed inset-0 z-[49] bg-black/65 backdrop-blur-sm transition-opacity duration-300 ${
+        style={{ zIndex: Z.overlay }}
+        className={`fixed inset-0 bg-black/65 backdrop-blur-sm transition-opacity duration-300 ${
           isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       />
 
       {/* ── PANEL: sheet desde abajo en movil, drawer desde la derecha en desktop ── */}
       <div
-        className={`fixed inset-0 z-50 flex flex-col border-l border-white/[0.08] bg-[#070711] transition-transform duration-[320ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] md:inset-y-0 md:left-auto md:right-0 md:w-[440px] ${
+        style={{ zIndex: Z.assistant }}
+        className={`fixed inset-0 flex flex-col border-l border-white/[0.08] bg-[#070711] transition-transform duration-[320ms] [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] md:inset-y-0 md:left-auto md:right-0 md:w-[440px] ${
           isOpen
             ? 'translate-x-0 translate-y-0'
             : 'pointer-events-none translate-y-full md:translate-x-full md:translate-y-0'
@@ -901,7 +905,8 @@ export default function DashboardAssistant(props: Props) {
       {/* Modal de imagen completa */}
       {imageModal && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-6"
+          style={{ zIndex: Z.modal }}
+          className="fixed inset-0 flex items-center justify-center bg-black/85 p-6"
           onClick={() => setImageModal(null)}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}

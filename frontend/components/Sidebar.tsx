@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { BarChart2, LayoutDashboard, LogOut, MessageSquare, UserCircle, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Z } from '@/lib/z-index';
 import { useAuthStore, useAssistantStore } from '@/lib/store';
 import { api, type AccountStats } from '@/lib/api';
 import { Button } from './ui/button';
@@ -83,12 +84,13 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   return (
     <aside
+      style={{ zIndex: Z.sidebar }}
       className={cn(
         // Base: drawer en movil (fixed, glassmorphism), fijo en desktop
-        'fixed inset-y-0 left-0 z-50 flex h-full w-72 flex-col border-r bg-black/80 backdrop-blur-xl',
+        'fixed inset-y-0 left-0 flex h-full w-72 flex-col border-r bg-black/80 backdrop-blur-xl',
         'transform transition-transform duration-300',
         isOpen ? 'translate-x-0' : '-translate-x-full',
-        'md:relative md:z-auto md:w-60 md:translate-x-0 md:bg-[#07070E] md:backdrop-blur-none md:transition-none',
+        'md:relative md:w-60 md:translate-x-0 md:bg-[#07070E] md:backdrop-blur-none md:transition-none',
       )}
     >
       <div className="group flex h-14 items-center gap-2 border-b px-4">
