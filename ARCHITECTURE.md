@@ -1,7 +1,7 @@
 # ARCHITECTURE.md — BotForge
 
 Documento maestro de contexto. Actualizar al final de cada sesión.
-Última actualización: 2 de julio de 2026
+Última actualización: 4 de julio de 2026 (arquitectura de agentes dual)
 
 ---
 
@@ -216,6 +216,9 @@ Prefijo común: `/api/v1`. Todas responden `{ data, error, meta }`.
 | POST | /assistant/chat | No (20/min por IP) | Aria (landing), SSE |
 | POST | /assistant/dashboard | Sí (20/min por usuario) | Asistente agéntico con function calling (10 tools), SSE con eventos text/tool_start/tool_end/confirm_required/done, imágenes base64, confirmación stateless de acciones destructivas via `confirmedToolUseIds` |
 | POST | /public/bots/:botId/chat/stream | No | Chat SSE del widget embebible; respeta límite mensual del dueño del bot |
+| POST | /drive/bots/:botId/connect | Sí | Guarda DriveConnection (accessToken/refreshToken/folderName) verificando acceso real a la carpeta |
+| DELETE | /drive/bots/:botId/disconnect | Sí | Elimina la DriveConnection del bot |
+| GET | /drive/bots/:botId/files | Sí | Lista archivos de la carpeta de Drive configurada |
 | POST | /test/upload | No (solo dev) | Upload de prueba |
 
 Proxies de Next.js (mismo dominio del frontend): `POST /api/assistant` → assistant/chat, `POST /api/assistant/dashboard` → assistant/dashboard (reenvía Authorization).
@@ -377,6 +380,12 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 | FRONTEND_URL | No (default localhost:3000) | CORS + links en emails + redirects Stripe |
 | BACKEND_URL | **Sí en prod** (default localhost:3001) | URL pública del backend para validar la firma de Twilio. En Railway: `https://botforge-production-b16f.up.railway.app` |
 | UPLOADS_DIR | No (default ./uploads) | Archivos subidos (⚠ disco local, ver sección 12) |
+| TAVILY_API_KEY | No | Búsqueda web (tool search_web del asistente); sin ella responde "no disponible" |
+| FIRECRAWL_API_KEY | No | Scraping de URLs (tool scrape_website); sin ella el scrape devuelve vacío |
+| DEEPGRAM_API_KEY | No | Transcripción de audios de WhatsApp (nova-3, es); sin ella los audios se ignoran |
+| GOOGLE_VISION_API_KEY | No | Análisis de imágenes de WhatsApp (texto/labels/objetos); sin ella se ignoran |
+| GOOGLE_CLIENT_ID | No | OAuth2 de Google Drive (cliente para refresh de tokens) |
+| GOOGLE_CLIENT_SECRET | No | OAuth2 de Google Drive |
 
 **FRONTEND (.env.local / variables Railway)**:
 
@@ -417,6 +426,13 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 19. Cambio de email del usuario no implementado (solo lectura en Perfil); eliminación de cuenta self-service tampoco (la política de privacidad la ofrece vía email).
 20. Falta suite de tests (Jest configurado en backend, sin tests escritos).
 
+**Integraciones externas (jul 2026)**
+21. Google Drive OAuth2 incompleto: el backend guarda accessToken/refreshToken en DriveConnection (POST /drive/bots/:botId/connect) pero NO existe el flujo de autorización (pantalla de consentimiento, intercambio de code, refresh automático con expiresAt). Pendiente: credenciales en console.cloud.google.com + habilitar Drive API + implementar el redirect OAuth. Sin conexión, buscar_archivos_drive responde "no configurado".
+22. Meta Cloud API: migración futura desde Twilio para multimedia nativa sin Cloudinary intermedio. Hoy las imágenes salen via Cloudinary (tag whatsapp_temp, limpiar en lote periódicamente desde el dashboard de Cloudinary).
+23. Las cards de notification_config del Generative UI son informativas (disabled): no hay endpoint público para desactivar una NotificationConfig desde el frontend.
+24. El streaming del chat web/widget (chat/stream, public) NO pasa por el loop de tools del tenant (streamear tool use rompería los deltas); solo usa RAG + prompt del tenant. Las tools del Agente Tipo B corren en WhatsApp y en el chat JSON.
+25. Deepgram/Vision: el audio transcripto reemplaza al Body y el análisis de imagen se antepone como [contexto]; si las API keys faltan, los medios se ignoran silenciosamente (el bot responde solo al texto).
+
 ---
 
 ## 13. REGLAS DE NEGOCIO Y ESTILO — DIRECTIVAS ESTRICTAS
@@ -448,9 +464,15 @@ Badges del wizard: "Técnicas de ventas LATAM", "Gestión de reservas y pedidos"
 - Secretos solo en variables de entorno; nunca loguear tokens, passwords ni contenido de documentos
 - La ANTHROPIC_API_KEY vive solo en el backend; el browser habla con proxies de Next
 
+**ARQUITECTURA DE AGENTES DUAL (desde jul 2026)**
+- AGENTE TIPO A (Plataforma): vive en el dashboard, habla con el dueño. Prompt fijo en `services/platformAgent.ts` (buildPlatformSystemPrompt). Tools PLATFORM_TOOLS en `routes/assistantDashboard.ts` (ejecución acoplada al protocolo SSE + confirmación).
+- AGENTE TIPO B (Tenant): vive en WhatsApp/widget, habla con clientes finales. Todo en `services/tenantAgent.ts`: buildTenantSystemPrompt (personalidad del dueño + reglas base de BotForge), TENANT_TOOLS, executeTenantTool y runTenantAgentLoop (loop nativo de tool use, 5 rondas).
+- Regla: el dueño controla la voz (bot.personality); BotForge controla las reglas de calidad (baseRules). Nunca mezclar tools de un agente en el otro.
+- ai.ts delega su system prompt en buildTenantSystemPrompt: los tres canales del bot (WhatsApp, chat JSON, streaming) comparten el mismo prompt.
+
 **MODELO DE IA**
 - Modelo primario: `claude-fable-5`
-- Fallback: `claude-opus-4-8` cuando fable-5 devuelve `stop_reason === 'refusal'` (patrón en `services/ai.ts`, `assistant.ts`, `assistantDashboard.ts`)
+- Fallback: `claude-opus-4-8` cuando fable-5 devuelve `stop_reason === 'refusal'` (patrón en `services/ai.ts`, `services/tenantAgent.ts`, `assistant.ts`, `assistantDashboard.ts`)
 - Siempre chequear `stop_reason` antes de usar la respuesta
 - Streaming SSE para toda respuesta conversacional (formato `data: {json}\n\n`, cierre `data: [DONE]` en asistentes / `{type:'done'}` en chat de bots)
 - System prompts con `cache_control: ephemeral` donde el prefijo es estable (ai.ts)
@@ -480,11 +502,30 @@ muestra confirmación y reanuda re-enviando los content blocks del turno +
 | create_new_bot | implementado | No | Crea bot respetando límite del plan |
 | delete_document | implementado | Sí (confirma) | Borra documento + chunks en Pinecone + archivo |
 | request_plan_upgrade | implementado | No | Info del plan objetivo + link a /pricing (no crea sesión de Stripe) |
+| update_bot_personality | implementado | No | Actualiza instrucciones guardando la anterior; emite card config_change con undo |
+| toggle_bot_active | implementado | No | Activa/pausa el bot; emite card bot_status con toggle |
+| search_web | implementado | No | Búsqueda web via Tavily (services/webSearch.ts); degrada sin API key |
+| scrape_website | implementado | No | Firecrawl → archivo .txt → Cloudinary → cola de procesamiento (respeta límite de docs); emite card instructivo_preview |
+| send_drive_image | implementado | No | Baja imagen de Drive del bot y la manda por WhatsApp via twilioMessaging; solo a clientes con conversación existente |
 | análisis de imágenes | implementado | No | Content block image (base64, máx 5MB) |
 | generate_instructivo (marcador) | implementado | No | `===INSTRUCTIVO_LISTO===` → textarea editable + descarga + puede subirse con upload_instructivo_text |
 
 Eventos SSE del endpoint: `text`, `tool_start`, `tool_end`,
-`assistant_blocks` (turno pendiente para reanudar), `confirm_required`, `done`.
+`assistant_blocks` (turno pendiente para reanudar), `confirm_required`,
+`generative_ui` (card interactiva con toggle apply/undo, ver GenerativeUICard.tsx), `done`.
+Emiten generative_ui: update_bot_personality (config_change),
+toggle_bot_active (bot_status), upload_instructivo_text y scrape_website
+(instructivo_preview), send_notification_email (notification_config, informativa).
+
+**TOOL REGISTRY DEL AGENTE TIPO B** (`services/tenantAgent.ts`, TENANT_TOOLS —
+corre en el webhook de WhatsApp y en el chat JSON via runTenantAgentLoop):
+
+| Tool | Descripción |
+|------|-------------|
+| buscar_en_documentos | RAG on-demand: embedding + Pinecone (topK 5, threshold 0.3) filtrado por botId |
+| buscar_archivos_drive | searchFileByName fuzzy en la carpeta del DriveConnection; la imagen queda en context.pendingImage (el base64 nunca entra al tool_result) y el canal la manda con sendImageMessage |
+| derivar_a_humano | Email al dueño via NotificationConfig human_requested con el motivo |
+
 Pendientes: request_whatsapp_connection (conexión guiada desde el chat),
 eventos new_conversation y daily_summary de NotificationConfig (se guardan
 pero no disparan emails todavía).
