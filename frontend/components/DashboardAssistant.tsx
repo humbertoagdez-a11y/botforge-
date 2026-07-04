@@ -17,25 +17,28 @@ import { useAuthStore, useAssistantStore } from '@/lib/store';
 import { api } from '@/lib/api';
 import { Z } from '@/lib/z-index';
 import GenerativeUICard, { type UIComponent } from '@/components/GenerativeUICard';
+import ThinkingBubble from '@/components/ThinkingBubble';
 
 const INSTRUCTIVO_MARKER = '===INSTRUCTIVO_LISTO===';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
-export const THINKING_MESSAGES = [
-  'Analizando tu consulta...',
-  'Revisando la información del bot...',
-  'Buscando la mejor respuesta...',
-  'Procesando los detalles...',
+const PLATFORM_THINKING = [
+  'Analizando la configuración...',
+  'Revisando los datos del bot...',
   'Consultando el sistema...',
-  'Preparando una respuesta útil...',
-  'Verificando los datos...',
+  'Buscando la mejor respuesta...',
+  'Procesando la solicitud...',
+  'Verificando los permisos...',
+  'Preparando la acción...',
   'Casi listo...',
 ];
 
 const TOOL_LABELS: Record<string, string> = {
   get_bot_details: 'Leyendo configuración del bot...',
   update_bot_config: 'Actualizando configuración...',
+  update_bot_personality: 'Actualizando personalidad...',
+  toggle_bot_active: 'Cambiando estado del bot...',
   upload_instructivo_text: 'Subiendo instructivo al bot...',
   disconnect_whatsapp: 'Desconectando WhatsApp...',
   get_account_stats: 'Obteniendo estadísticas...',
@@ -44,6 +47,9 @@ const TOOL_LABELS: Record<string, string> = {
   create_new_bot: 'Creando nuevo bot...',
   delete_document: 'Eliminando documento...',
   request_plan_upgrade: 'Preparando upgrade de plan...',
+  search_web: 'Buscando en internet...',
+  scrape_website: 'Leyendo el sitio web...',
+  send_drive_image: 'Enviando imagen de Drive...',
 };
 
 interface ExecStep {
@@ -129,46 +135,6 @@ function splitAccumulated(accumulated: string): { content: string; instructivo?:
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' });
-}
-
-// ─── Indicador de pensamiento con mensajes rotativos ──────────────────────────
-
-export function ThinkingIndicator({ light = false }: { light?: boolean }) {
-  const [idx, setIdx] = useState(0);
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setVisible(false);
-      const swap = setTimeout(() => {
-        setIdx((i) => (i + 1) % THINKING_MESSAGES.length);
-        setVisible(true);
-      }, 250);
-      return () => clearTimeout(swap);
-    }, 1800);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex items-center gap-1.5">
-        {[0, 1, 2].map((d) => (
-          <span
-            key={d}
-            className={`h-2 w-2 animate-bounce rounded-full ${light ? 'bg-primary/50' : 'bg-cyan-400/50'}`}
-            style={{ animationDelay: `${d * 160}ms` }}
-          />
-        ))}
-      </div>
-      <span
-        className={`text-xs transition-opacity duration-500 ${visible ? 'opacity-100' : 'opacity-0'} ${
-          light ? 'text-muted-foreground' : 'text-white/50'
-        }`}
-      >
-        {THINKING_MESSAGES[idx]}
-      </span>
-    </div>
-  );
 }
 
 // ─── Terminal de ejecución ────────────────────────────────────────────────────
@@ -753,7 +719,7 @@ export default function DashboardAssistant(props: Props) {
                 <div className={m.instructivo !== undefined || m.execSteps?.length ? 'min-w-0 flex-1' : 'max-w-[82%]'}>
                   {isTyping ? (
                     <div className="w-fit rounded-[20px_20px_20px_5px] border border-white/[0.08] bg-white/[0.07] px-4 py-3">
-                      <ThinkingIndicator />
+                      <ThinkingBubble messages={PLATFORM_THINKING} />
                     </div>
                   ) : (
                     m.content && (

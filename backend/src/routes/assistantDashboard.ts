@@ -314,7 +314,7 @@ async function getOwnedBot(botId: string, userId: string) {
 
 /** Componente de Generative UI que el frontend renderiza en el chat */
 interface GenUIComponent {
-  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_image';
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config';
   title: string;
   description: string;
   data: Record<string, unknown>;
@@ -323,6 +323,8 @@ interface GenUIComponent {
   undoLabel: string;
   undoPayload?: Record<string, unknown>;
   applyPayload?: Record<string, unknown>;
+  /** true cuando la accion no puede revertirse desde la card */
+  disabled?: boolean;
 }
 
 interface ToolExecution {
@@ -570,7 +572,25 @@ async function executeToolCall(
         input.event === 'human_requested'
           ? 'Notificación activa: cuando un cliente pida hablar con una persona, llega un email.'
           : 'Configuración guardada. Este tipo de evento se activará próximamente.';
-      return { result: { configured: true, event: config.event, email: config.email, note } };
+      const EVENT_LABEL: Record<string, string> = {
+        human_requested: 'un cliente pide hablar con una persona',
+        new_conversation: 'empieza una conversación nueva',
+        daily_summary: 'hay resumen diario disponible',
+      };
+      return {
+        result: { configured: true, event: config.event, email: config.email, note },
+        ui: {
+          kind: 'notification_config',
+          title: 'Notificación configurada',
+          description: `Te avisamos cuando ${EVENT_LABEL[config.event] ?? config.event}`,
+          data: { email: config.email, evento: config.event },
+          isActive: true,
+          actionLabel: 'Notificaciones activas',
+          undoLabel: 'Desactivar',
+          // Sin endpoint público para desactivar configs: la card es informativa
+          disabled: true,
+        },
+      };
     }
 
     case 'create_new_bot': {

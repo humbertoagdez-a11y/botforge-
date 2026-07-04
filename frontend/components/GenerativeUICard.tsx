@@ -1,9 +1,9 @@
 'use client';
 
-import { Settings } from 'lucide-react';
+import { Settings, Power, FileText, HardDrive, Bell } from 'lucide-react';
 
 export interface UIComponent {
-  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_image';
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config';
   title: string;
   description: string;
   data: Record<string, unknown>;
@@ -19,6 +19,18 @@ export interface UIComponent {
 interface Props {
   component: UIComponent;
   onToggle: () => void;
+}
+
+// Ícono según el tipo de acción ejecutada
+function DynamicIcon({ kind }: { kind: UIComponent['kind'] }) {
+  const Icon = {
+    config_change: Settings,
+    bot_status: Power,
+    instructivo_preview: FileText,
+    drive_status: HardDrive,
+    notification_config: Bell,
+  }[kind] ?? Settings;
+  return <Icon className="h-4 w-4 text-cyan-400" />;
 }
 
 export default function GenerativeUICard({ component, onToggle }: Props) {
@@ -38,8 +50,10 @@ export default function GenerativeUICard({ component, onToggle }: Props) {
 
       {/* Cuerpo */}
       <div className="p-4">
-        <div className="flex items-start gap-2.5">
-          <Settings className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-500/20 bg-cyan-500/10">
+            <DynamicIcon kind={component.kind} />
+          </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white">{component.title}</p>
             <p className="mt-0.5 text-xs leading-relaxed text-white/50">{component.description}</p>

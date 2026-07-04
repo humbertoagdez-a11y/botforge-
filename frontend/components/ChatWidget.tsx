@@ -7,7 +7,31 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/store';
-import { ThinkingIndicator } from './DashboardAssistant';
+import ThinkingBubble from './ThinkingBubble';
+
+/** Segunda capa de defensa contra markdown en las respuestas del bot */
+function sanitizeMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/_{2}([^_\n]+)_{2}/g, '$1')
+    .replace(/_([^_\n]+)_/g, '$1');
+}
+
+const TENANT_THINKING = [
+  'Buscando la información...',
+  'Revisando el catálogo...',
+  'Analizando tu consulta...',
+  'Procesando los datos...',
+  'Preparando la respuesta...',
+  'Buscando en la base de datos...',
+  'Un momento...',
+];
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -181,11 +205,11 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
             >
               {msg.streaming && msg.content === '' ? (
                 <div className="py-0.5">
-                  <ThinkingIndicator light />
+                  <ThinkingBubble messages={TENANT_THINKING} light />
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap leading-relaxed">
-                  {msg.content}
+                  {msg.role === 'ASSISTANT' ? sanitizeMarkdown(msg.content) : msg.content}
                   {msg.streaming && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-current align-middle" />}
                 </p>
               )}
