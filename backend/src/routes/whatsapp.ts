@@ -13,6 +13,7 @@ import {
   runTenantAgentLoop,
   type TenantAgentContext,
 } from '../services/tenantAgent';
+import { sendTextMessage, sendImageMessage, isTwilioConfigured } from '../services/twilioMessaging';
 import { sendEmail } from '../services/email';
 
 // ─── Notificación "el cliente pide un humano" ─────────────────────────────────
@@ -459,9 +460,23 @@ router.post('/webhook', validateTwilioSignature, async (req: Request, res: Respo
 
     await incrementMessageUsage(bot.userId);
 
-    const reply = twiml.message(content);
-    // Imagen de Drive encontrada por el agente: va como media del mismo mensaje
-    if (agentContext.pendingImage) reply.media(agentContext.pendingImage.url);
+    // Respuesta por API directa (control total sobre multimedia); TwiML queda
+    // solo como fallback si Twilio no esta configurado (dev sin credenciales)
+    if (isTwilioConfigured()) {
+      if (content) await sendTextMessage(from, content);
+      if (agentContext.pendingImage) {
+        try {
+          const { imageBase64, mimeType, fileName } = agentContext.pendingImage;
+          await sendImageMessage(from, imageBase64, mimeType, fileName);
+        } catch (mediaErr) {
+          console.error('[whatsapp] Error enviando imagen de Drive:', mediaErr);
+        }
+      }
+      res.type('text/xml').send('<Response></Response>');
+      return;
+    }
+
+    twiml.message(content);
   } catch (err) {
     console.error('[whatsapp] Error en webhook:', err);
     twiml.message('Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.');

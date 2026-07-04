@@ -10,8 +10,8 @@ import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { LIMITS } from '../middleware/planLimits';
-import twilio from 'twilio';
-import { uploadRawToCloudinary, cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
+import { uploadRawToCloudinary, isCloudinaryConfigured } from '../config/cloudinary';
+import { sendImageMessage, isTwilioConfigured } from '../services/twilioMessaging';
 import { documentQueue } from '../lib/queue';
 import { deleteChunksByIds } from '../services/pinecone';
 import { searchWeb } from '../services/webSearch';
@@ -753,7 +753,7 @@ async function executeToolCall(
       if (!connection?.isActive) {
         return { result: { sent: false, reason: 'Este bot no tiene Google Drive conectado. Se configura desde el panel del bot.' } };
       }
-      if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_WHATSAPP_FROM) {
+      if (!isTwilioConfigured()) {
         return { result: { sent: false, reason: 'Twilio no está configurado en el servidor.' } };
       }
       if (!isCloudinaryConfigured()) {
@@ -774,19 +774,7 @@ async function executeToolCall(
         return { result: { sent: false, reason: 'El archivo de Drive no es una imagen.' } };
       }
 
-      const uploadRes = await cloudinary.uploader.upload(`data:${mimeType};base64,${data}`, {
-        folder: 'botforge/drive-images',
-        resource_type: 'image',
-        public_id: `drive_${input.fileId}`,
-      });
-
-      const twilioClient = twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
-      await twilioClient.messages.create({
-        from: env.TWILIO_WHATSAPP_FROM,
-        to,
-        body: input.caption,
-        mediaUrl: [uploadRes.secure_url],
-      });
+      await sendImageMessage(to, data, mimeType, input.caption);
 
       return { result: { sent: true, file: input.fileName ?? input.fileId, to } };
     }

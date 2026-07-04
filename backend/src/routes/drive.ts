@@ -56,6 +56,20 @@ router.post('/bots/:botId/connect', async (req: Request, res: Response, next: Ne
   }
 });
 
+// DELETE /api/v1/drive/bots/:botId/disconnect — desvincula la carpeta de Drive
+router.delete('/bots/:botId/disconnect', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const bot = await getOwnedBot(req.params.botId, req.user!.userId);
+    const deleted = await prisma.driveConnection.deleteMany({ where: { botId: bot.id } });
+    if (deleted.count === 0) {
+      throw new AppError(404, 'Este bot no tiene Google Drive conectado');
+    }
+    res.json({ data: { disconnected: true }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/v1/drive/bots/:botId/files — lista archivos de la carpeta configurada
 router.get('/bots/:botId/files', async (req: Request, res: Response, next: NextFunction) => {
   try {

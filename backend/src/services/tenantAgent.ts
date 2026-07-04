@@ -10,8 +10,8 @@ import { prisma } from '../lib/prisma';
 import { getEmbedding } from './embeddings';
 import { querySimilarChunks } from './pinecone';
 import { sendEmail } from './email';
-import { getFilesFromFolder, downloadFileAsBase64 } from './googleDrive';
-import { cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
+import { searchFileByName, downloadFileAsBase64 } from './googleDrive';
+import { isCloudinaryConfigured } from '../config/cloudinary';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -109,8 +109,8 @@ export interface TenantAgentContext {
   channel: 'whatsapp' | 'web' | 'widget';
   /** Salida lateral: imagen encontrada en Drive lista para enviar al cliente.
       El binario nunca viaja en el tool_result (reventaría el contexto del
-      modelo); acá va la URL pública de Cloudinary. */
-  pendingImage?: { url: string; fileName: string };
+      modelo); el canal la manda con twilioMessaging.sendImageMessage. */
+  pendingImage?: { imageBase64: string; mimeType: string; fileName: string };
 }
 
 // ─── EXECUTOR DE TOOLS ────────────────────────────────────────────────────────
@@ -162,14 +162,7 @@ export async function executeTenantTool(
       }
 
       try {
-        const files = await getFilesFromFolder(driveConn.accessToken, driveConn.folderName);
-        const q = query.toLowerCase();
-        // Búsqueda fuzzy: nombre contiene la consulta o alguna palabra clave >3 chars
-        const match = files.find(
-          (f) =>
-            f.name.toLowerCase().includes(q) ||
-            q.split(' ').some((word) => word.length > 3 && f.name.toLowerCase().includes(word)),
-        );
+        const match = await searchFileByName(driveConn.accessToken, driveConn.folderName, query);
         if (!match) {
           return {
             found: false,
@@ -184,13 +177,7 @@ export async function executeTenantTool(
         if (!isCloudinaryConfigured()) {
           return { found: false, message: 'El envío de imágenes no está disponible en este momento.' };
         }
-
-        const uploadRes = await cloudinary.uploader.upload(`data:${mimeType};base64,${data}`, {
-          folder: 'botforge/whatsapp-media',
-          resource_type: 'image',
-          tags: ['whatsapp_temp'],
-        });
-        context.pendingImage = { url: uploadRes.secure_url, fileName: match.name };
+        context.pendingImage = { imageBase64: data, mimeType, fileName: match.name };
 
         return {
           found: true,
