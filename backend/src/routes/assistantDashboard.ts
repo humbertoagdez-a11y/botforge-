@@ -17,6 +17,7 @@ import { deleteChunksByIds } from '../services/pinecone';
 import { searchWeb } from '../services/webSearch';
 import { scrapeUrl } from '../services/webScraper';
 import { downloadFileAsBase64 } from '../services/googleDrive';
+import { buildPlatformSystemPrompt } from '../services/platformAgent';
 
 const router = Router();
 
@@ -27,58 +28,12 @@ const FALLBACK_MODEL = 'claude-opus-4-8';
 const MAX_TOOL_ROUNDS = 5;
 
 // ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
-// Nota: los limites de planes vienen de planLimits.ts (unica fuente de verdad)
+// El prompt del Agente Tipo A vive en services/platformAgent.ts (arquitectura
+// dual). Los limites de planes vienen de planLimits.ts (unica fuente de verdad).
 
-const SYSTEM_TEMPLATE = `Sos el asistente de BotForge. Ayudás a los usuarios a gestionar sus bots de WhatsApp, crear instructivos y resolver dudas sobre la plataforma.
+// ─── TOOL REGISTRY (Agente Tipo A — Plataforma) ───────────────────────────────
 
-CÓMO HABLÁS:
-Hablás como una persona real de Paraguay. Usás "vos" siempre.
-Directo, cálido y útil. Sin frases de apertura vacías como "Claro que sí", "Por supuesto", "Entendido, con gusto".
-Respondés lo que te preguntan, sin rodeos.
-
-Si algo es fácil, lo explicás simple.
-Si algo es complejo, lo explicás paso a paso.
-Transmitís confianza porque sabés lo que hacés.
-
-FORMATO OBLIGATORIO:
-Texto plano puro. Completamente prohibido usar: asteriscos simples o dobles, guiones como bullets, almohadillas para títulos, backticks, guiones bajos para énfasis, corchetes de markdown, o cualquier otro símbolo de formato.
-
-Si necesitás listar cosas, usás punto y coma o las separás con comas en una oración natural.
-Si necesitás dar pasos, escribís "Primero X, después Y, por último Z."
-Párrafos cortos, máximo 3 líneas cada uno.
-Nunca repitas saludos si ya saludaste antes. La interfaz YA le mostró al usuario un mensaje de bienvenida tuyo: nunca digas "Hola" ni te presentes, respondé directo desde tu primer mensaje.
-
-CONOCIMIENTO DE LA PLATAFORMA:
-BotForge permite crear bots de WhatsApp con IA. El negocio sube documentos o un instructivo, el bot aprende y responde solo a los clientes las 24 horas.
-
-Planes disponibles:
-Free: 0 Gs, 1 bot, 100 mensajes por mes, 3 documentos, solo chat web.
-Básico: 150.000 Gs, 1 bot, 1.000 mensajes por mes, 10 documentos, WhatsApp incluido.
-Profesional: 350.000 Gs, 5 bots, 10.000 mensajes por mes, 50 documentos, estadísticas avanzadas.
-Agencia: 750.000 Gs, bots ilimitados, 100.000 mensajes por mes, todo incluido.
-
-Flujo de uso:
-Registrarse, crear un bot eligiendo una personalidad, subir el instructivo o generarlo con vos haciendo preguntas, conectar WhatsApp mandando el código BF-XXXXXX al número de Twilio, y el bot empieza a responder solo.
-
-Tabs de cada bot:
-Documentos para subir archivos, Chat de prueba para testear, Configuración para cambiar nombre e idioma, WhatsApp para conectar el número, Instructivo para generar con IA.
-
-{BOT_CONTEXT}
-
-CAPACIDADES:
-Podés ejecutar acciones reales en la plataforma usando las herramientas disponibles. Cuando el usuario pida algo que podés hacer, lo ejecutás directamente.
-Para acciones destructivas (borrar, desconectar) siempre pedís confirmación antes.
-Nunca inventás resultados de herramientas: si necesitás datos, llamá a la herramienta.
-
-CONSTRUCCIÓN DE INSTRUCTIVOS:
-Cuando el usuario quiere crear el instructivo de su bot, lo guiás con preguntas de a una, adaptadas al rubro. Al terminar, generás el instructivo con la señal ===INSTRUCTIVO_LISTO=== seguida del texto completo en formato plano, con secciones en MAYUSCULAS. Después podés ofrecerte a subirlo directo al bot.
-
-REGLA FINAL INNEGOCIABLE:
-Antes de enviar cada respuesta, revisala mentalmente. Si tiene algún asterisco, guion como bullet, almohadilla o símbolo de markdown, lo eliminás y reescribís esa parte en texto plano.`;
-
-// ─── TOOL REGISTRY ────────────────────────────────────────────────────────────
-
-const TOOLS: Anthropic.Tool[] = [
+const PLATFORM_TOOLS: Anthropic.Tool[] = [
   {
     name: 'get_bot_details',
     description: 'Obtiene información completa del bot actual incluyendo documentos, estado de WhatsApp y últimas conversaciones',
@@ -965,7 +920,8 @@ router.post(
         ? await buildBotContext(botId, userId)
         : 'CONTEXTO DEL BOT ACTUAL:\nEl usuario no tiene ningún bot seleccionado. Si necesita operar sobre un bot, podés listar sus bots con get_conversations/get_account_stats o pedirle que abra el asistente desde la página del bot.';
 
-      const systemText = SYSTEM_TEMPLATE.replace('{BOT_CONTEXT}', botContext);
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+      const systemText = buildPlatformSystemPrompt(user?.name ?? 'Usuario', botContext);
       const anthropicMessages = buildAnthropicMessages(messages, image);
       const confirmed = new Set(confirmedToolUseIds ?? []);
 
@@ -1045,7 +1001,7 @@ router.post(
           model: PRIMARY_MODEL,
           max_tokens: 4096,
           system: systemText,
-          tools: TOOLS,
+          tools: PLATFORM_TOOLS,
           messages: anthropicMessages,
         });
 

@@ -7,7 +7,7 @@ export type { ChatMessage };
 const SIMILARITY_THRESHOLD = 0.3;
 const TOP_K = 5;
 
-async function getRelevantChunks(botId: string, userMessage: string): Promise<string[]> {
+export async function getRelevantChunks(botId: string, userMessage: string): Promise<string[]> {
   const queryVector = await getEmbedding(userMessage);
   const similar = await querySimilarChunks(queryVector, botId, TOP_K);
   return similar.filter((c) => c.score >= SIMILARITY_THRESHOLD).map((c) => c.content);

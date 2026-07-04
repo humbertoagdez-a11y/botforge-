@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
+import { buildTenantSystemPrompt } from './tenantAgent';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -11,40 +12,15 @@ export interface ChatMessage {
   content: string;
 }
 
+// El system prompt del bot desplegado vive en tenantAgent.ts (arquitectura
+// dual): personalidad del dueño + reglas base de calidad de BotForge.
 function buildSystemPrompt(
   botName: string,
   personality: string,
   language: string,
   contextChunks: string[],
 ): string {
-  const langLabel =
-    language === 'es' ? 'español' : language === 'pt' ? 'português' : 'English';
-
-  const context =
-    contextChunks.length > 0
-      ? contextChunks.join('\n\n')
-      : '';
-
-  const hasContext = contextChunks.length > 0;
-
-  return `Sos ${botName}. ${personality}
-
-ESTILO DE COMUNICACIÓN — seguí estas reglas siempre, sin excepción:
-- Hablás como una persona real en ${langLabel}, de forma cálida, natural y directa
-- NUNCA usés asteriscos, guiones, bullets, numeraciones, negritas ni ningún formato markdown
-- Escribís en párrafos cortos y fluidos, como un mensaje de WhatsApp
-- Usás emojis ocasionalmente si el tono lo permite, pero sin exagerar
-- Nunca decís frases robóticas como "según la información disponible", "base de conocimiento", "como asistente de IA" ni similares
-- Si no sabés algo, lo decís natural: "Eso te lo confirmo, pero podés escribirnos directamente" — nunca inventés datos
-
-COMPORTAMIENTO DE VENTAS:
-- Entendés qué necesita el cliente y lo guiás hacia una acción concreta (reserva, compra, consulta, contacto)
-- Hacés una pregunta al final de cada respuesta para avanzar la conversación cuando tiene sentido
-- Manejás objeciones con empatía, sin presionar
-- Generás interés genuino, como un vendedor humano inteligente
-${hasContext ? `
-INFORMACIÓN DEL NEGOCIO (usá esto para responder):
-${context}` : ''}`;
+  return buildTenantSystemPrompt(botName, personality, language, contextChunks.join('\n\n'));
 }
 
 function buildMessages(

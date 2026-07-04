@@ -5,7 +5,12 @@ import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
-import { ragChat, ragStream } from '../services/rag';
+import { getRelevantChunks, ragStream } from '../services/rag';
+import {
+  buildTenantSystemPrompt,
+  runTenantAgentLoop,
+  type TenantAgentContext,
+} from '../services/tenantAgent';
 
 const router = Router({ mergeParams: true });
 
@@ -78,13 +83,19 @@ router.post('/', checkMessageLimit, async (req: Request, res: Response, next: Ne
 
     const history = await getHistory(conversation.id, message);
 
-    const { content, tokensUsed } = await ragChat(
-      bot.id,
-      bot.name,
-      bot.personality,
-      bot.language,
-      history,
-      message,
+    // Agente Tipo B con loop de tools nativo (mismo motor que WhatsApp)
+    const chunks = await getRelevantChunks(bot.id, message);
+    const systemPrompt = buildTenantSystemPrompt(
+      bot.name, bot.personality, bot.language, chunks.join('\n\n'),
+    );
+    const agentContext: TenantAgentContext = {
+      botId: bot.id,
+      botName: bot.name,
+      clientId: `chat web (${req.user!.email})`,
+      channel: 'web',
+    };
+    const { content, tokensUsed } = await runTenantAgentLoop(
+      systemPrompt, history, message, agentContext,
     );
 
     const assistantMsg = await prisma.message.create({

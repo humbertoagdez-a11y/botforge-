@@ -7,7 +7,12 @@ import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkWhatsAppAccess, assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
-import { ragChat } from '../services/rag';
+import { getRelevantChunks } from '../services/rag';
+import {
+  buildTenantSystemPrompt,
+  runTenantAgentLoop,
+  type TenantAgentContext,
+} from '../services/tenantAgent';
 import { sendEmail } from '../services/email';
 
 // ─── Notificación "el cliente pide un humano" ─────────────────────────────────
@@ -432,8 +437,20 @@ router.post('/webhook', validateTwilioSignature, async (req: Request, res: Respo
       .reverse()
       .map((m) => ({ role: m.role.toLowerCase() as 'user' | 'assistant', content: m.content }));
 
-    const { content, tokensUsed } = await ragChat(
-      bot.id, bot.name, bot.personality, bot.language, history, finalMessage,
+    // Agente Tipo B: RAG como contexto inicial + loop de tools nativo
+    // (buscar_en_documentos, buscar_archivos_drive, derivar_a_humano)
+    const chunks = await getRelevantChunks(bot.id, finalMessage);
+    const systemPrompt = buildTenantSystemPrompt(
+      bot.name, bot.personality, bot.language, chunks.join('\n\n'),
+    );
+    const agentContext: TenantAgentContext = {
+      botId: bot.id,
+      botName: bot.name,
+      clientId: senderNumber,
+      channel: 'whatsapp',
+    };
+    const { content, tokensUsed } = await runTenantAgentLoop(
+      systemPrompt, history, finalMessage, agentContext,
     );
 
     await prisma.message.create({
@@ -442,7 +459,9 @@ router.post('/webhook', validateTwilioSignature, async (req: Request, res: Respo
 
     await incrementMessageUsage(bot.userId);
 
-    twiml.message(content);
+    const reply = twiml.message(content);
+    // Imagen de Drive encontrada por el agente: va como media del mismo mensaje
+    if (agentContext.pendingImage) reply.media(agentContext.pendingImage.url);
   } catch (err) {
     console.error('[whatsapp] Error en webhook:', err);
     twiml.message('Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.');
