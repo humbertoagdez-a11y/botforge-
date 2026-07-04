@@ -1,4 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="7" fill="#7c3aed"/>
-  <path d="M19 4L9 18h7l-3 10 12-15h-8z" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Favicon BotForge: cara del robot (version estatica simplificada de asistente-logo.svg) -->
+  <defs>
+    <linearGradient id="bf-head" x1="4" y1="8" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <!-- Antena -->
+  <rect x="15" y="3" width="2" height="5" rx="1" fill="#22D3EE"/>
+  <circle cx="16" cy="3" r="2.4" fill="#22D3EE"/>
+  <!-- Cabeza -->
+  <rect x="4" y="8" width="24" height="21" rx="7" fill="url(#bf-head)"/>
+  <!-- Ojos rectangulares cian -->
+  <rect x="9" y="14" width="5" height="7" rx="2" fill="#22D3EE"/>
+  <rect x="18" y="14" width="5" height="7" rx="2" fill="#22D3EE"/>
+  <!-- Boca -->
+  <rect x="12" y="24" width="8" height="2" rx="1" fill="#0B0B18" opacity="0.55"/>
 </svg>
