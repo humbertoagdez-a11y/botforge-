@@ -102,7 +102,9 @@ function EmptyState({ userName }: { userName: string }) {
           ))}
         </div>
 
-        <Button size="lg" className="mt-8" asChild>
+        {/* data-onboarding aca: la guia hace spotlight en el empty state,
+            donde el boton del header ya no se renderiza */}
+        <Button size="lg" className="mt-8" asChild data-onboarding="new-bot">
           <Link href="/dashboard/bots/new">
             <Plus className="h-4 w-4" /> Crear mi primer bot
           </Link>
@@ -340,14 +342,16 @@ export default function DashboardPage() {
             Gestioná tus asistentes de IA
           </p>
         </div>
-        {/* En movil vive en el flujo del header (unico flotante: el asistente);
-            en desktop conserva su tamano normal */}
-        <Button asChild data-onboarding="new-bot" className="shrink-0">
-          <Link href="/dashboard/bots/new">
-            <Plus className="h-4 w-4" />
-            Nuevo bot
-          </Link>
-        </Button>
+        {/* Solo con bots existentes: en el empty state el CTA es
+            "Crear mi primer bot" (evita el boton duplicado) */}
+        {bots.length > 0 && (
+          <Button asChild className="shrink-0">
+            <Link href="/dashboard/bots/new">
+              <Plus className="h-4 w-4" />
+              Nuevo bot
+            </Link>
+          </Button>
+        )}
       </div>
 
       <OnboardingGuide open={showGuide} onFinish={() => setShowGuide(false)} />
