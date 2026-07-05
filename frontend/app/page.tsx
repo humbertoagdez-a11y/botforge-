@@ -321,7 +321,7 @@ function Navbar() {
       }`}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="text-lg font-bold text-white">
+        <Link href="/" className="font-mono text-lg font-bold text-white">
           BotForge
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-gray-400 md:flex">
@@ -383,6 +383,7 @@ function Hero() {
             Tu negocio nunca
             <br />
             para de responder.
+            <span className="ml-1 inline-block h-[0.9em] w-[3px] animate-pulse bg-cyan-400 align-middle" />
           </h1>
 
           <p className="mx-auto mt-6 max-w-xl text-base text-gray-300 sm:text-lg md:mx-0">
@@ -590,7 +591,7 @@ function MetricsSection() {
           return (
             <div key={s.label} className="flex flex-col items-center text-center">
               <Icon className="mb-3 h-6 w-6 text-violet-400" />
-              <p className="text-4xl font-extrabold text-white sm:text-5xl">
+              <p className="font-mono text-4xl font-extrabold text-white sm:text-5xl">
                 <AnimatedCounter value={s.value} format={s.format} />
               </p>
               <p className="mt-2 text-sm text-gray-300">{s.label}</p>
@@ -695,7 +696,7 @@ function PricingSection() {
               <p className={`text-sm font-semibold tracking-wide ${plan.highlight ? 'text-violet-200' : 'text-gray-400'}`}>
                 {plan.name}
               </p>
-              <p className="mt-3 text-2xl font-extrabold text-white">
+              <p className="mt-3 font-mono text-2xl font-extrabold text-white">
                 {plan.price}
                 <span className={`text-sm font-normal ${plan.highlight ? 'text-violet-200' : 'text-gray-500'}`}>
                   /mes
@@ -805,7 +806,7 @@ function Footer() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="flex flex-col items-center gap-6 text-center">
           <div>
-            <p className="text-lg font-bold text-white">BotForge</p>
+            <p className="font-mono text-lg font-bold text-white">BotForge</p>
             <p className="mt-1 text-sm text-gray-500">Chatbots con IA para negocios paraguayos</p>
           </div>
           <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm text-gray-500">

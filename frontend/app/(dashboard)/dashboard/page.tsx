@@ -155,7 +155,7 @@ function MetricsRow({ stats }: { stats: AccountStats }) {
               <p className="text-xs font-medium text-cyan-400/90">{label}</p>
               <Icon className="h-4 w-4 text-cyan-400/70" />
             </div>
-            <p className="mt-1.5 text-2xl font-bold text-foreground"><AnimatedNumber value={value} /></p>
+            <p className="mt-1.5 font-mono text-2xl font-bold text-foreground"><AnimatedNumber value={value} /></p>
             <p className="text-xs text-muted-foreground">{sub}</p>
           </CardContent>
         </Card>
@@ -388,7 +388,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge variant={bot.isActive ? 'success' : 'outline'} className="text-[10px]">
+                      <Badge variant={bot.isActive ? 'success' : 'outline'} className="font-mono text-[10px]">
                         {bot.isActive ? 'Activo' : 'Inactivo'}
                       </Badge>
                       {bot.whatsappNumber && (

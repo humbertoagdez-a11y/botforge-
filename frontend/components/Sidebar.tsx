@@ -37,7 +37,7 @@ function PlanUsage({ stats }: { stats: AccountStats }) {
     <div className="mx-3 mb-3 rounded-lg border bg-muted/30 p-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold">{PLAN_LABEL[stats.plan] ?? stats.plan}</span>
-        <span className={cn('text-[11px]', nearLimit ? 'font-medium text-orange-600' : 'text-muted-foreground')}>
+        <span className={cn('font-mono text-[11px]', nearLimit ? 'font-medium text-orange-600' : 'text-muted-foreground')}>
           {used.toLocaleString('es-PY')}/{limit.toLocaleString('es-PY')}
         </span>
       </div>
@@ -151,7 +151,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         >
           <Image src="/asistente-logo.svg" alt="" width={24} height={24} unoptimized className="h-6 w-6" />
           <span className="flex-1 text-left text-sm text-white/80">Asistente</span>
-          <span className="ml-auto flex items-center gap-1.5 text-[10px] font-medium text-emerald-400">
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] font-medium text-emerald-400">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             En línea
           </span>

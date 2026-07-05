@@ -95,13 +95,13 @@ export default function StatsPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline justify-between">
-              <p className="text-2xl font-bold">
+              <p className="font-mono text-2xl font-bold">
                 {stats.monthlyMessages.toLocaleString('es-PY')}
                 <span className="text-sm font-normal text-muted-foreground">
                   {' '}/ {stats.planLimits.monthlyMessages.toLocaleString('es-PY')} mensajes este mes
                 </span>
               </p>
-              <span className={`text-sm font-medium ${usagePct >= 80 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+              <span className={`font-mono text-sm font-medium ${usagePct >= 80 ? 'text-orange-600' : 'text-muted-foreground'}`}>
                 {usagePct}%
               </span>
             </div>
@@ -127,7 +127,7 @@ export default function StatsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">{value.toLocaleString('es-PY')}</p>
+              <p className="font-mono text-3xl font-bold">{value.toLocaleString('es-PY')}</p>
             </CardContent>
           </Card>
         ))}

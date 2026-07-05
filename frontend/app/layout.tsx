@@ -1,9 +1,17 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
+
+// Solo para elementos tecnicos (numeros, badges, precios, terminal) via
+// la clase font-mono de Tailwind; el texto de lectura sigue en Inter
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  weight: ['400', '500', '700'],
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://botforge.ai'),
@@ -46,7 +54,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body className={inter.className}>
+      <body className={`${inter.className} ${jetbrainsMono.variable}`}>
         {children}
         <Toaster richColors position="top-right" />
       </body>
