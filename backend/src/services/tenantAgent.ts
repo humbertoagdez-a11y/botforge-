@@ -10,7 +10,7 @@ import { prisma } from '../lib/prisma';
 import { getEmbedding } from './embeddings';
 import { querySimilarChunks } from './pinecone';
 import { sendEmail } from './email';
-import { searchFileByName, downloadFileAsBase64 } from './googleDrive';
+import { searchFileByName, downloadFileAsBase64, getValidAccessToken } from './googleDrive';
 import { isCloudinaryConfigured } from '../config/cloudinary';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
@@ -162,7 +162,8 @@ export async function executeTenantTool(
       }
 
       try {
-        const match = await searchFileByName(driveConn.accessToken, driveConn.folderName, query);
+        const accessToken = await getValidAccessToken(driveConn);
+        const match = await searchFileByName(accessToken, driveConn.folderName, query);
         if (!match) {
           return {
             found: false,
@@ -170,7 +171,7 @@ export async function executeTenantTool(
           };
         }
 
-        const { data, mimeType } = await downloadFileAsBase64(driveConn.accessToken, match.id);
+        const { data, mimeType } = await downloadFileAsBase64(accessToken, match.id);
         if (!mimeType.startsWith('image/')) {
           return { found: false, message: `"${match.name}" existe pero no es una imagen, no se puede enviar por este canal.` };
         }

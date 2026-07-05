@@ -1,10 +1,51 @@
 import { google } from 'googleapis';
 import { env } from '../config/env';
+import { prisma } from '../lib/prisma';
 
 export interface DriveFile {
   id: string;
   name: string;
   mimeType: string;
+}
+
+interface StoredConnection {
+  id: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: Date | null;
+}
+
+/** Margen antes del vencimiento para refrescar proactivamente */
+const REFRESH_MARGIN_MS = 60 * 1000;
+
+/**
+ * Devuelve un access token válido para la conexión: si expiresAt ya pasó
+ * (o está por pasar), lo renueva con el refreshToken y persiste el nuevo
+ * token + vencimiento en la BD. Nunca loguea los tokens.
+ */
+export async function getValidAccessToken(conn: StoredConnection): Promise<string> {
+  const needsRefresh =
+    conn.expiresAt !== null && conn.expiresAt.getTime() < Date.now() + REFRESH_MARGIN_MS;
+  if (!needsRefresh) return conn.accessToken;
+
+  const client = new google.auth.OAuth2(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET);
+  client.setCredentials({ refresh_token: conn.refreshToken });
+  const { credentials } = await client.refreshAccessToken();
+
+  const accessToken = credentials.access_token;
+  if (!accessToken) {
+    throw new Error('Google no devolvió un access token nuevo; reconectá Drive desde el panel');
+  }
+
+  await prisma.driveConnection.update({
+    where: { id: conn.id },
+    data: {
+      accessToken,
+      expiresAt: credentials.expiry_date ? new Date(credentials.expiry_date) : null,
+    },
+  });
+
+  return accessToken;
 }
 
 function getAuthClient(accessToken: string) {

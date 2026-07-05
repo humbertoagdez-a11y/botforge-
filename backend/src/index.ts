@@ -24,7 +24,7 @@ import assistantDashboardRouter from './routes/assistantDashboard';
 import testRouter from './routes/test';
 import statsRouter from './routes/stats';
 import activityRouter from './routes/activity';
-import driveRouter from './routes/drive';
+import driveRouter, { googleOAuthRouter } from './routes/drive';
 import { requireAuth } from './middleware/auth';
 
 const uploadsDir = path.resolve(env.UPLOADS_DIR);
@@ -65,6 +65,9 @@ app.use('/api/v1/drive', requireAuth, driveRouter);
 
 // Rutas públicas (widget embebido)
 app.use('/api/v1/public', publicRouter);
+
+// Callback OAuth2 de Google (público: la identidad viaja en el state firmado)
+app.use('/api/auth/google', googleOAuthRouter);
 
 // Asistente del dashboard (autenticado) — registrar antes que el público
 app.use('/api/v1/assistant/dashboard', assistantDashboardRouter);

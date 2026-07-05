@@ -16,7 +16,7 @@ import { documentQueue } from '../lib/queue';
 import { deleteChunksByIds } from '../services/pinecone';
 import { searchWeb } from '../services/webSearch';
 import { scrapeUrl } from '../services/webScraper';
-import { downloadFileAsBase64 } from '../services/googleDrive';
+import { downloadFileAsBase64, getValidAccessToken } from '../services/googleDrive';
 import { buildPlatformSystemPrompt } from '../services/platformAgent';
 
 const router = Router();
@@ -789,7 +789,8 @@ async function executeToolCall(
         return { result: { sent: false, reason: `No hay ninguna conversación de este bot con ${to}. Solo se pueden mandar imágenes a clientes existentes.` } };
       }
 
-      const { data, mimeType } = await downloadFileAsBase64(connection.accessToken, input.fileId);
+      const accessToken = await getValidAccessToken(connection);
+      const { data, mimeType } = await downloadFileAsBase64(accessToken, input.fileId);
       if (!mimeType.startsWith('image/')) {
         return { result: { sent: false, reason: 'El archivo de Drive no es una imagen.' } };
       }

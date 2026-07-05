@@ -335,4 +335,22 @@ export const api = {
       }),
     portal: () => request<{ url: string }>('/api/v1/stripe/portal', { method: 'POST' }),
   },
+
+  drive: {
+    status: (botId: string) =>
+      request<{ connected: boolean; folderName: string | null; since: string | null }>(
+        `/api/v1/drive/bots/${botId}/status`,
+      ),
+    authorize: (botId: string) =>
+      request<{ authUrl: string }>(`/api/v1/drive/bots/${botId}/authorize`),
+    updateFolder: (botId: string, folderName: string) =>
+      request<{ folderName: string; files: number }>(`/api/v1/drive/bots/${botId}/folder`, {
+        method: 'PATCH',
+        body: JSON.stringify({ folderName }),
+      }),
+    disconnect: (botId: string) =>
+      request<{ disconnected: boolean }>(`/api/v1/drive/bots/${botId}/disconnect`, {
+        method: 'DELETE',
+      }),
+  },
 };
