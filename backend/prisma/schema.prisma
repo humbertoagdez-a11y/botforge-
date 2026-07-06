@@ -43,6 +43,7 @@ model User {
   planExpiresAt         DateTime?
   messagesUsedThisMonth Int       @default(0)
   messagesResetAt       DateTime  @default(now())
+  dailySummaryEnabled   Boolean   @default(true)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 

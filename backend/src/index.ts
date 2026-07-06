@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+import cron from 'node-cron';
 import path from 'path';
 import fs from 'fs';
 
@@ -25,7 +26,9 @@ import testRouter from './routes/test';
 import statsRouter from './routes/stats';
 import activityRouter from './routes/activity';
 import driveRouter, { googleOAuthRouter } from './routes/drive';
+import devRouter from './routes/dev';
 import { requireAuth } from './middleware/auth';
+import { generateDailySummaries } from './services/dailySummary';
 
 const uploadsDir = path.resolve(env.UPLOADS_DIR);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -62,6 +65,7 @@ app.use('/api/v1/stripe', stripeRouter);
 app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/activity', activityRouter);
 app.use('/api/v1/drive', requireAuth, driveRouter);
+app.use('/api/v1/dev', devRouter);
 
 // Rutas públicas (widget embebido)
 app.use('/api/v1/public', publicRouter);
@@ -80,6 +84,18 @@ if (env.NODE_ENV !== 'production') {
 }
 
 app.use(errorHandler);
+
+// Resumen diario por email: todos los días a las 21:00 hora Paraguay.
+// El .catch garantiza que un fallo del cron nunca tire abajo el servidor.
+cron.schedule(
+  '0 21 * * *',
+  () => {
+    generateDailySummaries().catch((err) =>
+      console.error('[dailySummary] Error en el cron:', err),
+    );
+  },
+  { timezone: 'America/Asuncion' },
+);
 
 app.listen(env.PORT, () => {
   console.log(`BotForge backend en http://localhost:${env.PORT} [${env.NODE_ENV}]`);
