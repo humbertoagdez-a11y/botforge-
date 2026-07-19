@@ -131,6 +131,12 @@ export default function PricingPage() {
                 ))}
               </ul>
 
+              {plan.id === 'FREE' && (
+                <p className="mb-4 text-xs text-muted-foreground">
+                  Probá tu bot en el Chat de prueba antes de conectar WhatsApp.
+                </p>
+              )}
+
               {plan.stripeId ? (
                 <Button
                   variant={plan.highlight ? 'default' : 'outline'}

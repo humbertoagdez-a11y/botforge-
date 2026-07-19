@@ -168,7 +168,7 @@ const PLANES = [
     name: 'FREE',
     price: 'Gs. 0',
     highlight: false,
-    features: ['1 bot activo', '100 mensajes por mes', '3 documentos', 'Chat web'],
+    features: ['1 bot activo', '100 mensajes por mes', '3 documentos', 'Probá tu bot en el Chat de prueba'],
     cta: 'Empezar gratis',
   },
   {

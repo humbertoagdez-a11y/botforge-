@@ -24,7 +24,7 @@ import InstructivoWizard from '@/components/InstructivoWizard';
 import ChatWidget from '@/components/ChatWidget';
 import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
-import { useAssistantStore } from '@/lib/store';
+import { useAssistantStore, useAuthStore } from '@/lib/store';
 import { Z } from '@/lib/z-index';
 
 interface WhatsAppPanelProps {
@@ -225,6 +225,7 @@ export default function BotDetailPage() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [activeTab, setActiveTab] = useState('documents');
   const { openAssistant } = useAssistantStore();
+  const { user } = useAuthStore();
 
   const form = useForm<UpdateData>({ resolver: zodResolver(updateSchema) });
 
@@ -484,6 +485,24 @@ export default function BotDetailPage() {
 
         {/* WhatsApp tab */}
         <TabsContent value="whatsapp" className="mt-4">
+          {user?.plan === 'FREE' && (
+            <Card className="mb-4 border-cyan-500/30 bg-cyan-500/5">
+              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  WhatsApp está disponible desde el plan Básico. Mientras tanto, probá tu bot desde la pestaña Chat de prueba.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setActiveTab('chat')}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Ir al Chat de prueba
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           <WhatsAppPanel
             bot={bot}
             onUpdate={setBot}
