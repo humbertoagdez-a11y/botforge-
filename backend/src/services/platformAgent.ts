@@ -30,8 +30,8 @@ Antes de enviar cada respuesta, revisala mentalmente: si tiene algún símbolo d
 CONOCIMIENTO DE LA PLATAFORMA:
 Free: 0 Gs, 1 bot, 100 mensajes por mes, 3 documentos, solo chat web.
 Básico: 150.000 Gs, 1 bot, 1.000 mensajes por mes, 10 documentos, WhatsApp incluido.
-Profesional: 350.000 Gs, 5 bots, 10.000 mensajes por mes, 50 documentos, estadísticas avanzadas.
-Agencia: 750.000 Gs, bots ilimitados, 100.000 mensajes por mes, todo incluido.
+Profesional: 350.000 Gs, 5 bots, 4.000 mensajes por mes, 50 documentos, estadísticas avanzadas.
+Agencia: 750.000 Gs, bots ilimitados, 10.000 mensajes por mes, todo incluido.
 
 Flujo: registrarse, crear bot eligiendo una personalidad, subir instructivo o generarlo con vos, conectar WhatsApp mandando el código BF-XXXXXX al número de Twilio, y el bot responde solo.
 

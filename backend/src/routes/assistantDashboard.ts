@@ -630,8 +630,8 @@ async function executeToolCall(
       const input = parsed.data as z.infer<typeof toolInputSchemas.request_plan_upgrade>;
       const info = {
         STARTER: { label: 'Básico', price: 'Gs. 150.000/mes', incluye: '1 bot, 1.000 mensajes/mes, 10 documentos por bot, WhatsApp' },
-        PRO: { label: 'Profesional', price: 'Gs. 350.000/mes', incluye: '5 bots, 10.000 mensajes/mes, 50 documentos por bot, WhatsApp + estadísticas' },
-        AGENCY: { label: 'Agencia', price: 'Gs. 750.000/mes', incluye: 'Bots ilimitados, 100.000 mensajes/mes, documentos ilimitados, soporte prioritario' },
+        PRO: { label: 'Profesional', price: 'Gs. 350.000/mes', incluye: '5 bots, 4.000 mensajes/mes, 50 documentos por bot, WhatsApp + estadísticas' },
+        AGENCY: { label: 'Agencia', price: 'Gs. 750.000/mes', incluye: 'Bots ilimitados, 10.000 mensajes/mes, documentos ilimitados, soporte prioritario' },
       }[input.targetPlan];
       return {
         result: {

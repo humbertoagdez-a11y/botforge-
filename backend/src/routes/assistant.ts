@@ -8,7 +8,7 @@ const router = Router();
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
-const PRIMARY_MODEL = 'claude-fable-5';
+const PRIMARY_MODEL = 'claude-sonnet-5';
 const FALLBACK_MODEL = 'claude-opus-4-8';
 
 const ARIA_SYSTEM = `Sos Aria, la asistente virtual de BotForge, una plataforma paraguaya de chatbots con IA para WhatsApp. Tu mision es ayudar a los visitantes del sitio web a entender el producto, responder sus dudas y orientarlos hacia el plan que mejor se adapta a su negocio.
