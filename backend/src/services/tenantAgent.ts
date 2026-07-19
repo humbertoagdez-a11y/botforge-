@@ -15,7 +15,7 @@ import { isCloudinaryConfigured } from '../config/cloudinary';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
-const PRIMARY_MODEL = 'claude-fable-5';
+const PRIMARY_MODEL = 'claude-sonnet-5';
 const FALLBACK_MODEL = 'claude-opus-4-8';
 const MAX_TURNS = 5;
 const SIMILARITY_THRESHOLD = 0.3;

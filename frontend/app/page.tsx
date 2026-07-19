@@ -184,7 +184,7 @@ const PLANES = [
     highlight: true,
     features: [
       '5 bots activos',
-      '10.000 mensajes por mes',
+      '4.000 mensajes por mes',
       '50 documentos por bot',
       'WhatsApp + Chat web',
       'Panel de estadisticas',
@@ -197,7 +197,7 @@ const PLANES = [
     highlight: false,
     features: [
       'Bots ilimitados',
-      '100.000 mensajes por mes',
+      '10.000 mensajes por mes',
       'Documentos ilimitados',
       'Todo lo del plan Profesional',
       'Soporte prioritario',

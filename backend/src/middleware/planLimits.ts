@@ -11,8 +11,8 @@ export const LIMITS: Record<Plan, {
 }> = {
   FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false },
   STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true  },
-  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 10000,  whatsapp: true  },
-  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 100000, whatsapp: true  },
+  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true  },
+  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true  },
 };
 
 export const PLAN_LIMIT_CODE = 'PLAN_LIMIT_EXCEEDED';
