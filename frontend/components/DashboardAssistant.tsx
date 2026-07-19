@@ -8,6 +8,7 @@ import {
   Download,
   Loader2,
   Paperclip,
+  RotateCcw,
   SendHorizonal,
   X,
   XCircle,
@@ -216,20 +217,52 @@ export default function DashboardAssistant(props: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Bienvenida al abrir; limpieza total al cerrar
+  // Al abrir: carga el historial persistido (si hay); si no, bienvenida.
+  // Al cerrar: limpieza total del estado local.
   useEffect(() => {
-    if (isOpen) {
-      setMessages([buildWelcome(botName)]);
-    } else {
+    if (!isOpen) {
       abortRef.current?.abort();
       setMessages([]);
       setInput('');
       setIsLoading(false);
       setSelectedImage(null);
       setImageModal(null);
+      return;
     }
+
+    let cancelled = false;
+    setMessages([buildWelcome(botName)]);
+    api.assistant
+      .history()
+      .then(({ messages: rows }) => {
+        if (cancelled || rows.length === 0) return;
+        const loaded: ChatMessage[] = rows.map((r) => {
+          const ts = new Date(r.createdAt).getTime();
+          if (r.role === 'assistant') {
+            return { id: newId('hist'), role: 'assistant', ...splitAccumulated(r.content), ts };
+          }
+          return { id: newId('hist'), role: 'user', content: r.content, ts };
+        });
+        setMessages(loaded);
+      })
+      .catch(() => { /* si falla la carga, queda la bienvenida */ });
+
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  /** Nueva conversación: borra el historial persistido y reinicia el panel */
+  async function handleNewConversation() {
+    abortRef.current?.abort();
+    setIsLoading(false);
+    setSelectedImage(null);
+    setMessages([buildWelcome(botName)]);
+    try {
+      await api.assistant.clearHistory();
+    } catch {
+      toast.error('No se pudo borrar el historial');
+    }
+  }
 
   // Auto-scroll al fondo con cada mensaje o actualizacion
   useEffect(() => {
@@ -638,9 +671,18 @@ export default function DashboardAssistant(props: Props) {
           </div>
           <button
             type="button"
+            onClick={() => void handleNewConversation()}
+            aria-label="Nueva conversación"
+            title="Nueva conversación"
+            className="ml-1 shrink-0 rounded-xl p-2 transition-colors hover:bg-white/10"
+          >
+            <RotateCcw className="h-4 w-4 text-white/50" />
+          </button>
+          <button
+            type="button"
             onClick={close}
             aria-label="Cerrar asistente"
-            className="ml-1 shrink-0 rounded-xl p-2 transition-colors hover:bg-white/10"
+            className="shrink-0 rounded-xl p-2 transition-colors hover:bg-white/10"
           >
             <X className="h-4 w-4 text-white/50" />
           </button>

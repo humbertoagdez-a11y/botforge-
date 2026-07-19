@@ -952,6 +952,13 @@ router.post(
       let aborted = false;
       req.on('close', () => { aborted = true; });
 
+      // Acumula todo el texto visible del asistente para persistirlo al final
+      let assistantFullText = '';
+      const sendText = (text: string) => {
+        assistantFullText += text;
+        send({ type: 'text', text });
+      };
+
       // Ejecuta los tool_use de un turno assistant y devuelve los tool_results
       const runTools = async (
         toolUses: Anthropic.ToolUseBlock[],
@@ -1015,7 +1022,7 @@ router.post(
         });
 
         req.on('close', () => stream.abort());
-        stream.on('text', (text) => send({ type: 'text', text }));
+        stream.on('text', (text) => sendText(text));
 
         const finalMessage = await stream.finalMessage();
 
@@ -1028,7 +1035,7 @@ router.post(
             messages: anthropicMessages.filter((m) => typeof m.content === 'string'),
           });
           const block = fallback.content[0];
-          send({ type: 'text', text: block?.type === 'text' ? block.text : '' });
+          sendText(block?.type === 'text' ? block.text : '');
           break;
         }
 
@@ -1059,6 +1066,29 @@ router.post(
         anthropicMessages.push({ role: 'user', content: results });
       }
 
+      // Persistir el turno completo (solo si no se abortó a mitad). El mensaje
+      // del usuario es el último entrante de tipo user con texto; en las
+      // reanudaciones tras confirmación el último es un turno assistant, así que
+      // no se re-guarda el user. La respuesta va acumulada en assistantFullText.
+      if (!aborted) {
+        const lastIncoming = messages[messages.length - 1];
+        const newUserText =
+          lastIncoming.role === 'user' && typeof lastIncoming.content === 'string'
+            ? lastIncoming.content
+            : null;
+        const toPersist: { userId: string; role: string; content: string }[] = [];
+        if (newUserText) toPersist.push({ userId, role: 'user', content: newUserText });
+        if (assistantFullText.trim()) toPersist.push({ userId, role: 'assistant', content: assistantFullText });
+        if (toPersist.length > 0) {
+          try {
+            await prisma.platformAssistantMessage.createMany({ data: toPersist });
+          } catch (persistErr) {
+            // Nunca romper la respuesta ya entregada por un fallo de persistencia
+            console.error('[assistant-dashboard] no se pudo guardar el historial:', persistErr);
+          }
+        }
+      }
+
       finish();
     } catch (err) {
       if (err instanceof Anthropic.APIUserAbortError) {
@@ -1078,5 +1108,33 @@ router.post(
     }
   },
 );
+
+// ─── HISTORIAL PERSISTENTE ────────────────────────────────────────────────────
+
+// GET /history — últimos 50 mensajes del usuario, en orden cronológico
+router.get('/history', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rows = await prisma.platformAssistantMessage.findMany({
+      where: { userId: req.user!.userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { role: true, content: true, createdAt: true },
+    });
+    // findMany trae los 50 más recientes desc; los devolvemos ascendente
+    res.json({ data: { messages: rows.reverse() }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /history/clear — borra todo el historial del usuario (Nueva conversación)
+router.post('/history/clear', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await prisma.platformAssistantMessage.deleteMany({ where: { userId: req.user!.userId } });
+    res.json({ data: { cleared: true }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

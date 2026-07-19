@@ -336,6 +336,15 @@ export const api = {
     portal: () => request<{ url: string }>('/api/v1/stripe/portal', { method: 'POST' }),
   },
 
+  assistant: {
+    history: () =>
+      request<{ messages: { role: 'user' | 'assistant'; content: string; createdAt: string }[] }>(
+        '/api/v1/assistant/dashboard/history',
+      ),
+    clearHistory: () =>
+      request<{ cleared: boolean }>('/api/v1/assistant/dashboard/history/clear', { method: 'POST' }),
+  },
+
   drive: {
     status: (botId: string) =>
       request<{ connected: boolean; folderName: string | null; since: string | null }>(

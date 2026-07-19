@@ -47,11 +47,25 @@ model User {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  bots                Bot[]
-  refreshTokens       RefreshToken[]
-  notificationConfigs NotificationConfig[]
+  bots                     Bot[]
+  refreshTokens            RefreshToken[]
+  notificationConfigs      NotificationConfig[]
+  platformAssistantMessages PlatformAssistantMessage[]
 
   @@map("users")
+}
+
+model PlatformAssistantMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  role      String // 'user' | 'assistant'
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("platform_assistant_messages")
 }
 
 model RefreshToken {
