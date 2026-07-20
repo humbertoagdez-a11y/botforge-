@@ -62,13 +62,17 @@ const PLATFORM_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'upload_instructivo_text',
-    description: 'Sube un texto como documento de entrenamiento al bot. El texto debe estar completo y listo.',
+    description: 'Sube un texto como documento de entrenamiento al bot. El texto debe estar completo y listo. Cuando sea el instructivo del negocio, pasá también personalitySummary para fijar la identidad del bot.',
     input_schema: {
       type: 'object',
       properties: {
         botId: { type: 'string' },
         filename: { type: 'string', description: 'Nombre del archivo, ej: instructivo-mi-negocio.txt' },
         content: { type: 'string', description: 'Contenido completo del instructivo' },
+        personalitySummary: {
+          type: 'string',
+          description: 'Resumen corto (2-3 líneas) con: el nombre con que el bot se presenta, el tono/personalidad (formal, cercano, divertido, etc.) y el rubro del negocio en una frase. Se guarda como personality del bot para que SIEMPRE sepa quién es y cómo hablar, sin depender de que RAG encuentre el chunk. No metas acá el catálogo ni precios, eso va en content.',
+        },
       },
       required: ['botId', 'filename', 'content'],
     },
@@ -259,6 +263,7 @@ const toolInputSchemas = {
     botId: z.string().min(1),
     filename: z.string().min(1).max(120),
     content: z.string().min(20).max(200000),
+    personalitySummary: z.string().min(10).max(600).optional(),
   }),
   disconnect_whatsapp: z.object({ botId: z.string().min(1) }),
   get_account_stats: z.object({}),
@@ -449,13 +454,39 @@ async function executeToolCall(
       }
 
       await documentQueue.add({ documentId: doc.id });
+
+      // Además del documento (que alimenta RAG con catálogo/precios/detalles),
+      // grabar un resumen de identidad en Bot.personality. Eso SIEMPRE está en
+      // el system prompt, así el bot sabe su nombre/tono/rubro aunque RAG no
+      // traiga el chunk correcto ante un mensaje genérico como "Hola".
+      const DEFAULT_PERSONALITY = 'Eres un asistente útil y amigable.';
+      let personalityUpdated = false;
+      let replacedCustom = false;
+      if (input.personalitySummary) {
+        replacedCustom = bot.personality.trim() !== DEFAULT_PERSONALITY;
+        if (replacedCustom) {
+          // Aviso recuperable en logs: la personality anterior queda registrada
+          console.log(
+            `[assistant-dashboard] bot ${bot.id}: reemplazo personality personalizada por el resumen del instructivo. Previa: "${bot.personality.slice(0, 100)}${bot.personality.length > 100 ? '...' : ''}"`,
+          );
+        }
+        await prisma.bot.update({
+          where: { id: bot.id },
+          data: { personality: input.personalitySummary },
+        });
+        personalityUpdated = true;
+      }
+
       return {
         result: {
           uploaded: true,
           documentId: doc.id,
           name: doc.name,
           status: doc.status,
-          note: 'El documento se está procesando; en 1-2 minutos queda listo.',
+          personalityUpdated,
+          note: personalityUpdated
+            ? `El documento se está procesando (1-2 min) y actualicé la identidad del bot (nombre, tono y rubro) para que se presente siempre bien.${replacedCustom ? ' Avisale al usuario que reemplazaste la personalidad anterior que tenía el bot.' : ''}`
+            : 'El documento se está procesando; en 1-2 minutos queda listo.',
         },
         ui: {
           kind: 'instructivo_preview',
