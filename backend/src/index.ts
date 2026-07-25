@@ -18,6 +18,7 @@ import botsRouter from './routes/bots';
 import documentsRouter from './routes/documents';
 import chatRouter from './routes/chat';
 import whatsappRouter from './routes/whatsapp';
+import metaWhatsappRouter from './routes/metaWhatsapp';
 import stripeRouter from './routes/stripe';
 import publicRouter from './routes/public';
 import assistantRouter from './routes/assistant';
@@ -60,6 +61,9 @@ app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/bots', botsRouter);
 app.use('/api/v1/bots/:botId/documents', documentsRouter);
 app.use('/api/v1/bots/:botId/chat', chatRouter);
+// Meta Cloud API: solo define GET /webhook. Va antes del router de Twilio para
+// que el GET lo resuelva Meta; el POST /webhook cae al router de Twilio.
+app.use('/api/v1/whatsapp', metaWhatsappRouter);
 app.use('/api/v1/whatsapp', whatsappRouter);
 app.use('/api/v1/stripe', stripeRouter);
 app.use('/api/v1/stats', statsRouter);
