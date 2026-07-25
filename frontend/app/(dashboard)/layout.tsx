@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import DashboardAssistant from '@/components/DashboardAssistant';
 import TechBackground from '@/components/TechBackground';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useSidebarStore } from '@/lib/store';
 import { refreshSession } from '@/lib/api';
 import { Z } from '@/lib/z-index';
 
@@ -41,7 +41,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const { token } = useAuthStore();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // El drawer vive en el store para que OnboardingGuide, que se renderiza en
+  // la page, pueda abrirlo al llegar al paso del Asistente
+  const { sidebarOpen, openSidebar, closeSidebar } = useSidebarStore();
 
   useEffect(() => {
     if (!token) router.replace('/auth/login');
@@ -49,8 +51,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Cerrar el drawer al navegar
   useEffect(() => {
-    setSidebarOpen(false);
-  }, [pathname]);
+    closeSidebar();
+  }, [pathname, closeSidebar]);
 
   // Refresh proactivo: al montar y cada 60s, si el token vence en <2 min
   // lo renueva antes de que cualquier request falle
@@ -73,14 +75,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <TechBackground />
       </div>
 
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
 
       {/* Overlay del drawer en movil (justo debajo del sidebar) */}
       {sidebarOpen && (
         <div
           style={{ zIndex: Z.sidebar - 1 }}
           className="fixed inset-0 bg-black/60 backdrop-blur-sm md:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={closeSidebar}
         />
       )}
 
@@ -94,7 +96,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span className="text-sm font-medium text-[#6E6E8E]">{sectionTitle(pathname)}</span>
           <button
             type="button"
-            onClick={() => setSidebarOpen(true)}
+            onClick={openSidebar}
             aria-label="Abrir menú"
             className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-cyan-400 transition-colors hover:bg-white/5"
           >

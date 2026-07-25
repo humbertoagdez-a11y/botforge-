@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Z } from '@/lib/z-index';
+import { useSidebarStore } from '@/lib/store';
 
 export const ONBOARDING_KEY = 'botforge_onboarding_done';
 
@@ -54,6 +55,15 @@ const GAP = 18;
 const MAX_WIDTH = 320;
 /** Padding del recorte del spotlight alrededor del elemento */
 const PAD = 8;
+/** Debajo de md el sidebar es un drawer; mismo breakpoint que usa Sidebar.tsx */
+const DRAWER_QUERY = '(max-width: 767px)';
+/** Duracion de la animacion del drawer (duration-300) mas margen */
+const DRAWER_ANIM_MS = 350;
+
+/** Pasos cuyo target vive dentro del sidebar */
+function targetIsInSidebar(target?: string): boolean {
+  return target === 'assistant';
+}
 
 export default function OnboardingGuide({ open, onFinish }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
@@ -62,6 +72,9 @@ export default function OnboardingGuide({ open, onFinish }: Props) {
   const [mounted, setMounted] = useState(false);
   const [resizeTick, setResizeTick] = useState(0);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  /** true solo si el drawer lo abrio la guia, no el usuario */
+  const openedDrawerRef = useRef(false);
+  const { openSidebar, closeSidebar } = useSidebarStore();
 
   const step = STEPS[stepIndex];
 
@@ -97,6 +110,41 @@ export default function OnboardingGuide({ open, onFinish }: Props) {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [open, measure]);
+
+  // En movil el sidebar es un drawer cerrado: el boton del Asistente queda
+  // trasladado fuera de pantalla y el spotlight iluminaba un area invisible.
+  // Se abre el drawer y se vuelve a medir cuando termina de entrar.
+  useEffect(() => {
+    if (!open || !targetIsInSidebar(step?.target)) return;
+    if (!window.matchMedia(DRAWER_QUERY).matches) return;
+    // Si ya estaba abierto lo abrio el usuario: no es nuestro, no se toca
+    if (useSidebarStore.getState().sidebarOpen) return;
+
+    openedDrawerRef.current = true;
+    openSidebar();
+    const t = setTimeout(measure, DRAWER_ANIM_MS);
+    return () => clearTimeout(t);
+  }, [open, step, openSidebar, measure]);
+
+  // Al salir del paso (avanzar, saltar o terminar) se devuelve el drawer a
+  // como estaba, pero solo si lo abrimos nosotros
+  useEffect(() => {
+    if (open && targetIsInSidebar(step?.target)) return;
+    if (!openedDrawerRef.current) return;
+    openedDrawerRef.current = false;
+    closeSidebar();
+  }, [open, step, closeSidebar]);
+
+  // Si la guia se desmonta con el drawer abierto por nosotros, cerrarlo igual
+  useEffect(
+    () => () => {
+      if (openedDrawerRef.current) {
+        openedDrawerRef.current = false;
+        closeSidebar();
+      }
+    },
+    [closeSidebar],
+  );
 
   // Al cambiar de paso se oculta hasta recalcular, para que no aparezca un
   // frame con el contenido nuevo en la posicion del paso anterior

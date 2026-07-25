@@ -31,6 +31,23 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
     set({ assistantOpen: false, assistantBotId: null, assistantBotName: null }),
 }));
 
+// ─── Drawer del sidebar en movil (NO persistido: es estado de UI) ────────────
+// Vive en el store y no en el layout del dashboard porque OnboardingGuide se
+// renderiza dentro de la page: como page y layout son arboles separados en el
+// App Router, no hay forma de pasarle el setState por props.
+
+interface SidebarState {
+  sidebarOpen: boolean;
+  openSidebar: () => void;
+  closeSidebar: () => void;
+}
+
+export const useSidebarStore = create<SidebarState>()((set) => ({
+  sidebarOpen: false,
+  openSidebar: () => set({ sidebarOpen: true }),
+  closeSidebar: () => set({ sidebarOpen: false }),
+}));
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
