@@ -103,6 +103,17 @@ export interface AccountStats {
   recentConversations: ConversationSummary[];
 }
 
+export interface PagoparEstado {
+  plan: string;
+  montoTotal: number;
+  pagado: boolean;
+  /** true solo si el webhook validó el token y aplicó el plan */
+  confirmadoPorWebhook: boolean;
+  fechaPago: string | null;
+  formaPago: string | null;
+  cancelado: boolean;
+}
+
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   const direct = localStorage.getItem('bf_token');
@@ -327,13 +338,25 @@ export const api = {
     get: () => request<ActivityEvent[]>('/api/v1/activity'),
   },
 
-  stripe: {
+  // Stripe dado de baja: las rutas del backend están desmontadas.
+  // Se deja el bloque comentado por si hay que volver atrás.
+  // stripe: {
+  //   checkout: (plan: 'STARTER' | 'PRO' | 'AGENCY') =>
+  //     request<{ url: string }>('/api/v1/stripe/checkout', {
+  //       method: 'POST',
+  //       body: JSON.stringify({ plan }),
+  //     }),
+  //   portal: () => request<{ url: string }>('/api/v1/stripe/portal', { method: 'POST' }),
+  // },
+
+  pagopar: {
     checkout: (plan: 'STARTER' | 'PRO' | 'AGENCY') =>
-      request<{ url: string }>('/api/v1/stripe/checkout', {
+      request<{ checkoutUrl: string; hashPedido: string }>('/api/v1/pagopar/checkout', {
         method: 'POST',
         body: JSON.stringify({ plan }),
       }),
-    portal: () => request<{ url: string }>('/api/v1/stripe/portal', { method: 'POST' }),
+    consultar: (hashPedido: string) =>
+      request<PagoparEstado>(`/api/v1/pagopar/consultar/${hashPedido}`),
   },
 
   assistant: {

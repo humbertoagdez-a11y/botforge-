@@ -32,6 +32,11 @@ const envSchema = z.object({
   // las instrucciones de conexion, el que corresponde a META_PHONE_NUMBER_ID.
   // No confundir con META_PHONE_NUMBER_ID, que es el id interno de Meta.
   META_WHATSAPP_DISPLAY_NUMBER: z.string().optional().default('+595991820602'),
+  // Pagopar: pasarela activa. La private key solo se usa para firmar tokens
+  // sha1, nunca viaja en una URL ni se loguea.
+  PAGOPAR_PUBLIC_KEY: z.string().optional().default(''),
+  PAGOPAR_PRIVATE_KEY: z.string().optional().default(''),
+  // Stripe: dado de baja, el codigo queda por si hay que volver atras
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRICE_STARTER: z.string().optional(),

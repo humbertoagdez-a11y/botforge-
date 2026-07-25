@@ -51,8 +51,30 @@ model User {
   refreshTokens            RefreshToken[]
   notificationConfigs      NotificationConfig[]
   platformAssistantMessages PlatformAssistantMessage[]
+  pagoparOrders            PagoparOrder[]
 
   @@map("users")
+}
+
+/// Pedido de pago en Pagopar. Flujo simple (pago unico, no recurrente):
+/// se crea antes de mandar al cliente al checkout y lo marca pagado el
+/// webhook, siempre despues de validar el token sha1.
+model PagoparOrder {
+  id               String    @id @default(uuid())
+  userId           String
+  plan             String
+  montoTotal       Int
+  /// Lo devuelve Pagopar al iniciar la transaccion; identifica el pedido
+  hashPedido       String?   @unique
+  /// Nuestro identificador, el que viaja en el token de la firma
+  idPedidoComercio String    @unique
+  pagado           Boolean   @default(false)
+  fechaPago        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("pagopar_orders")
 }
 
 model PlatformAssistantMessage {

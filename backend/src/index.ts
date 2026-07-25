@@ -20,6 +20,7 @@ import chatRouter from './routes/chat';
 import whatsappRouter from './routes/whatsapp';
 import metaWhatsappRouter from './routes/metaWhatsapp';
 import stripeRouter from './routes/stripe';
+import pagoparRouter from './routes/pagopar';
 import publicRouter from './routes/public';
 import assistantRouter from './routes/assistant';
 import assistantDashboardRouter from './routes/assistantDashboard';
@@ -36,12 +37,15 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const app = express();
 
+// Stripe dado de baja: Pagopar es la pasarela activa. El codigo queda intacto
+// para poder volver atras; solo se desmontan las rutas.
 // Stripe webhook necesita el raw body ANTES de express.json()
-app.post(
-  '/api/v1/stripe/webhook',
-  express.raw({ type: 'application/json' }),
-  (req, res, next) => { void stripeRouter(req, res, next); },
-);
+// app.post(
+//   '/api/v1/stripe/webhook',
+//   express.raw({ type: 'application/json' }),
+//   (req, res, next) => { void stripeRouter(req, res, next); },
+// );
+void stripeRouter;
 
 app.use(helmet());
 app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
@@ -65,7 +69,8 @@ app.use('/api/v1/bots/:botId/chat', chatRouter);
 // que el GET lo resuelva Meta; el POST /webhook cae al router de Twilio.
 app.use('/api/v1/whatsapp', metaWhatsappRouter);
 app.use('/api/v1/whatsapp', whatsappRouter);
-app.use('/api/v1/stripe', stripeRouter);
+// app.use('/api/v1/stripe', stripeRouter);
+app.use('/api/v1/pagopar', pagoparRouter);
 app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/activity', activityRouter);
 app.use('/api/v1/drive', requireAuth, driveRouter);

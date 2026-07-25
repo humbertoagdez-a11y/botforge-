@@ -19,7 +19,7 @@ const PLANS = [
     msgs: '100 mensajes/mes',
     wa: false,
     highlight: false,
-    stripeId: null,
+    payPlan: null,
   },
   {
     id: 'STARTER' as const,
@@ -31,7 +31,7 @@ const PLANS = [
     msgs: '1.000 mensajes/mes',
     wa: true,
     highlight: false,
-    stripeId: 'STARTER',
+    payPlan: 'STARTER' as const,
   },
   {
     id: 'PRO' as const,
@@ -43,7 +43,7 @@ const PLANS = [
     msgs: '4.000 mensajes/mes',
     wa: true,
     highlight: true,
-    stripeId: 'PRO',
+    payPlan: 'PRO' as const,
   },
   {
     id: 'AGENCY' as const,
@@ -55,7 +55,7 @@ const PLANS = [
     msgs: '10.000 mensajes/mes',
     wa: true,
     highlight: false,
-    stripeId: 'AGENCY',
+    payPlan: 'AGENCY' as const,
   },
 ];
 
@@ -67,11 +67,18 @@ export default function PricingPage() {
     if (!token) { toast.error('Tenés que iniciar sesión'); return; }
     setLoading(planId);
     try {
-      const { url } = await api.stripe.checkout(planId);
-      if (!url) throw new Error('Error al crear sesión de pago');
-      window.location.href = url;
+      const { checkoutUrl, hashPedido } = await api.pagopar.checkout(planId);
+      if (!checkoutUrl) throw new Error('Error al crear la orden de pago');
+      // Guardado para poder consultar el estado al volver del checkout, que es
+      // de dónde vuelve el usuario sin ningún parámetro nuestro
+      try {
+        sessionStorage.setItem('bf_pagopar_hash', hashPedido);
+      } catch {
+        // sessionStorage bloqueado: se pedirá el hash por query param
+      }
+      window.location.href = checkoutUrl;
     } catch (err) {
-      if ((err as ApiError).code === 'STRIPE_NOT_CONFIGURED') {
+      if ((err as ApiError).code === 'PAGOPAR_NOT_CONFIGURED') {
         toast.info('Los pagos estarán disponibles pronto');
       } else {
         toast.error(err instanceof Error ? err.message : 'Error al procesar el pago');
@@ -85,7 +92,8 @@ export default function PricingPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold">Planes y precios</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Los precios se cobran en USD. El equivalente en guaraníes es referencial.
+          Pagás en guaraníes con Pagopar: tarjeta, transferencia, giro o pago en efectivo.
+          Cada pago cubre un mes; todavía no hay débito automático.
         </p>
       </div>
 
@@ -137,14 +145,14 @@ export default function PricingPage() {
                 </p>
               )}
 
-              {plan.stripeId ? (
+              {plan.payPlan ? (
                 <Button
                   variant={plan.highlight ? 'default' : 'outline'}
                   className="w-full"
                   disabled={isCurrent || loading !== null}
-                  onClick={() => handleUpgrade(plan.stripeId as 'STARTER' | 'PRO' | 'AGENCY')}
+                  onClick={() => handleUpgrade(plan.payPlan)}
                 >
-                  {loading === plan.stripeId && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {loading === plan.payPlan && <Loader2 className="h-4 w-4 animate-spin" />}
                   {isCurrent ? 'Plan actual' : 'Contratar'}
                 </Button>
               ) : (
