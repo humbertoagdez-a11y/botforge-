@@ -14,11 +14,23 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const POLL_INTERVAL = 3000;
 
 type Step = 'idle' | 'requesting' | 'pending' | 'polling' | 'active' | 'expired';
+type Channel = 'meta' | 'twilio';
 
-interface ConnectionInfo {
+/** Canal activo y número de negocio al que el cliente le escribe. Lo define el
+    backend según TWILIO_WHATSAPP_ENABLED; acá no se hardcodea ningún número. */
+interface ChannelInfo {
+  channel: Channel;
+  businessNumber: string;
+}
+
+interface ConnectionInfo extends ChannelInfo {
   code: string;
-  sandboxNumber: string;
   expiresAt: string;
+}
+
+interface StatusResponse extends Partial<ChannelInfo> {
+  status: string;
+  phoneNumber?: string;
 }
 
 interface Props {
@@ -39,6 +51,8 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
   const [phoneInput, setPhoneInput] = useState('');
   const [inputError, setInputError] = useState('');
   const [conn, setConn] = useState<ConnectionInfo | null>(null);
+  const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
+  const [connectedNumber, setConnectedNumber] = useState<string | null>(bot.whatsappNumber ?? null);
   const [msLeft, setMsLeft] = useState(0);
   const [disconnecting, setDisconnecting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -48,6 +62,35 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
   useEffect(() => {
     if (bot.whatsappNumber && step !== 'active') setStep('active');
   }, [bot.whatsappNumber]);
+
+  // Estado real al montar: con Meta el vínculo se guarda en metaPhoneNumberId,
+  // así que bot.whatsappNumber viene null y no alcanza para saber si está
+  // conectado. De paso trae el canal activo y el número de negocio.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${API}/api/v1/whatsapp/bots/${bot.id}/connection-status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { data: StatusResponse };
+        if (cancelled) return;
+
+        const { channel, businessNumber, status, phoneNumber } = json.data;
+        if (channel && businessNumber) setChannelInfo({ channel, businessNumber });
+
+        // Solo promovemos a 'active'; nunca degradamos un flujo ya empezado
+        if (status === 'ACTIVE') {
+          setConnectedNumber(phoneNumber ?? null);
+          setStep('active');
+        }
+      } catch {
+        // sin conexión: las instrucciones quedan ocultas hasta el próximo intento
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bot.id, token]);
 
   // Countdown timer
   useEffect(() => {
@@ -78,13 +121,12 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
         const res = await fetch(`${API}/api/v1/whatsapp/bots/${bot.id}/connection-status`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const json = (await res.json()) as {
-          data: { status: string; phoneNumber?: string };
-        };
+        const json = (await res.json()) as { data: StatusResponse };
         const { status, phoneNumber } = json.data;
 
         if (status === 'ACTIVE') {
           stopPolling();
+          setConnectedNumber(phoneNumber ?? null);
           onUpdate({ ...bot, whatsappNumber: phoneNumber ?? null });
           setStep('active');
           toast.success('¡WhatsApp conectado exitosamente!');
@@ -123,8 +165,10 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
         error?: { message: string };
       };
       if (!res.ok) throw new Error(json.error?.message ?? 'Error al solicitar conexión');
-      setConn(json.data!);
-      setMsLeft(new Date(json.data!.expiresAt).getTime() - Date.now());
+      const data = json.data!;
+      setConn(data);
+      setChannelInfo({ channel: data.channel, businessNumber: data.businessNumber });
+      setMsLeft(new Date(data.expiresAt).getTime() - Date.now());
       setStep('pending');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error inesperado');
@@ -142,6 +186,8 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
       const json = (await res.json()) as { data?: Bot; error?: { message: string } };
       if (!res.ok) throw new Error(json.error?.message);
       onUpdate(json.data!);
+      setConnectedNumber(null);
+      setConn(null);
       setStep('idle');
       setPhoneInput('');
       toast.success('Número desconectado');
@@ -168,7 +214,7 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
               <CheckCircle2 className="h-8 w-8 shrink-0 text-green-600" />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-green-800">WhatsApp conectado</p>
-                <p className="font-mono text-sm text-green-700">{bot.whatsappNumber}</p>
+                <p className="font-mono text-sm text-green-700">{connectedNumber ?? bot.whatsappNumber}</p>
                 <p className="mt-0.5 text-xs text-green-600">Los mensajes que lleguen a este número serán respondidos por el bot</p>
               </div>
               <Button
@@ -184,7 +230,7 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
             </div>
           </CardContent>
         </Card>
-        <TwilioInstructions />
+        <ChannelInstructions info={channelInfo} />
       </div>
     );
   }
@@ -209,7 +255,9 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</div>
               <div>
                 <p className="text-sm font-medium">Abrí WhatsApp desde tu teléfono</p>
-                <p className="text-xs text-muted-foreground">Usá el número <span className="font-mono font-semibold">{conn.sandboxNumber.replace('whatsapp:', '')}</span></p>
+                <p className="text-xs text-muted-foreground">
+                  Tiene que ser desde el número que registraste: <span className="font-mono font-semibold">{phoneInput}</span>
+                </p>
               </div>
             </div>
 
@@ -218,7 +266,12 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</div>
               <div className="flex-1">
                 <p className="text-sm font-medium">
-                  Mandá un mensaje a <span className="font-mono font-semibold">{conn.sandboxNumber}</span>
+                  Mandá un mensaje a <span className="font-mono font-semibold">{conn.businessNumber}</span>
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {conn.channel === 'meta'
+                    ? 'Es el número de WhatsApp Business de BotForge'
+                    : 'Es el número del sandbox de Twilio'}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">El mensaje tiene que ser exactamente este código:</p>
                 <div className="mt-2 flex items-center gap-2">
@@ -338,12 +391,37 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
         </CardContent>
       </Card>
 
-      <TwilioInstructions />
+      <ChannelInstructions info={channelInfo} />
     </div>
   );
 }
 
-function TwilioInstructions() {
+/** Instrucciones según el canal activo. Con Meta el cliente no configura nada:
+    el número y el webhook son de la plataforma. Con Twilio sigue viendo la
+    configuración del webhook, porque la cuenta de Twilio es suya. */
+function ChannelInstructions({ info }: { info: ChannelInfo | null }) {
+  if (!info) return null;
+
+  if (info.channel === 'meta') {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-muted-foreground">Cómo funciona</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-xs text-muted-foreground">
+          <p>
+            Tu bot atiende desde el número de WhatsApp Business de BotForge:{' '}
+            <span className="font-mono font-semibold text-foreground">{info.businessNumber}</span>
+          </p>
+          <p>
+            No tenés que configurar nada más. Apenas verificás tu número, los mensajes que lleguen
+            a ese WhatsApp los responde tu bot automáticamente.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const webhookUrl = `${API}/api/v1/whatsapp/webhook`;
   return (
     <Card>

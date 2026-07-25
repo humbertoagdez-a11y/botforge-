@@ -20,6 +20,18 @@ const router = Router();
 const SANDBOX_NUMBER = env.TWILIO_WHATSAPP_FROM?.replace('whatsapp:', '') ?? '+14155238886';
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+/**
+ * Canal activo y numero al que el cliente tiene que escribirle para conectar.
+ * Con Twilio apagado (default) es el numero real de WhatsApp Business; si se
+ * reactiva Twilio, vuelve a ser el del sandbox. El frontend arma las
+ * instrucciones con esto, sin numeros hardcodeados.
+ */
+function activeChannel(): { channel: 'meta' | 'twilio'; businessNumber: string } {
+  return env.TWILIO_WHATSAPP_ENABLED
+    ? { channel: 'twilio', businessNumber: SANDBOX_NUMBER }
+    : { channel: 'meta', businessNumber: env.META_WHATSAPP_DISPLAY_NUMBER };
+}
+
 function generateCode(): string {
   return `BF-${Math.floor(100000 + Math.random() * 900000)}`;
 }
@@ -64,10 +76,16 @@ router.post(
         },
       });
 
+      const { channel, businessNumber } = activeChannel();
+
       res.json({
         data: {
           code,
-          sandboxNumber: SANDBOX_NUMBER,
+          channel,
+          businessNumber,
+          // Alias heredado: lo lee el frontend anterior a Meta. Apunta al mismo
+          // numero, asi que durante el deploy escalonado sigue siendo correcto.
+          sandboxNumber: businessNumber,
           expiresAt: expiresAt.toISOString(),
         },
         error: null,
@@ -86,9 +104,15 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const bot = await getOwnedBot(req.params.botId, req.user!.userId);
+      const base = activeChannel();
 
-      if (bot.whatsappNumber) {
-        res.json({ data: { status: 'ACTIVE', phoneNumber: bot.whatsappNumber }, error: null, meta: null });
+      // Con Meta los mensajes llegan al numero de negocio, no al del cliente:
+      // ese es el numero que hay que mostrar como conectado. Con Twilio sigue
+      // siendo el numero del cliente, que es donde rutea el sandbox.
+      const connectedNumber = bot.metaPhoneNumberId ? base.businessNumber : bot.whatsappNumber;
+
+      if (connectedNumber) {
+        res.json({ data: { ...base, status: 'ACTIVE', phoneNumber: connectedNumber }, error: null, meta: null });
         return;
       }
 
@@ -98,7 +122,7 @@ router.get(
       });
 
       if (!conn) {
-        res.json({ data: { status: 'IDLE' }, error: null, meta: null });
+        res.json({ data: { ...base, status: 'IDLE' }, error: null, meta: null });
         return;
       }
 
@@ -107,12 +131,13 @@ router.get(
           where: { id: conn.id },
           data: { status: 'EXPIRED' },
         });
-        res.json({ data: { status: 'EXPIRED' }, error: null, meta: null });
+        res.json({ data: { ...base, status: 'EXPIRED' }, error: null, meta: null });
         return;
       }
 
       res.json({
         data: {
+          ...base,
           status: conn.status,
           phoneNumber: conn.status === 'ACTIVE' ? conn.phoneNumber : undefined,
           expiresAt: conn.status === 'PENDING' ? conn.expiresAt.toISOString() : undefined,

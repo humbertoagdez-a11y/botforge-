@@ -28,6 +28,10 @@ const envSchema = z.object({
   META_VERIFY_TOKEN: z.string().optional().default(''),
   META_WHATSAPP_TOKEN: z.string().optional().default(''),
   META_PHONE_NUMBER_ID: z.string().optional().default(''),
+  // Numero de WhatsApp Business en formato legible: es el que ve el cliente en
+  // las instrucciones de conexion, el que corresponde a META_PHONE_NUMBER_ID.
+  // No confundir con META_PHONE_NUMBER_ID, que es el id interno de Meta.
+  META_WHATSAPP_DISPLAY_NUMBER: z.string().optional().default('+595991820602'),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRICE_STARTER: z.string().optional(),
