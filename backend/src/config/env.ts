@@ -17,6 +17,13 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_WHATSAPP_FROM: z.string().optional(),
+  // Canal Twilio: apagado por defecto. El codigo queda intacto y se reactiva
+  // poniendo TWILIO_WHATSAPP_ENABLED=true, sin redeploy de codigo.
+  TWILIO_WHATSAPP_ENABLED: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true'),
   // Meta Cloud API (WhatsApp). Conviven con Twilio durante la migracion.
   META_VERIFY_TOKEN: z.string().optional().default(''),
   META_WHATSAPP_TOKEN: z.string().optional().default(''),

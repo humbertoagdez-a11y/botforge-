@@ -6,74 +6,14 @@ import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { checkWhatsAppAccess, assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
-import { getRelevantChunks } from '../services/rag';
+import { checkWhatsAppAccess } from '../middleware/planLimits';
+import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
 import {
-  buildTenantSystemPrompt,
-  runTenantAgentLoop,
-  type TenantAgentContext,
-} from '../services/tenantAgent';
+  handleVerificationCode,
+  processInboundMessage,
+  VERIFICATION_CODE_RE,
+} from '../services/inboundMessage';
 import { sendTextMessage, sendImageMessage, isTwilioConfigured } from '../services/twilioMessaging';
-import { sendEmail } from '../services/email';
-
-// ─── Notificación "el cliente pide un humano" ─────────────────────────────────
-
-const HUMAN_KEYWORDS = [
-  'hablar con una persona',
-  'hablar con alguien',
-  'quiero hablar con alguien',
-  'hablar con un humano',
-  'con un humano',
-  'persona real',
-  'un agente',
-  'atencion humana',
-  'atención humana',
-  'no sos una persona',
-  'sos un robot',
-];
-
-function wantsHuman(message: string): boolean {
-  const lower = message.toLowerCase();
-  return HUMAN_KEYWORDS.some((k) => lower.includes(k));
-}
-
-async function notifyHumanRequested(
-  bot: { id: string; name: string },
-  clientNumber: string,
-  message: string,
-): Promise<void> {
-  try {
-    const config = await prisma.notificationConfig.findUnique({
-      where: { botId_event: { botId: bot.id, event: 'human_requested' } },
-    });
-    if (!config?.isActive) return;
-
-    const preview = message.length > 200 ? `${message.slice(0, 200)}...` : message;
-    await sendEmail(
-      config.email,
-      'Tu bot necesita ayuda humana',
-      `<!DOCTYPE html>
-<html lang="es">
-  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
-    <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
-      <p style="font-size:20px;font-weight:bold;color:#7C3AED;margin:0 0 20px;">BotForge</p>
-      <p style="font-size:15px;line-height:1.6;margin:0 0 8px;">
-        Un cliente pidió hablar con una persona en el bot <strong>${bot.name}</strong>.
-      </p>
-      <p style="font-size:14px;color:#333;margin:0 0 4px;">Número del cliente: <strong>${clientNumber}</strong></p>
-      <p style="font-size:14px;color:#333;margin:0 0 20px;">Mensaje: "${preview}"</p>
-      <a href="${env.FRONTEND_URL}/dashboard/conversations"
-         style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:10px 24px;border-radius:8px;">
-        Ver la conversación
-      </a>
-    </div>
-  </body>
-</html>`,
-    );
-  } catch (err) {
-    console.error('[whatsapp] Error al notificar pedido de humano:', err);
-  }
-}
 
 const router = Router();
 
@@ -199,9 +139,11 @@ router.delete(
         data: { status: 'EXPIRED' },
       });
 
+      // Limpia los dos vinculos: si solo se borrara whatsappNumber, un bot
+      // conectado por Meta seguiria respondiendo despues de "Desconectar".
       const updated = await prisma.bot.update({
         where: { id: bot.id },
-        data: { whatsappNumber: null },
+        data: { whatsappNumber: null, metaPhoneNumberId: null },
       });
 
       res.json({ data: updated, error: null, meta: null });
@@ -210,6 +152,18 @@ router.delete(
     }
   },
 );
+
+// ─── Kill switch del canal Twilio ─────────────────────────────────────────────
+// El canal activo es Meta Cloud API. El codigo de Twilio queda intacto pero
+// inactivo: se reactiva poniendo TWILIO_WHATSAPP_ENABLED=true, sin tocar nada
+// mas. Responde 200 con TwiML vacio para que Twilio no reintente.
+function requireTwilioEnabled(_req: Request, res: Response, next: NextFunction): void {
+  if (!env.TWILIO_WHATSAPP_ENABLED) {
+    res.status(200).type('text/xml').send('<Response></Response>');
+    return;
+  }
+  next();
+}
 
 // ─── Validación de firma Twilio ───────────────────────────────────────────────
 // Usa BACKEND_URL fija (no reconstruye la URL del request): detras del proxy
@@ -240,249 +194,113 @@ function validateTwilioSignature(req: Request, res: Response, next: NextFunction
 }
 
 // ─── POST /webhook ─────────────────────────────────────────────────────────────
-router.post('/webhook', validateTwilioSignature, async (req: Request, res: Response) => {
-  const body = req.body as Record<string, string>;
-  const from = body.From ?? '';
-  let msgBody = (body.Body ?? '').trim();
-  const fromNumber = from.replace('whatsapp:', '');
+router.post(
+  '/webhook',
+  requireTwilioEnabled,
+  validateTwilioSignature,
+  async (req: Request, res: Response) => {
+    const body = req.body as Record<string, string>;
+    const from = body.From ?? '';
+    let msgBody = (body.Body ?? '').trim();
+    const fromNumber = from.replace('whatsapp:', '');
 
-  // ── Media entrante: audios (Deepgram) e imagenes (Google Vision) ───────────
-  const mediaType = body.MediaContentType0 ?? '';
-  const mediaUrl = body.MediaUrl0 ?? '';
-  let imageContext = '';
+    // ── Media entrante: audios (Deepgram) e imagenes (Google Vision) ─────────
+    const mediaType = body.MediaContentType0 ?? '';
+    const mediaUrl = body.MediaUrl0 ?? '';
+    let imageContext = '';
 
-  const twilioAuthHeader =
-    env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN
-      ? `Basic ${Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64')}`
-      : null;
+    const twilioAuthHeader =
+      env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN
+        ? `Basic ${Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64')}`
+        : null;
 
-  if (mediaType.startsWith('audio/') && mediaUrl && env.DEEPGRAM_API_KEY && twilioAuthHeader) {
-    try {
-      const audioRes = await fetch(mediaUrl, { headers: { Authorization: twilioAuthHeader } });
-      const audioBuffer = await audioRes.arrayBuffer();
-
-      const dgRes = await fetch(
-        'https://api.deepgram.com/v1/listen?model=nova-3&language=es',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
-            'Content-Type': mediaType,
-          },
-          body: audioBuffer,
-        },
-      );
-      const dgData = (await dgRes.json()) as {
-        results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string }> }> };
-      };
-      const transcript = dgData.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
-
-      if (transcript) {
-        msgBody = transcript;
-        console.log('[deepgram] Audio transcripto:', transcript.slice(0, 120));
+    if (mediaType.startsWith('audio/') && mediaUrl && twilioAuthHeader) {
+      try {
+        const audioRes = await fetch(mediaUrl, { headers: { Authorization: twilioAuthHeader } });
+        const transcript = await transcribeAudio(await audioRes.arrayBuffer(), mediaType);
+        if (transcript) msgBody = transcript;
+      } catch (err) {
+        console.warn('[deepgram] Error bajando audio de Twilio:', err);
       }
-    } catch (err) {
-      console.warn('[deepgram] Error transcribiendo audio:', err);
     }
-  }
 
-  if (mediaType.startsWith('image/') && mediaUrl && env.GOOGLE_VISION_API_KEY && twilioAuthHeader) {
-    try {
-      const imgRes = await fetch(mediaUrl, { headers: { Authorization: twilioAuthHeader } });
-      const imgBuffer = await imgRes.arrayBuffer();
-      const base64 = Buffer.from(imgBuffer).toString('base64');
-
-      const visionRes = await fetch(
-        `https://vision.googleapis.com/v1/images:annotate?key=${env.GOOGLE_VISION_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requests: [
-              {
-                image: { content: base64 },
-                features: [
-                  { type: 'TEXT_DETECTION', maxResults: 1 },
-                  { type: 'LABEL_DETECTION', maxResults: 5 },
-                  { type: 'OBJECT_LOCALIZATION', maxResults: 5 },
-                ],
-              },
-            ],
-          }),
-        },
-      );
-      const visionData = (await visionRes.json()) as {
-        responses?: Array<{
-          fullTextAnnotation?: { text?: string };
-          labelAnnotations?: Array<{ description: string }>;
-          localizedObjectAnnotations?: Array<{ name: string }>;
-        }>;
-      };
-      const response = visionData.responses?.[0];
-
-      const text = response?.fullTextAnnotation?.text ?? '';
-      const labels = (response?.labelAnnotations ?? []).map((l) => l.description).join(', ');
-      const objects = (response?.localizedObjectAnnotations ?? []).map((o) => o.name).join(', ');
-
-      imageContext = '[El cliente mandó una imagen.';
-      if (text) imageContext += ` Texto detectado: "${text.slice(0, 200)}".`;
-      if (labels) imageContext += ` Elementos: ${labels}.`;
-      if (objects) imageContext += ` Objetos: ${objects}.`;
-      imageContext += ']';
-
-      console.log('[vision] Imagen analizada:', imageContext.slice(0, 200));
-    } catch (err) {
-      console.warn('[vision] Error analizando imagen:', err);
+    if (mediaType.startsWith('image/') && mediaUrl && twilioAuthHeader) {
+      try {
+        const imgRes = await fetch(mediaUrl, { headers: { Authorization: twilioAuthHeader } });
+        imageContext = await analyzeImage(await imgRes.arrayBuffer());
+      } catch (err) {
+        console.warn('[vision] Error bajando imagen de Twilio:', err);
+      }
     }
-  }
 
-  console.log('[webhook] from:', from);
-  console.log('[webhook] senderNumber:', from.replace('whatsapp:', ''));
+    console.log('[webhook] from:', from);
+    console.log('[webhook] senderNumber:', fromNumber);
 
-  const twiml = new twilio.twiml.MessagingResponse();
+    const twiml = new twilio.twiml.MessagingResponse();
 
-  // ── Verification code flow ──────────────────────────────────────────────────
-  if (/^BF-\d{6}$/i.test(msgBody)) {
-    const code = msgBody.toUpperCase();
-    try {
-      const conn = await prisma.whatsAppConnection.findUnique({
-        where: { verificationCode: code },
+    // ── Verification code flow ────────────────────────────────────────────────
+    if (VERIFICATION_CODE_RE.test(msgBody)) {
+      const reply = await handleVerificationCode(msgBody, fromNumber, {
+        channel: 'twilio',
+        whatsappNumber: fromNumber,
       });
-
-      if (!conn || conn.status !== 'PENDING') {
-        twiml.message('Código inválido o ya utilizado. Generá uno nuevo desde el panel de BotForge.');
-      } else if (new Date() > conn.expiresAt) {
-        await prisma.whatsAppConnection.update({ where: { id: conn.id }, data: { status: 'EXPIRED' } });
-        twiml.message('El código expiró ⏱ Generá uno nuevo desde el panel de BotForge.');
-      } else if (conn.phoneNumber !== fromNumber) {
-        twiml.message('Este código fue generado para otro número. Asegurate de enviar desde el número que registraste.');
-      } else {
-        await prisma.$transaction([
-          prisma.whatsAppConnection.update({ where: { id: conn.id }, data: { status: 'ACTIVE' } }),
-          prisma.bot.update({ where: { id: conn.botId }, data: { whatsappNumber: fromNumber } }),
-        ]);
-        twiml.message('✅ ¡WhatsApp conectado exitosamente a tu bot de BotForge! Podés probarlo enviando cualquier mensaje.');
-      }
-    } catch (err) {
-      console.error('[webhook] Error en verificación:', err);
-      twiml.message('Hubo un error al verificar el código. Intentá de nuevo.');
-    }
-    res.type('text/xml').send(twiml.toString());
-    return;
-  }
-
-  // ── Normal chat flow ────────────────────────────────────────────────────────
-  try {
-    const senderNumber = fromNumber;
-    const bot = await prisma.bot.findFirst({
-      where: { whatsappNumber: senderNumber, isActive: true },
-    });
-    console.log('[webhook] bot encontrado:', bot?.id, bot?.whatsappNumber);
-
-    if (!bot) {
-      twiml.message('Este número no tiene un bot activo configurado.');
+      twiml.message(reply);
       res.type('text/xml').send(twiml.toString());
       return;
     }
 
-    const readyDocs = await prisma.document.count({ where: { botId: bot.id, status: 'READY' } });
-    if (readyDocs === 0) {
-      twiml.message('El bot aún no tiene documentos listos. Intenta más tarde.');
-      res.type('text/xml').send(twiml.toString());
-      return;
-    }
-
-    // Limite mensual del plan del dueño del bot
+    // ── Normal chat flow ──────────────────────────────────────────────────────
     try {
-      await assertMessageLimit(bot.userId);
-    } catch (limitErr) {
-      if (limitErr instanceof AppError && limitErr.statusCode === 429) {
-        twiml.message('Este bot alcanzó el límite mensual de mensajes de su plan. El negocio ya fue notificado.');
+      const bot = await prisma.bot.findFirst({
+        where: { whatsappNumber: fromNumber, isActive: true },
+      });
+      console.log('[webhook] bot encontrado:', bot?.id, bot?.whatsappNumber);
+
+      if (!bot) {
+        twiml.message('Este número no tiene un bot activo configurado.');
         res.type('text/xml').send(twiml.toString());
         return;
       }
-      throw limitErr;
-    }
 
-    const channelId = from;
-    let conversation = await prisma.conversation.findUnique({
-      where: { botId_channelId: { botId: bot.id, channelId } },
-    });
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: { id: uuidv4(), botId: bot.id, channelId, channel: 'whatsapp' },
+      const result = await processInboundMessage({
+        bot,
+        clientNumber: fromNumber,
+        channelId: from,
+        text: msgBody,
+        imageContext: imageContext || undefined,
       });
-    }
 
-    const recentMsgs = await prisma.message.findMany({
-      where: { conversationId: conversation.id },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-    });
-
-    // El contexto de la imagen (si hubo) enriquece el mensaje para el RAG
-    const finalMessage = imageContext
-      ? `${imageContext}\n\nMensaje del cliente: ${msgBody}`
-      : msgBody;
-
-    await prisma.message.create({
-      data: { id: uuidv4(), conversationId: conversation.id, role: 'USER', content: finalMessage },
-    });
-
-    // Notificacion por email si el cliente pide hablar con una persona
-    if (wantsHuman(msgBody)) {
-      void notifyHumanRequested(bot, senderNumber, msgBody);
-    }
-
-    const history = recentMsgs
-      .reverse()
-      .map((m) => ({ role: m.role.toLowerCase() as 'user' | 'assistant', content: m.content }));
-
-    // Agente Tipo B: RAG como contexto inicial + loop de tools nativo
-    // (buscar_en_documentos, buscar_archivos_drive, derivar_a_humano)
-    const chunks = await getRelevantChunks(bot.id, finalMessage);
-    const systemPrompt = buildTenantSystemPrompt(
-      bot.name, bot.personality, bot.language, chunks.join('\n\n'),
-    );
-    const agentContext: TenantAgentContext = {
-      botId: bot.id,
-      botName: bot.name,
-      clientId: senderNumber,
-      channel: 'whatsapp',
-    };
-    const { content, tokensUsed } = await runTenantAgentLoop(
-      systemPrompt, history, finalMessage, agentContext,
-    );
-
-    await prisma.message.create({
-      data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
-    });
-
-    await incrementMessageUsage(bot.userId);
-
-    // Respuesta por API directa (control total sobre multimedia); TwiML queda
-    // solo como fallback si Twilio no esta configurado (dev sin credenciales)
-    if (isTwilioConfigured()) {
-      if (content) await sendTextMessage(from, content);
-      if (agentContext.pendingImage) {
-        try {
-          const { imageBase64, mimeType, fileName } = agentContext.pendingImage;
-          await sendImageMessage(from, imageBase64, mimeType, fileName);
-        } catch (mediaErr) {
-          console.error('[whatsapp] Error enviando imagen de Drive:', mediaErr);
-        }
+      // Los avisos del sistema se responden por TwiML, igual que siempre
+      if (result.isNotice) {
+        twiml.message(result.text);
+        res.type('text/xml').send(twiml.toString());
+        return;
       }
-      res.type('text/xml').send('<Response></Response>');
-      return;
+
+      // Respuesta por API directa (control total sobre multimedia); TwiML queda
+      // solo como fallback si Twilio no esta configurado (dev sin credenciales)
+      if (isTwilioConfigured()) {
+        if (result.text) await sendTextMessage(from, result.text);
+        if (result.pendingImage) {
+          try {
+            const { imageBase64, mimeType, fileName } = result.pendingImage;
+            await sendImageMessage(from, imageBase64, mimeType, fileName);
+          } catch (mediaErr) {
+            console.error('[whatsapp] Error enviando imagen de Drive:', mediaErr);
+          }
+        }
+        res.type('text/xml').send('<Response></Response>');
+        return;
+      }
+
+      twiml.message(result.text);
+    } catch (err) {
+      console.error('[whatsapp] Error en webhook:', err);
+      twiml.message('Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.');
     }
 
-    twiml.message(content);
-  } catch (err) {
-    console.error('[whatsapp] Error en webhook:', err);
-    twiml.message('Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.');
-  }
-
-  res.type('text/xml').send(twiml.toString());
-});
+    res.type('text/xml').send(twiml.toString());
+  },
+);
 
 export default router;

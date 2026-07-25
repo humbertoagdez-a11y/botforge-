@@ -87,6 +87,11 @@ model Bot {
   personality    String   @default("Eres un asistente útil y amigable.")
   language       String   @default("es")
   whatsappNumber String?  @unique
+  // Meta Cloud API: id del numero de negocio que recibe los mensajes.
+  // Es la clave de ruteo de Meta, distinta del numero del cliente que guarda
+  // whatsappNumber (flujo Twilio). Se mantienen separados para poder volver
+  // atras a Twilio sin perder el vinculo.
+  metaPhoneNumberId String? @unique
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
