@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,9 +12,9 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
+import { AUTH_CARD, AUTH_INPUT, AUTH_LABEL, AUTH_LINK, AUTH_MUTED, AUTH_SUBMIT } from '@/lib/auth-styles';
 
 const schema = z.object({
   email: z.string().email('Email inválido'),
@@ -45,35 +46,42 @@ export default function LoginPage() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>Ingresar</CardTitle>
-        <CardDescription>Accedé a tu cuenta de BotForge</CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" placeholder="vos@empresa.com" {...register('email')} />
-            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="password">Contraseña</Label>
-            <Input id="password" type="password" placeholder="••••••••" {...register('password')} />
-            {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Ingresar
-          </Button>
-          <p className="text-sm text-muted-foreground">
-            ¿No tenés cuenta?{' '}
-            <Link href="/auth/register" className="text-primary hover:underline">Registrate gratis</Link>
-          </p>
-        </CardFooter>
+    <div className={AUTH_CARD}>
+      <div className="flex flex-col items-center text-center">
+        <Image
+          src="/asistente-logo.svg"
+          alt=""
+          aria-hidden
+          width={80}
+          height={80}
+          unoptimized
+          className="h-14 w-14 sm:h-20 sm:w-20"
+        />
+        <h1 className="mt-4 font-mono text-2xl font-bold text-white">Ingresar</h1>
+        <p className={`mt-1.5 text-sm ${AUTH_MUTED}`}>Accedé a tu cuenta de BotForge</p>
+      </div>
+
+      <form onSubmit={handleSubmit(onSubmit)} className="mt-7 space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="email" className={AUTH_LABEL}>Email</Label>
+          <Input id="email" type="email" placeholder="vos@empresa.com" className={AUTH_INPUT} {...register('email')} />
+          {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="password" className={AUTH_LABEL}>Contraseña</Label>
+          <Input id="password" type="password" placeholder="••••••••" className={AUTH_INPUT} {...register('password')} />
+          {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
+        </div>
+        <Button type="submit" className={AUTH_SUBMIT} disabled={loading}>
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          Ingresar
+        </Button>
       </form>
-    </Card>
+
+      <p className={`mt-6 text-center text-sm ${AUTH_MUTED}`}>
+        ¿No tenés cuenta?{' '}
+        <Link href="/auth/register" className={AUTH_LINK}>Registrate gratis</Link>
+      </p>
+    </div>
   );
 }
