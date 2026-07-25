@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import {
+  DOCUMENTO_REQUERIDO,
   PLAN_MONTOS,
   consultarPedido,
   iniciarTransaccion,
@@ -27,10 +28,21 @@ router.post('/checkout', requireAuth, async (req: Request, res: Response, next: 
     const { plan } = checkoutSchema.parse(req.body);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.userId } });
 
+    // Pagopar exige el documento del comprador. Se avisa con un codigo propio
+    // para que el frontend abra el modal en vez de mostrar un error suelto.
+    if (!user.documento) {
+      throw new AppError(
+        400,
+        'Necesitás cargar tu número de documento antes de pagar',
+        DOCUMENTO_REQUERIDO,
+      );
+    }
+
     const { checkoutUrl, hashPedido } = await iniciarTransaccion(
       user.id,
       user.email,
       user.name,
+      user.documento,
       plan as PagoparPlan,
       PLAN_MONTOS[plan as PagoparPlan],
     );

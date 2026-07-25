@@ -118,7 +118,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response, next: 
     const passwordHash = await bcrypt.hash(body.password, 12);
     const user = await prisma.user.create({
       data: { id: uuidv4(), name: body.name, email: body.email, passwordHash },
-      select: { id: true, name: true, email: true, plan: true, createdAt: true },
+      select: { id: true, name: true, email: true, plan: true, documento: true, createdAt: true },
     });
 
     const { accessToken, refreshToken } = signTokens(user.id, user.email);
@@ -200,7 +200,7 @@ router.post('/refresh', async (req: Request, res: Response, next: NextFunction) 
 
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: payload.userId },
-      select: { id: true, name: true, email: true, plan: true, createdAt: true },
+      select: { id: true, name: true, email: true, plan: true, documento: true, createdAt: true },
     });
 
     setAuthCookies(res, accessToken, newRefresh);
@@ -234,7 +234,32 @@ router.put('/profile', requireAuth, async (req: Request, res: Response, next: Ne
     const user = await prisma.user.update({
       where: { id: req.user!.userId },
       data: { name },
-      select: { id: true, name: true, email: true, plan: true, createdAt: true },
+      select: { id: true, name: true, email: true, plan: true, documento: true, createdAt: true },
+    });
+    res.json({ data: user, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PUT /documento ───────────────────────────────────────────────────────────
+// Endpoint propio en vez de sumarlo a PUT /profile: ese exige `name` y no
+// acepta campos parciales, y aflojarlo obligaria a que quien solo quiere
+// guardar el documento mande tambien el nombre.
+const documentoSchema = z.object({
+  documento: z
+    .string()
+    .trim()
+    .regex(/^\d{6,9}$/, 'El documento debe tener entre 6 y 9 dígitos, sin puntos ni guiones'),
+});
+
+router.put('/documento', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { documento } = documentoSchema.parse(req.body);
+    const user = await prisma.user.update({
+      where: { id: req.user!.userId },
+      data: { documento },
+      select: { id: true, name: true, email: true, plan: true, documento: true, createdAt: true },
     });
     res.json({ data: user, error: null, meta: null });
   } catch (err) {
@@ -273,7 +298,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response, next: NextFun
   try {
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: req.user!.userId },
-      select: { id: true, name: true, email: true, plan: true, createdAt: true },
+      select: { id: true, name: true, email: true, plan: true, documento: true, createdAt: true },
     });
     res.json({ data: user, error: null, meta: null });
   } catch (err) {

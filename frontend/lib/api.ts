@@ -13,6 +13,8 @@ export interface User {
   name: string;
   email: string;
   plan: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+  /** CI o RUC. Solo se pide al pagar, así que es null hasta el primer checkout */
+  documento?: string | null;
   createdAt: string;
   accessToken?: string;
 }
@@ -278,6 +280,11 @@ export const api = {
       request<User>('/api/v1/auth/profile', {
         method: 'PUT',
         body: JSON.stringify({ name }),
+      }),
+    updateDocumento: (documento: string) =>
+      request<User>('/api/v1/auth/documento', {
+        method: 'PUT',
+        body: JSON.stringify({ documento }),
       }),
     updatePassword: (currentPassword: string, newPassword: string) =>
       request<{ success: boolean }>('/api/v1/auth/password', {

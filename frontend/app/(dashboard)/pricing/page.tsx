@@ -5,8 +5,19 @@ import { Check, Loader2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { api, type ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
+
+type PlanPago = 'STARTER' | 'PRO' | 'AGENCY';
 
 const PLANS = [
   {
@@ -60,11 +71,16 @@ const PLANS = [
 ];
 
 export default function PricingPage() {
-  const { token, user } = useAuthStore();
+  const { token, user, setAuth } = useAuthStore();
   const [loading, setLoading] = useState<string | null>(null);
+  /** Plan elegido que espera a que el usuario cargue su cédula */
+  const [planPendiente, setPlanPendiente] = useState<PlanPago | null>(null);
+  const [documento, setDocumento] = useState('');
+  const [docError, setDocError] = useState('');
+  const [guardandoDoc, setGuardandoDoc] = useState(false);
 
-  async function handleUpgrade(planId: 'STARTER' | 'PRO' | 'AGENCY') {
-    if (!token) { toast.error('Tenés que iniciar sesión'); return; }
+  /** Crea la orden en Pagopar y manda al checkout */
+  async function irAlCheckout(planId: PlanPago) {
     setLoading(planId);
     try {
       const { checkoutUrl, hashPedido } = await api.pagopar.checkout(planId);
@@ -78,12 +94,50 @@ export default function PricingPage() {
       }
       window.location.href = checkoutUrl;
     } catch (err) {
-      if ((err as ApiError).code === 'PAGOPAR_NOT_CONFIGURED') {
+      const code = (err as ApiError).code;
+      if (code === 'DOCUMENTO_REQUERIDO') {
+        // El user del store puede estar desactualizado: el backend manda
+        setPlanPendiente(planId);
+      } else if (code === 'PAGOPAR_NOT_CONFIGURED') {
         toast.info('Los pagos estarán disponibles pronto');
       } else {
         toast.error(err instanceof Error ? err.message : 'Error al procesar el pago');
       }
       setLoading(null);
+    }
+  }
+
+  function handleUpgrade(planId: PlanPago) {
+    if (!token) { toast.error('Tenés que iniciar sesión'); return; }
+    // Pagopar exige el documento del comprador: si no lo tenemos, se pide antes
+    if (!user?.documento) {
+      setDocumento('');
+      setDocError('');
+      setPlanPendiente(planId);
+      return;
+    }
+    void irAlCheckout(planId);
+  }
+
+  async function confirmarDocumento() {
+    const valor = documento.trim();
+    if (!/^\d{6,9}$/.test(valor)) {
+      setDocError('Ingresá entre 6 y 9 números, sin puntos ni guiones');
+      return;
+    }
+    if (!token || !planPendiente) return;
+
+    setGuardandoDoc(true);
+    try {
+      const actualizado = await api.auth.updateDocumento(valor);
+      setAuth(token, actualizado);
+      const plan = planPendiente;
+      setPlanPendiente(null);
+      await irAlCheckout(plan);
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : 'No se pudo guardar el documento');
+    } finally {
+      setGuardandoDoc(false);
     }
   }
 
@@ -164,6 +218,62 @@ export default function PricingPage() {
           );
         })}
       </div>
+
+      {/* Pagopar exige el documento del comprador; se pide acá y no en el
+          registro para no sumarle fricción a quien nunca va a pagar */}
+      <Dialog
+        open={planPendiente !== null}
+        onOpenChange={(abierto) => {
+          if (!abierto) {
+            setPlanPendiente(null);
+            setLoading(null);
+          }
+        }}
+      >
+        <DialogContent className="theme-dashboard max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Necesitamos tu número de cédula</DialogTitle>
+            <DialogDescription>
+              Pagopar lo pide para emitir el comprobante del pago. Lo guardamos una sola vez.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-2 space-y-1.5">
+            <Label htmlFor="documento">Cédula de identidad</Label>
+            <Input
+              id="documento"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="1234567"
+              value={documento}
+              onChange={(e) => {
+                // Solo dígitos: evita puntos y guiones que Pagopar rechaza
+                setDocumento(e.target.value.replace(/\D/g, '').slice(0, 9));
+                setDocError('');
+              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void confirmarDocumento(); }}
+              className="font-mono"
+              disabled={guardandoDoc}
+            />
+            {docError && <p className="text-xs text-destructive">{docError}</p>}
+            <p className="text-xs text-muted-foreground">Sin puntos ni guiones.</p>
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setPlanPendiente(null); setLoading(null); }}
+              disabled={guardandoDoc}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={confirmarDocumento} disabled={guardandoDoc || !documento}>
+              {guardandoDoc && <Loader2 className="h-4 w-4 animate-spin" />}
+              Continuar al pago
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

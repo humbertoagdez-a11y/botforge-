@@ -35,6 +35,9 @@ export const PLAN_NOMBRES: Record<PagoparPlan, string> = {
   AGENCY: 'BotForge Agencia',
 };
 
+/** El frontend lo usa para saber que tiene que pedir la cédula antes de pagar */
+export const DOCUMENTO_REQUERIDO = 'DOCUMENTO_REQUERIDO';
+
 export function isPagoparConfigured(): boolean {
   return Boolean(env.PAGOPAR_PUBLIC_KEY && env.PAGOPAR_PRIVATE_KEY);
 }
@@ -92,10 +95,20 @@ export async function iniciarTransaccion(
   userId: string,
   userEmail: string,
   userName: string,
+  userDocumento: string,
   plan: PagoparPlan,
   montoTotal: number,
 ): Promise<{ checkoutUrl: string; hashPedido: string; idPedidoComercio: string }> {
   assertConfigured();
+
+  // Pagopar rechaza el pedido con "El documento debe estar presente"
+  if (!userDocumento) {
+    throw new AppError(
+      400,
+      'Necesitás cargar tu número de documento antes de pagar',
+      DOCUMENTO_REQUERIDO,
+    );
+  }
 
   // Alfanumérico puro: el uuid con guiones puede no pasar la validación
   const idPedidoComercio = uuidv4().replace(/-/g, '');
@@ -116,7 +129,7 @@ export async function iniciarTransaccion(
       email: userEmail,
       nombre: userName,
       telefono: '',
-      documento: '',
+      documento: userDocumento,
       tipo_documento: 'CI',
       ciudad: CIUDAD,
       direccion: '',
