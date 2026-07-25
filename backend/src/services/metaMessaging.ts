@@ -67,6 +67,36 @@ export async function sendTextMessage(to: string, body: string): Promise<void> {
   });
 }
 
+/**
+ * Marca el mensaje del cliente como leido y prende el indicador de
+ * "escribiendo...". Meta lo apaga solo cuando mandamos la respuesta o a los
+ * ~25 segundos, lo que pase primero.
+ *
+ * Es puramente cosmetico: nunca lanza ni propaga errores, para que un fallo
+ * aca no impida que el cliente reciba la respuesta real.
+ */
+export async function markAsReadAndTyping(messageId: string): Promise<void> {
+  if (!isMetaConfigured()) return;
+
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${env.META_PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: { type: 'text' },
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[meta] No se pudo marcar como leído/escribiendo — ${await describeError(res)}`);
+    }
+  } catch (err) {
+    console.warn('[meta] Error marcando como leído/escribiendo:', err);
+  }
+}
+
 /** Envia una imagen ya hospedada en una URL publica accesible por Meta. */
 export async function sendImageByUrl(to: string, imageUrl: string, caption: string): Promise<void> {
   await postMessage({

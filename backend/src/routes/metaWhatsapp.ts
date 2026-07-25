@@ -5,6 +5,7 @@ import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
 import {
   downloadMedia,
   isMetaConfigured,
+  markAsReadAndTyping,
   sendImageMessage,
   sendTextMessage,
 } from '../services/metaMessaging';
@@ -150,6 +151,12 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   // resto del sistema para que las conversaciones sean las mismas que Twilio.
   const clientNumber = `+${fromDigits.replace(/^\+/, '')}`;
   const channelId = `whatsapp:${clientNumber}`;
+
+  // Feedback inmediato antes del trabajo pesado (bajar media, transcribir,
+  // RAG, loop del agente): el cliente ve el "visto" y el "escribiendo...".
+  // Se espera a proposito para que el indicador aparezca antes de arrancar;
+  // la funcion nunca lanza, asi que no puede frenar el procesamiento.
+  if (msg.id) await markAsReadAndTyping(msg.id);
 
   const { text, imageContext, unsupported } = await extractContent(msg);
 
