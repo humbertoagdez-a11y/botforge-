@@ -2,12 +2,14 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomBytes } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth';
-import { authLimiter } from '../middleware/rateLimit';
+import { authLimiter, forgotPasswordLimiter } from '../middleware/rateLimit';
+import { sendEmail } from '../services/email';
 
 const router = Router();
 
@@ -262,6 +264,153 @@ router.put('/documento', requireAuth, async (req: Request, res: Response, next: 
       select: { id: true, name: true, email: true, plan: true, documento: true, createdAt: true },
     });
     res.json({ data: user, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Recuperación de contraseña ───────────────────────────────────────────────
+
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hora
+const INVALID_TOKEN_CODE = 'INVALID_TOKEN';
+
+function resetPasswordEmailHtml(name: string, resetUrl: string): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
+    <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
+      <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
+      <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
+        Recibimos un pedido para restablecer la contraseña de tu cuenta.
+        Hacé clic en el botón para elegir una nueva.
+      </p>
+      <a href="${resetUrl}"
+         style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:0 0 24px;">
+        Cambiar mi contraseña
+      </a>
+      <p style="font-size:14px;line-height:1.6;color:#333333;margin:0 0 8px;">
+        Este enlace vence en <strong>1 hora</strong> y se puede usar una sola vez.
+      </p>
+      <p style="font-size:13px;line-height:1.6;color:#666666;margin:0 0 28px;">
+        Si el botón no funciona, copiá y pegá esta dirección en tu navegador:<br />
+        <span style="color:#7C3AED;word-break:break-all;">${resetUrl}</span>
+      </p>
+      <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
+      <p style="font-size:12px;color:#888888;margin:0;">
+        Si no pediste esto, ignorá este email. Tu contraseña actual sigue funcionando.
+      </p>
+    </div>
+  </body>
+</html>`;
+}
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+/**
+ * POST /forgot-password — público.
+ *
+ * Responde siempre lo mismo exista o no el email: si contestara distinto,
+ * cualquiera podría usar este endpoint para averiguar qué direcciones están
+ * registradas en BotForge.
+ */
+router.post(
+  '/forgot-password',
+  forgotPasswordLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email } = forgotPasswordSchema.parse(req.body);
+      const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+
+      if (user) {
+        // Invalidar los pedidos anteriores: solo el último link debe servir
+        await prisma.passwordResetToken.updateMany({
+          where: { userId: user.id, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+
+        // randomBytes y no uuid: el token tiene que ser impredecible
+        const token = randomBytes(32).toString('hex');
+        await prisma.passwordResetToken.create({
+          data: {
+            id: uuidv4(),
+            userId: user.id,
+            token,
+            expiresAt: new Date(Date.now() + RESET_TTL_MS),
+          },
+        });
+
+        const resetUrl = `${env.FRONTEND_URL}/auth/reset-password?token=${token}`;
+
+        // Solo fuera de producción: permite probar el flujo sin email configurado.
+        // Nunca en producción, donde el log daría acceso a cualquier cuenta.
+        if (env.NODE_ENV !== 'production') {
+          console.log(`[auth] Link de reseteo para ${user.email}: ${resetUrl}`);
+        }
+
+        void sendEmail(user.email, 'Recuperá tu contraseña de BotForge', resetPasswordEmailHtml(user.name, resetUrl));
+      }
+
+      res.json({ data: { sent: true }, error: null, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/** Busca un token utilizable: existe, sin usar y sin vencer */
+async function findUsableResetToken(token: string) {
+  if (!token) return null;
+  const stored = await prisma.passwordResetToken.findUnique({ where: { token } });
+  if (!stored || stored.usedAt || stored.expiresAt < new Date()) return null;
+  return stored;
+}
+
+// GET /reset-password/verify?token=xxx — público
+// Deja que el frontend avise "este link venció" antes de pedir la contraseña
+router.get('/reset-password/verify', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = typeof req.query.token === 'string' ? req.query.token : '';
+    const stored = await findUsableResetToken(token);
+    res.json({ data: { valid: stored !== null }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(8).max(100),
+});
+
+// POST /reset-password — público
+router.post('/reset-password', authLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { token, newPassword } = resetPasswordSchema.parse(req.body);
+
+    const stored = await findUsableResetToken(token);
+    if (!stored) {
+      throw new AppError(400, 'El link expiró o no es válido', INVALID_TOKEN_CODE);
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: stored.userId }, data: { passwordHash } }),
+      // Un solo uso: marcarlo antes de que alguien reintente con el mismo link
+      prisma.passwordResetToken.update({
+        where: { id: stored.id },
+        data: { usedAt: new Date() },
+      }),
+      // Cierra cualquier sesión abierta con la contraseña vieja
+      prisma.refreshToken.deleteMany({ where: { userId: stored.userId } }),
+    ]);
+
+    console.log(`[auth] Contraseña restablecida para el usuario ${stored.userId}`);
+
+    res.json({ data: { success: true }, error: null, meta: null });
   } catch (err) {
     next(err);
   }

@@ -78,7 +78,11 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <p className={`mt-6 text-center text-sm ${AUTH_MUTED}`}>
+      <p className="mt-4 text-center text-sm">
+        <Link href="/auth/forgot-password" className={AUTH_LINK}>¿Olvidaste tu contraseña?</Link>
+      </p>
+
+      <p className={`mt-3 text-center text-sm ${AUTH_MUTED}`}>
         ¿No tenés cuenta?{' '}
         <Link href="/auth/register" className={AUTH_LINK}>Registrate gratis</Link>
       </p>

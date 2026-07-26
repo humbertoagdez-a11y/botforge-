@@ -286,6 +286,21 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ documento }),
       }),
+    /** Responde { sent: true } exista o no el email, a propósito */
+    forgotPassword: (email: string) =>
+      request<{ sent: boolean }>('/api/v1/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }),
+    verifyResetToken: (token: string) =>
+      request<{ valid: boolean }>(
+        `/api/v1/auth/reset-password/verify?token=${encodeURIComponent(token)}`,
+      ),
+    resetPassword: (token: string, newPassword: string) =>
+      request<{ success: boolean }>('/api/v1/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, newPassword }),
+      }),
     updatePassword: (currentPassword: string, newPassword: string) =>
       request<{ success: boolean }>('/api/v1/auth/password', {
         method: 'PUT',

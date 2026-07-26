@@ -52,6 +52,7 @@ model User {
 
   bots                     Bot[]
   refreshTokens            RefreshToken[]
+  passwordResetTokens      PasswordResetToken[]
   notificationConfigs      NotificationConfig[]
   platformAssistantMessages PlatformAssistantMessage[]
   pagoparOrders            PagoparOrder[]
@@ -103,6 +104,23 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
+}
+
+/// Token de un solo uso para resetear la contraseña. Vive 1 hora.
+/// Al generar uno nuevo se marcan como usados los anteriores del mismo usuario,
+/// asi que solo el ultimo link enviado sirve.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model Bot {
