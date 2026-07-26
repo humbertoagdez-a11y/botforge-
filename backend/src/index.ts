@@ -48,8 +48,42 @@ const app = express();
 // );
 void stripeRouter;
 
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+// Whitelist explicita, nunca '*': las requests viajan con credentials y el
+// navegador rechaza el comodin cuando se mandan cookies.
+// La URL de Railway esta mientras dura la transicion de DNS a mibotforge.com;
+// para sacarla despues alcanza con borrar la linea o usar CORS_EXTRA_ORIGINS.
+const ALLOWED_ORIGINS = new Set(
+  [
+    env.FRONTEND_URL,
+    'https://protective-kindness-production-024f.up.railway.app',
+    'http://localhost:3000',
+    ...env.CORS_EXTRA_ORIGINS.split(','),
+  ]
+    // El header Origin nunca trae barra final: sin normalizar, un FRONTEND_URL
+    // escrito como "https://mibotforge.com/" no matchearia nunca
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
+);
+
 app.use(helmet());
-app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Sin header Origin: curl, el healthcheck de Railway y los webhooks de
+      // Meta, Twilio y Pagopar. No son requests de navegador, CORS no aplica.
+      if (!origin || ALLOWED_ORIGINS.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      // false en vez de un Error: no manda los headers de CORS (el navegador
+      // bloquea, que es lo correcto) sin convertir la request en un 500.
+      console.warn(`[cors] Origen rechazado: ${origin}`);
+      callback(null, false);
+    },
+    credentials: true,
+  }),
+);
 app.use(globalLimiter);
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 // 10mb: las imagenes del asistente llegan como base64 en el body (~6.7mb max)

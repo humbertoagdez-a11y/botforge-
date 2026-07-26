@@ -57,6 +57,9 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   FRONTEND_URL: z.string().default('http://localhost:3000'),
+  // Origenes extra permitidos por CORS, separados por coma. Sirve para sumar o
+  // sacar dominios sin redeploy (p.ej. al terminar la transicion de DNS).
+  CORS_EXTRA_ORIGINS: z.string().optional().default(''),
   // URL publica del backend: la usa la validacion de firma de Twilio.
   // En Railway DEBE ser https://botforge-production-b16f.up.railway.app
   BACKEND_URL: z.string().default('http://localhost:3001'),
