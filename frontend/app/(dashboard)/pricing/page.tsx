@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Loader2, Zap } from 'lucide-react';
+import { Check, IdCard, Loader2, ShieldCheck, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -232,6 +232,9 @@ export default function PricingPage() {
       >
         <DialogContent className="theme-dashboard max-w-sm">
           <DialogHeader>
+            <div className="mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10 ring-1 ring-cyan-500/20 sm:mx-0">
+              <IdCard className="h-6 w-6 text-cyan-400" />
+            </div>
             <DialogTitle>Necesitamos tu número de cédula</DialogTitle>
             <DialogDescription>
               Pagopar lo pide para emitir el comprobante del pago. Lo guardamos una sola vez.
@@ -240,23 +243,31 @@ export default function PricingPage() {
 
           <div className="mt-2 space-y-1.5">
             <Label htmlFor="documento">Cédula de identidad</Label>
-            <Input
-              id="documento"
-              inputMode="numeric"
-              autoComplete="off"
-              placeholder="1234567"
-              value={documento}
-              onChange={(e) => {
-                // Solo dígitos: evita puntos y guiones que Pagopar rechaza
-                setDocumento(e.target.value.replace(/\D/g, '').slice(0, 9));
-                setDocError('');
-              }}
-              onKeyDown={(e) => { if (e.key === 'Enter') void confirmarDocumento(); }}
-              className="font-mono"
-              disabled={guardandoDoc}
-            />
+            <div className="relative">
+              <IdCard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="documento"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="1234567"
+                value={documento}
+                onChange={(e) => {
+                  // Solo dígitos: evita puntos y guiones que Pagopar rechaza
+                  setDocumento(e.target.value.replace(/\D/g, '').slice(0, 9));
+                  setDocError('');
+                }}
+                onKeyDown={(e) => { if (e.key === 'Enter') void confirmarDocumento(); }}
+                // text-base = 16px, tambien evita el zoom automatico de iOS
+                className="h-11 pl-9 font-mono text-base tracking-wider text-foreground focus:border-cyan-500/40"
+                disabled={guardandoDoc}
+              />
+            </div>
             {docError && <p className="text-xs text-destructive">{docError}</p>}
             <p className="text-xs text-muted-foreground">Sin puntos ni guiones.</p>
+            <p className="flex items-start gap-1.5 pt-1 text-xs text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
+              Este dato solo lo usamos para procesar tu pago de forma segura con Pagopar.
+            </p>
           </div>
 
           <div className="mt-4 flex justify-end gap-2">
