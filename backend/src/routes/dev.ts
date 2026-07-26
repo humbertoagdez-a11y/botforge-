@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { generateDailySummaries } from '../services/dailySummary';
+import { downgradeExpiredPlans, notifyExpiringSoon } from '../services/planExpiration';
 
 const router = Router();
 router.use(requireAuth);
@@ -29,6 +30,18 @@ router.post('/trigger-daily-summary', async (req: Request, res: Response, next: 
     await assertCanRunDevTasks(req.user!.userId);
     const sent = await generateDailySummaries();
     res.json({ data: { sent }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/v1/dev/trigger-plan-expiration — corre el vencimiento de planes ahora
+router.post('/trigger-plan-expiration', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await assertCanRunDevTasks(req.user!.userId);
+    const notified = await notifyExpiringSoon();
+    const downgraded = await downgradeExpiredPlans();
+    res.json({ data: { downgraded, notified }, error: null, meta: null });
   } catch (err) {
     next(err);
   }

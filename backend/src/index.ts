@@ -31,6 +31,7 @@ import driveRouter, { googleOAuthRouter } from './routes/drive';
 import devRouter from './routes/dev';
 import { requireAuth } from './middleware/auth';
 import { generateDailySummaries } from './services/dailySummary';
+import { downgradeExpiredPlans, notifyExpiringSoon } from './services/planExpiration';
 
 const uploadsDir = path.resolve(env.UPLOADS_DIR);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -102,6 +103,25 @@ cron.schedule(
     generateDailySummaries().catch((err) =>
       console.error('[dailySummary] Error en el cron:', err),
     );
+  },
+  { timezone: 'America/Asuncion' },
+);
+
+// Vencimiento de planes: todos los días a las 03:00 hora Paraguay (bajo tráfico).
+// Primero avisa a los que están por vencer y después degrada a los ya vencidos,
+// en ese orden para no avisarle a alguien que en la misma corrida pasa a Free.
+// Ninguna de las dos lanza, pero el .catch cubre un fallo inesperado del cron.
+cron.schedule(
+  '0 3 * * *',
+  () => {
+    void (async () => {
+      try {
+        await notifyExpiringSoon();
+        await downgradeExpiredPlans();
+      } catch (err) {
+        console.error('[planExpiration] Error en el cron:', err);
+      }
+    })();
   },
   { timezone: 'America/Asuncion' },
 );
