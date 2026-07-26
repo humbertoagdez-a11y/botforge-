@@ -10,7 +10,7 @@ import { ArrowLeft, KeyRound, Loader2, MailCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { api } from '@/lib/api';
+import { api, type ApiError } from '@/lib/api';
 import { AUTH_CARD, AUTH_INPUT, AUTH_LABEL, AUTH_LINK, AUTH_MUTED, AUTH_SUBMIT } from '@/lib/auth-styles';
 
 const schema = z.object({
@@ -21,6 +21,7 @@ type FormData = z.infer<typeof schema>;
 export default function ForgotPasswordPage() {
   const [enviado, setEnviado] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorRed, setErrorRed] = useState('');
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -28,14 +29,38 @@ export default function ForgotPasswordPage() {
 
   async function onSubmit(data: FormData) {
     setLoading(true);
+    setErrorRed('');
     try {
       await api.auth.forgotPassword(data.email);
-    } catch {
-      // Se ignora a propósito: mostrar un error revelaría si el email existe
+      setEnviado(true);
+    } catch (err) {
+      const apiErr = err as ApiError;
+
+      if (apiErr.code === 'RATE_LIMIT') {
+        setErrorRed(apiErr.message);
+        return;
+      }
+
+      // Si el backend respondió algo, sea lo que sea, mostramos el mismo
+      // mensaje de éxito: un error distinto revelaría si el email existe.
+      if (apiErr.statusCode) {
+        setEnviado(true);
+        return;
+      }
+
+      // Sin statusCode el request nunca llegó a salir (red caída, CORS mal
+      // configurado, NEXT_PUBLIC_API_URL apuntando a otro lado). Eso no dice
+      // nada sobre el email, así que conviene mostrarlo en vez de fingir éxito.
+      console.error('[forgot-password] No se pudo contactar al backend:', err);
+      setErrorRed('No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.');
     } finally {
       setLoading(false);
-      setEnviado(true);
     }
+  }
+
+  /** Se dispara si la validación bloquea el submit, para que no falle en silencio */
+  function onInvalid() {
+    setErrorRed('');
   }
 
   // ── Confirmación: el mismo mensaje exista o no la cuenta ───────────────────
@@ -83,7 +108,7 @@ export default function ForgotPasswordPage() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="mt-7 space-y-4">
+      <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="mt-7 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email" className={AUTH_LABEL}>Email</Label>
           <div className="relative">
@@ -99,6 +124,8 @@ export default function ForgotPasswordPage() {
           </div>
           {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
         </div>
+
+        {errorRed && <p className="text-xs text-destructive">{errorRed}</p>}
 
         <Button type="submit" className={AUTH_SUBMIT} disabled={loading}>
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
