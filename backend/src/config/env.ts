@@ -43,6 +43,9 @@ const envSchema = z.object({
   STRIPE_PRICE_PRO: z.string().optional(),
   STRIPE_PRICE_AGENCY: z.string().optional(),
   RESEND_API_KEY: z.string().optional().default(''),
+  // Remitente unico de todos los emails. El dominio tiene que estar verificado
+  // en Resend o los envios se rechazan con 403.
+  EMAIL_FROM: z.string().optional().default('BotForge <noreply@mibotforge.com>'),
   CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),
   CLOUDINARY_API_KEY: z.string().optional().default(''),
   CLOUDINARY_API_SECRET: z.string().optional().default(''),

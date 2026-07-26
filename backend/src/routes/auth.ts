@@ -66,7 +66,7 @@ async function sendWelcomeEmail(email: string, name: string): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'BotForge <noreply@botforge.com.py>',
+        from: env.EMAIL_FROM,
         to: [email],
         subject: 'Bienvenido a BotForge',
         html: welcomeEmailHtml(name),

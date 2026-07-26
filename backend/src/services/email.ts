@@ -8,7 +8,7 @@ export async function sendEmail(
   to: string,
   subject: string,
   html: string,
-  from = 'BotForge Alerts <noreply@botforge.com.py>',
+  from = env.EMAIL_FROM,
 ): Promise<boolean> {
   if (!env.RESEND_API_KEY) {
     console.log(`[email] RESEND_API_KEY no configurada — se omite email "${subject}" a ${to}`);
