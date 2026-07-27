@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { checkBotLimit } from '../middleware/planLimits';
+import { checkBotLimit, effectivePlan, LIMITS, PLAN_LIMIT_CODE } from '../middleware/planLimits';
 import { generateInstructivo } from '../services/ai';
 
 const router = Router();
@@ -19,6 +19,7 @@ const createBotSchema = z.object({
 
 const updateBotSchema = createBotSchema.partial().extend({
   isActive: z.boolean().optional(),
+  npsEnabled: z.boolean().optional(),
 });
 
 async function getOwnedBot(botId: string, userId: string) {
@@ -68,6 +69,23 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
   try {
     await getOwnedBot(req.params.id, req.user!.userId);
     const body = updateBotSchema.parse(req.body);
+
+    // El plan manda: sin NPS en el plan no se puede activar desde la API,
+    // aunque el frontend muestre el switch deshabilitado
+    if (body.npsEnabled === true) {
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { id: req.user!.userId },
+        select: { plan: true, planExpiresAt: true },
+      });
+      if (!LIMITS[effectivePlan(user)].nps) {
+        throw new AppError(
+          403,
+          'La encuesta de satisfacción está disponible desde el plan Básico.',
+          PLAN_LIMIT_CODE,
+        );
+      }
+    }
+
     const updated = await prisma.bot.update({ where: { id: req.params.id }, data: body });
     res.json({ data: updated, error: null, meta: null });
   } catch (err) {

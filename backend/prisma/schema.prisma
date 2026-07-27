@@ -55,6 +55,12 @@ enum TicketPriority {
   HIGH
 }
 
+enum NpsSentiment {
+  PROMOTOR
+  PASIVO
+  DETRACTOR
+}
+
 model User {
   id                    String    @id @default(uuid())
   email                 String    @unique
@@ -188,6 +194,9 @@ model Bot {
   // whatsappNumber (flujo Twilio). Se mantienen separados para poder volver
   // atras a Twilio sin perder el vinculo.
   metaPhoneNumberId String? @unique
+  /// Encuesta de satisfaccion al cerrar la conversacion. Apagada por defecto:
+  /// nadie empieza a encuestar a sus clientes sin haberlo decidido.
+  npsEnabled     Boolean  @default(false)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -199,8 +208,50 @@ model Bot {
   notificationConfigs NotificationConfig[]
   driveConnection     DriveConnection?
   supportTickets      SupportTicket[]
+  npsResponses        NpsResponse[]
+  npsPrompts          NpsPrompt[]
 
   @@map("bots")
+}
+
+/// Respuesta de un cliente final a la encuesta. El numero solo no sirve de
+/// mucho: lo valioso es el comment, que es por que puntuo asi.
+model NpsResponse {
+  id             String   @id @default(uuid())
+  botId          String
+  conversationId String?
+  /// Identificador del cliente final (numero de WhatsApp o id del widget)
+  clientId       String
+  /// 1 a 5. Escala de 5 porque por WhatsApp es mas facil que 0 a 10
+  score          Int
+  sentiment      NpsSentiment
+  /// Lo que escribio el cliente cuando se le pregunto que mejorar
+  comment        String?
+  /// true si el dueño ya lo marco como visto
+  reviewed       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, createdAt])
+  @@index([botId, clientId])
+  @@index([botId, sentiment])
+  @@map("nps_responses")
+}
+
+/// Registro de a quien ya se le pregunto, aunque no haya contestado. Es lo que
+/// impide volver a preguntarle al mismo cliente antes de los 30 dias.
+model NpsPrompt {
+  id       String   @id @default(uuid())
+  botId    String
+  clientId String
+  askedAt  DateTime @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, clientId])
+  @@index([botId, askedAt])
+  @@map("nps_prompts")
 }
 
 /// Ticket de soporte que el cliente abre desde el asistente (o a mano) y que

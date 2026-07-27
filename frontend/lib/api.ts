@@ -27,6 +27,8 @@ export interface Bot {
   language: string;
   whatsappNumber: string | null;
   isActive: boolean;
+  /** Encuesta de satisfacción al cliente final. Apagada por defecto. */
+  npsEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
   _count?: { documents: number; conversations: number };
@@ -109,6 +111,32 @@ export interface AccountStats {
 export interface RegisterPending {
   needsVerification: boolean;
   email: string;
+}
+
+export type NpsSentiment = 'PROMOTOR' | 'PASIVO' | 'DETRACTOR';
+
+export interface NpsComment {
+  id: string;
+  score: number;
+  sentiment: NpsSentiment;
+  comment: string | null;
+  reviewed: boolean;
+  createdAt: string;
+  bot: string;
+}
+
+export interface NpsStats {
+  /** false cuando el plan no incluye NPS: la UI muestra la sección bloqueada */
+  enabled: boolean;
+  plan: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+  total?: number;
+  promedio?: number | null;
+  preguntas?: number;
+  tasaRespuesta?: number;
+  sinRevisar?: number;
+  distribucion?: Array<{ score: number; cantidad: number }>;
+  evolucion?: Array<{ semana: string; promedio: number; cantidad: number }>;
+  comentarios?: NpsComment[];
 }
 
 export type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CLIENT' | 'RESOLVED' | 'CLOSED';
@@ -378,7 +406,7 @@ export const api = {
     get: (id: string) => request<Bot>(`/api/v1/bots/${id}`),
     create: (data: { name: string; personality?: string; language: string }) =>
       request<Bot>('/api/v1/bots', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: Partial<{ name: string; personality: string; language: string; isActive: boolean }>) =>
+    update: (id: string, data: Partial<{ name: string; personality: string; language: string; isActive: boolean; npsEnabled: boolean }>) =>
       request<Bot>(`/api/v1/bots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<{ ok: boolean }>(`/api/v1/bots/${id}`, { method: 'DELETE' }),
@@ -423,6 +451,15 @@ export const api = {
 
   activity: {
     get: () => request<ActivityEvent[]>('/api/v1/activity'),
+  },
+
+  nps: {
+    get: (botId?: string) =>
+      request<NpsStats>(`/api/v1/stats/nps${botId ? `?botId=${botId}` : ''}`),
+    markReviewed: (id: string) =>
+      request<{ id: string; reviewed: boolean }>(`/api/v1/stats/nps/${id}/reviewed`, {
+        method: 'PATCH',
+      }),
   },
 
   // Stripe dado de baja: las rutas del backend están desmontadas.

@@ -33,6 +33,7 @@ import devRouter from './routes/dev';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth';
 import { generateDailySummaries } from './services/dailySummary';
 import { downgradeExpiredPlans, notifyExpiringSoon } from './services/planExpiration';
+import { dispatchNpsSurveys } from './services/npsDispatch';
 
 const uploadsDir = path.resolve(env.UPLOADS_DIR);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -170,6 +171,12 @@ cron.schedule(
   },
   { timezone: 'America/Asuncion' },
 );
+
+// Encuestas de satisfaccion: cada 10 minutos busca conversaciones enfriadas.
+// dispatchNpsSurveys no lanza, pero el .catch cubre un fallo del cron.
+cron.schedule('*/10 * * * *', () => {
+  dispatchNpsSurveys().catch((err) => console.error('[nps] Error en el cron:', err));
+});
 
 app.listen(env.PORT, () => {
   console.log(`BotForge backend en http://localhost:${env.PORT} [${env.NODE_ENV}]`);

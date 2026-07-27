@@ -16,6 +16,7 @@ import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLim
 import { getRelevantChunks } from './rag';
 import { buildTenantSystemBlocks, runTenantAgentLoop, type TenantAgentContext } from './tenantAgent';
 import { sendEmail } from './email';
+import { getNpsState, npsFollowUp, parseNpsReply, saveComment, saveScore } from './nps';
 
 // ─── Notificación "el cliente pide un humano" ─────────────────────────────────
 
@@ -160,6 +161,41 @@ export interface InboundResult {
   isNotice: boolean;
 }
 
+/**
+ * Intercepta el mensaje si el cliente está en medio de la encuesta.
+ *
+ * Corre ANTES del agente a propósito: así no gasta tokens ni cupo del plan.
+ * Devuelve null cuando el mensaje no es parte de la encuesta, y ahí sigue el
+ * flujo normal.
+ */
+async function handleNpsReply(
+  botId: string,
+  clientId: string,
+  conversationId: string | null,
+  text: string,
+): Promise<string | null> {
+  const state = await getNpsState(botId, clientId);
+
+  // Paso B: se está esperando el comentario. Lo que escriba se guarda tal cual
+  if (state.esperandoComentario) {
+    await saveComment(state.esperandoComentario.responseId, text);
+    return 'Gracias por tomarte el momento. Lo tomo en cuenta.';
+  }
+
+  // Paso A: se está esperando el número
+  if (state.esperandoScore) {
+    const score = parseNpsReply(text);
+    // No se pudo interpretar: NO se insiste, la conversación sigue normal.
+    // El prompt ya quedó registrado, así que tampoco se le vuelve a preguntar.
+    if (score === null) return null;
+
+    await saveScore(botId, clientId, score, conversationId);
+    return npsFollowUp(score);
+  }
+
+  return null;
+}
+
 export interface InboundParams {
   bot: Bot;
   /** Numero del cliente en formato +595... (para logs y notificaciones) */
@@ -178,6 +214,15 @@ export interface InboundParams {
  */
 export async function processInboundMessage(params: InboundParams): Promise<InboundResult> {
   const { bot, clientNumber, channelId, text, imageContext } = params;
+
+  // La encuesta se atiende antes que nada: no pasa por el agente, no gasta
+  // tokens y no cuenta contra el cupo mensual del dueño
+  const conversacionPrevia = await prisma.conversation.findUnique({
+    where: { botId_channelId: { botId: bot.id, channelId } },
+    select: { id: true },
+  });
+  const npsReply = await handleNpsReply(bot.id, clientNumber, conversacionPrevia?.id ?? null, text);
+  if (npsReply) return { text: npsReply, isNotice: true };
 
   const readyDocs = await prisma.document.count({ where: { botId: bot.id, status: 'READY' } });
   if (readyDocs === 0) {

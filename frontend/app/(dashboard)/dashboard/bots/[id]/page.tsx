@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, Bot, FileText, HardDrive, Loader2, MessageSquare, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { ArrowLeft, Bot, FileText, HardDrive, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
 // Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -210,6 +210,88 @@ function DriveSection({ botId }: { botId: string }) {
               Desconectar Drive
             </Button>
           </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Encuesta de satisfacción al cliente final. Disponible desde el plan Básico. */
+function NpsCard({
+  bot,
+  plan,
+  onUpdate,
+}: {
+  bot: BotType;
+  plan: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+  onUpdate: (b: BotType) => void;
+}) {
+  const [guardando, setGuardando] = useState(false);
+  const incluido = plan !== 'FREE';
+  const activo = bot.npsEnabled === true;
+
+  async function toggle() {
+    if (!incluido || guardando) return;
+    setGuardando(true);
+    try {
+      const actualizado = await api.bots.update(bot.id, { npsEnabled: !activo });
+      onUpdate(actualizado);
+      toast.success(!activo ? 'Encuesta activada' : 'Encuesta desactivada');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo guardar');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Card className="max-w-xl">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageSquareQuote className="h-4 w-4 text-primary" />
+              Pedir opinión a los clientes
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Al terminar una conversación, el bot le pregunta al cliente del 1 al 5 qué tan
+              bien lo atendió y le pide un comentario.
+            </CardDescription>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={activo}
+            aria-label="Pedir opinión a los clientes"
+            disabled={!incluido || guardando}
+            onClick={() => void toggle()}
+            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              activo ? 'bg-primary' : 'bg-white/15'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                activo ? 'translate-x-[22px]' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {incluido ? (
+          <p className="text-xs text-muted-foreground">
+            Se pregunta como máximo una vez cada 30 días por cliente, así que no molesta a
+            quien escribe seguido. Las respuestas aparecen en Estadísticas.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
+            <p className="text-xs leading-relaxed text-amber-200/90">
+              Disponible desde el plan Básico.{' '}
+              <Link href="/pricing" className="font-semibold text-cyan-400 hover:text-cyan-300">
+                Ver planes →
+              </Link>
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -477,6 +559,10 @@ export default function BotDetailPage() {
               </div>
             </form>
           </Card>
+
+          <div className="mt-4">
+            <NpsCard bot={bot} plan={user?.plan ?? 'FREE'} onUpdate={setBot} />
+          </div>
 
           <div className="mt-4">
             <DriveSection botId={id} />

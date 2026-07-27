@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import NpsSection from '@/components/NpsSection';
 import { api, type AccountStats } from '@/lib/api';
 
 const PLAN_LABEL: Record<AccountStats['plan'], string> = {
@@ -131,6 +132,11 @@ export default function StatsPage() {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      <div className="mt-8">
+        <h2 className="mb-3 text-lg font-semibold">Opinión de tus clientes</h2>
+        <NpsSection />
       </div>
     </div>
   );
