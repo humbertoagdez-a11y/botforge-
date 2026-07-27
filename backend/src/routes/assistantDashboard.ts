@@ -13,7 +13,8 @@ import { LIMITS, checkAssistantLimit, incrementAssistantUsage } from '../middlew
 import { uploadRawToCloudinary, isCloudinaryConfigured } from '../config/cloudinary';
 import { sendImageMessage, isTwilioConfigured } from '../services/twilioMessaging';
 import { documentQueue } from '../lib/queue';
-import { deleteChunksByIds } from '../services/pinecone';
+import { deleteChunksByIds, querySimilarChunks } from '../services/pinecone';
+import { getEmbedding } from '../services/embeddings';
 import { searchWeb } from '../services/webSearch';
 import { scrapeUrl } from '../services/webScraper';
 import { downloadFileAsBase64, getValidAccessToken } from '../services/googleDrive';
@@ -217,6 +218,53 @@ const PLATFORM_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'leer_conversaciones_del_bot',
+    description:
+      'Lee las últimas conversaciones reales entre el bot y sus clientes. Usala SIEMPRE que el dueño se queje de que el bot responde mal, antes de proponer cualquier corrección: sin ver qué pasó realmente estarías adivinando.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string', description: 'ID del bot' },
+        limite: { type: 'number', description: 'Cuántas conversaciones traer. Default 5, máximo 15.' },
+        soloConProblemas: {
+          type: 'boolean',
+          description: 'Si es true, prioriza conversaciones donde el bot no supo responder, derivó a un humano, o el cliente insistió sin obtener respuesta.',
+        },
+      },
+      required: ['botId'],
+    },
+  },
+  {
+    name: 'diagnosticar_respuesta',
+    description:
+      'Analiza por qué el bot respondió mal a una pregunta específica. Devuelve si la información existe en los documentos del bot, y si el RAG la habría encontrado con esa pregunta.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+        preguntaDelCliente: {
+          type: 'string',
+          description: 'La pregunta que el bot contestó mal, tal como la escribió el cliente',
+        },
+      },
+      required: ['botId', 'preguntaDelCliente'],
+    },
+  },
+  {
+    name: 'agregar_conocimiento',
+    description:
+      'Agrega información puntual al conocimiento del bot sin reemplazar lo que ya tiene. Usala cuando detectes que falta un dato específico, por ejemplo un precio, un horario o una política que el bot no sabía.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+        titulo: { type: 'string', description: 'Título corto del dato, máximo 80 caracteres. Ej: Envíos a Encarnación' },
+        contenido: { type: 'string', description: 'La información a agregar, redactada con las palabras que usaría un cliente al preguntar' },
+      },
+      required: ['botId', 'titulo', 'contenido'],
+    },
+  },
+  {
     name: 'crear_ticket_soporte',
     description:
       'Abre un ticket de soporte con Humberto, el creador de BotForge. Usalo cuando el usuario tiene un reclamo, pide una integración que no existe, necesita atención personalizada, tiene un problema de facturación, o cuando ya intentaste resolver algo y no pudiste. NO lo uses para cosas que podés resolver vos mismo con las otras herramientas.',
@@ -365,7 +413,67 @@ const toolInputSchemas = {
     botId: z.string().uuid().optional(),
   }),
   consultar_mis_tickets: z.object({}),
+  leer_conversaciones_del_bot: z.object({
+    botId: z.string().min(1),
+    limite: z.number().int().min(1).max(15).optional(),
+    soloConProblemas: z.boolean().optional(),
+  }),
+  diagnosticar_respuesta: z.object({
+    botId: z.string().min(1),
+    preguntaDelCliente: z.string().min(3).max(500),
+  }),
+  agregar_conocimiento: z.object({
+    botId: z.string().min(1),
+    titulo: z.string().min(3).max(80),
+    contenido: z.string().min(10).max(20000),
+  }),
 } as const;
+
+// ─── Diagnóstico de bots que responden mal ────────────────────────────────────
+
+/** Cuántos mensajes de cada conversación se le muestran al asistente */
+const MSGS_POR_CONVERSACION = 12;
+/** Mismo umbral que usa el bot en produccion (services/rag.ts) */
+const RAG_THRESHOLD = 0.3;
+const RAG_TOP_K = 5;
+
+/**
+ * Frases con las que el bot admite que no sabe algo. Sirven para detectar
+ * conversaciones problematicas sin tener que analizarlas con el modelo.
+ */
+const FRASES_SIN_RESPUESTA = [
+  'no tengo esa información',
+  'no tengo esa informacion',
+  'no puedo ayudarte con eso',
+  'no cuento con esa',
+  'voy a derivar',
+  'te lo confirmo',
+  'lo voy a consultar',
+  'no manejo esa',
+  'no sabría decirte',
+  'no sabria decirte',
+  'un encargado',
+  'una persona del equipo',
+];
+
+interface MensajeSimple {
+  role: 'USER' | 'ASSISTANT';
+  content: string;
+}
+
+/** ¿La conversación muestra señales de que el bot no resolvió? */
+function pareceProblematica(messages: MensajeSimple[]): boolean {
+  const botNoSupo = messages.some(
+    (m) => m.role === 'ASSISTANT' && FRASES_SIN_RESPUESTA.some((f) => m.content.toLowerCase().includes(f)),
+  );
+  if (botNoSupo) return true;
+
+  // Cliente escribiendo dos veces seguidas: el bot no respondió en el medio
+  for (let i = 1; i < messages.length; i++) {
+    if (messages[i].role === 'USER' && messages[i - 1].role === 'USER') return true;
+  }
+  return false;
+}
 
 type ToolName = keyof typeof toolInputSchemas;
 
@@ -890,6 +998,183 @@ async function executeToolCall(
       await sendImageMessage(to, data, mimeType, input.caption);
 
       return { result: { sent: true, file: input.fileName ?? input.fileId, to } };
+    }
+
+    case 'leer_conversaciones_del_bot': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.leer_conversaciones_del_bot>;
+      // getOwnedBot corta si el bot no es del usuario: son datos de clientes
+      // finales del negocio, nadie puede leer los de una cuenta ajena
+      const bot = await getOwnedBot(input.botId, userId);
+      const limite = input.limite ?? 5;
+
+      // Con el filtro de problemas se traen más candidatas y después se
+      // recortan, porque el filtro corre sobre el contenido de los mensajes
+      const conversaciones = await prisma.conversation.findMany({
+        where: { botId: bot.id },
+        orderBy: { updatedAt: 'desc' },
+        take: input.soloConProblemas ? Math.min(limite * 4, 40) : limite,
+        include: {
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: MSGS_POR_CONVERSACION,
+            select: { role: true, content: true, createdAt: true },
+          },
+        },
+      });
+
+      const armadas = conversaciones
+        // findMany trae los mensajes desc para quedarse con los últimos;
+        // se invierten para leerlos en orden cronológico
+        .map((c) => ({ ...c, messages: [...c.messages].reverse() }))
+        .filter((c) => c.messages.length > 0)
+        .filter((c) => (input.soloConProblemas ? pareceProblematica(c.messages) : true))
+        .slice(0, limite);
+
+      if (armadas.length === 0) {
+        return {
+          result: {
+            conversaciones: [],
+            message: input.soloConProblemas
+              ? 'No se encontraron conversaciones con señales de problemas. Probá sin el filtro para ver las últimas.'
+              : 'Este bot todavía no tuvo conversaciones.',
+          },
+        };
+      }
+
+      return {
+        result: {
+          bot: bot.name,
+          total: armadas.length,
+          nota: 'Son mensajes reales de clientes del negocio. Usalos para diagnosticar, pero no los reproduzcas completos en tu respuesta salvo que el dueño te lo pida.',
+          conversaciones: armadas.map((c) => ({
+            canal: c.channel,
+            fecha: c.updatedAt.toISOString().slice(0, 16).replace('T', ' '),
+            mensajes: c.messages.map(
+              (m) => `${m.role === 'USER' ? 'cliente' : 'bot'}: ${m.content.slice(0, 400)}`,
+            ),
+          })),
+        },
+      };
+    }
+
+    case 'diagnosticar_respuesta': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.diagnosticar_respuesta>;
+      const bot = await getOwnedBot(input.botId, userId);
+
+      const [totalDocs, docsListos] = await Promise.all([
+        prisma.document.count({ where: { botId: bot.id } }),
+        prisma.document.count({ where: { botId: bot.id, status: 'READY' } }),
+      ]);
+
+      if (docsListos === 0) {
+        return {
+          result: {
+            veredicto: 'SIN_DOCUMENTOS',
+            totalDocs,
+            docsListos,
+            explicacion:
+              totalDocs === 0
+                ? 'El bot no tiene ningún documento cargado, así que no puede saber nada del negocio.'
+                : `El bot tiene ${totalDocs} documento(s) pero ninguno terminó de procesarse todavía.`,
+          },
+        };
+      }
+
+      // Misma búsqueda que corre el bot en producción, para que el
+      // diagnóstico refleje lo que realmente pasó
+      const vector = await getEmbedding(input.preguntaDelCliente);
+      const similares = await querySimilarChunks(vector, bot.id, RAG_TOP_K);
+      const relevantes = similares.filter((c) => c.score >= RAG_THRESHOLD);
+
+      let veredicto: string;
+      let explicacion: string;
+      if (similares.length === 0 || similares[0].score < 0.15) {
+        veredicto = 'INFO_FALTANTE';
+        explicacion = 'La búsqueda no encontró nada parecido. Lo más probable es que esa información no esté en los documentos del bot.';
+      } else if (relevantes.length === 0) {
+        veredicto = 'INFO_EXISTE_PERO_NO_LA_ENCONTRO';
+        explicacion = `Hay contenido parecido pero por debajo del umbral de ${RAG_THRESHOLD}, así que el bot no lo usó. Probablemente la información está redactada con otras palabras que las que usa el cliente al preguntar.`;
+      } else {
+        veredicto = 'INFO_ENCONTRADA';
+        explicacion = 'La búsqueda sí trajo contenido relevante, así que el bot tenía el dato disponible. El problema es de personalidad o de instrucciones, no de información faltante.';
+      }
+
+      return {
+        result: {
+          veredicto,
+          explicacion,
+          pregunta: input.preguntaDelCliente,
+          totalDocs,
+          docsListos,
+          umbral: RAG_THRESHOLD,
+          chunksEncontrados: similares.map((c) => ({
+            score: Number(c.score.toFixed(3)),
+            superaUmbral: c.score >= RAG_THRESHOLD,
+            contenido: c.content.slice(0, 300),
+          })),
+        },
+      };
+    }
+
+    case 'agregar_conocimiento': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.agregar_conocimiento>;
+      const bot = await getOwnedBot(input.botId, userId);
+
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      const docCount = await prisma.document.count({ where: { botId: bot.id } });
+      const limit = LIMITS[user.plan].docsPerBot;
+      if (docCount >= limit) {
+        throw new Error(`Límite de documentos alcanzado (${docCount}/${limit} del plan ${user.plan}). Eliminá alguno o mejorá el plan.`);
+      }
+
+      const docId = uuidv4();
+      const safeTitulo = input.titulo.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ._-]/g, '').trim();
+      const finalName = `Corrección: ${safeTitulo}`.slice(0, 120);
+      // El título va dentro del contenido: ayuda a que el chunk matchee
+      const texto = `${safeTitulo}\n\n${input.contenido}`;
+      const filePath = path.join(env.UPLOADS_DIR, `${docId}.txt`);
+      await fs.mkdir(env.UPLOADS_DIR, { recursive: true });
+      await fs.writeFile(filePath, texto, 'utf-8');
+
+      let doc = await prisma.document.create({
+        data: {
+          id: docId,
+          botId: bot.id,
+          name: `${finalName}.txt`,
+          mimeType: 'text/plain',
+          filePath,
+          fileSize: Buffer.byteLength(texto, 'utf-8'),
+          status: 'PENDING',
+        },
+      });
+
+      const url = await uploadRawToCloudinary(filePath, doc.id);
+      if (url) {
+        doc = await prisma.document.update({ where: { id: doc.id }, data: { url } });
+        try { await fs.unlink(filePath); } catch { /* limpieza best-effort */ }
+      }
+
+      await documentQueue.add({ documentId: doc.id });
+
+      return {
+        result: {
+          agregado: true,
+          documentId: doc.id,
+          name: doc.name,
+          // A diferencia de upload_instructivo_text, acá no se pisa nada
+          note: 'El dato se agregó como documento nuevo, sin tocar los que ya tenía ni la personalidad. En 1 o 2 minutos queda activo. Decile al dueño que después lo pruebe en el Chat de prueba.',
+        },
+        ui: {
+          kind: 'instructivo_preview',
+          title: 'Conocimiento agregado',
+          description: safeTitulo,
+          data: { archivo: doc.name, estado: 'PROCESANDO', preview: `${input.contenido.slice(0, 100)}...` },
+          isActive: true,
+          actionLabel: 'Documento activo',
+          undoLabel: 'Eliminar documento',
+          undoPayload: { botId: bot.id, documentId: doc.id },
+        },
+      };
     }
 
     case 'crear_ticket_soporte': {
