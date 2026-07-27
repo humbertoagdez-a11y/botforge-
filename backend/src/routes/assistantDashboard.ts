@@ -9,7 +9,7 @@ import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { LIMITS } from '../middleware/planLimits';
+import { LIMITS, checkAssistantLimit, incrementAssistantUsage } from '../middleware/planLimits';
 import { uploadRawToCloudinary, isCloudinaryConfigured } from '../config/cloudinary';
 import { sendImageMessage, isTwilioConfigured } from '../services/twilioMessaging';
 import { documentQueue } from '../lib/queue';
@@ -956,6 +956,20 @@ router.post(
       const { messages, botId, image, confirmedToolUseIds } = chatSchema.parse(req.body);
       const userId = req.user!.userId;
 
+      // Cupo del plan ANTES de tocar la API de Anthropic (y antes de abrir el
+      // stream, para que el 429 salga como JSON normal por el errorHandler)
+      const quota = await checkAssistantLimit(userId);
+      if (!quota.allowed) {
+        throw new AppError(
+          429,
+          quota.scope === 'daily'
+            ? 'Alcanzaste el límite diario del asistente de tu plan.'
+            : 'Alcanzaste el límite mensual del asistente de tu plan.',
+          'ASSISTANT_LIMIT',
+          { scope: quota.scope, resetsAt: quota.resetsAt, plan: quota.plan },
+        );
+      }
+
       const botContext = botId
         ? await buildBotContext(botId, userId)
         : 'CONTEXTO DEL BOT ACTUAL:\nEl usuario no tiene ningún bot seleccionado. Si necesita operar sobre un bot, podés listar sus bots con get_conversations/get_account_stats o pedirle que abra el asistente desde la página del bot.';
@@ -1012,6 +1026,15 @@ router.post(
         return results;
       };
 
+      // Un request cuenta UNA sola vez contra el cupo, y recien cuando una
+      // llamada a Anthropic resolvio bien: si la API falla antes, no se cobra.
+      let usageCounted = false;
+      const countUsageOnce = () => {
+        if (usageCounted) return;
+        usageCounted = true;
+        void incrementAssistantUsage(userId);
+      };
+
       let rounds = 0;
       while (rounds < MAX_TOOL_ROUNDS && !aborted) {
         rounds++;
@@ -1056,6 +1079,7 @@ router.post(
         stream.on('text', (text) => sendText(text));
 
         const finalMessage = await stream.finalMessage();
+        countUsageOnce();
 
         if ((finalMessage.stop_reason as string) === 'refusal') {
           console.warn(`[assistant-dashboard] ${PRIMARY_MODEL} devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
@@ -1139,6 +1163,18 @@ router.post(
     }
   },
 );
+
+// ─── CUPO DEL ASISTENTE ───────────────────────────────────────────────────────
+
+// GET /quota — estado actual del cupo, para mostrarlo en la UI del panel
+router.get('/quota', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const quota = await checkAssistantLimit(req.user!.userId);
+    res.json({ data: quota, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // ─── HISTORIAL PERSISTENTE ────────────────────────────────────────────────────
 

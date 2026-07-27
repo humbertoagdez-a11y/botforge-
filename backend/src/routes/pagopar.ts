@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import {
   DOCUMENTO_REQUERIDO,
@@ -23,7 +23,7 @@ const checkoutSchema = z.object({
   plan: z.enum(['STARTER', 'PRO', 'AGENCY']),
 });
 
-router.post('/checkout', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/checkout', requireAuth, requireVerifiedEmail, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { plan } = checkoutSchema.parse(req.body);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.userId } });
@@ -120,6 +120,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
 router.get(
   '/consultar/:hashPedido',
   requireAuth,
+  requireVerifiedEmail,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { hashPedido } = req.params;

@@ -8,11 +8,13 @@ export const LIMITS: Record<Plan, {
   docsPerBot: number;
   monthlyMessages: number;
   whatsapp: boolean;
+  assistantMonthly: number;
+  assistantDaily: number;
 }> = {
-  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false },
-  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true  },
-  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true  },
-  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true  },
+  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5   },
+  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15  },
+  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40  },
+  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100 },
 };
 
 export const PLAN_LIMIT_CODE = 'PLAN_LIMIT_EXCEEDED';
@@ -81,6 +83,125 @@ export async function incrementMessageUsage(userId: string): Promise<void> {
   } catch (err) {
     // El contador nunca debe romper una respuesta ya generada
     console.error('[planLimits] Error al incrementar contador de mensajes:', err);
+  }
+}
+
+// ─── Cupo del asistente de plataforma ─────────────────────────────────────────
+// El asistente llama a la API de Anthropic en cada mensaje: sin tope, un solo
+// usuario Free podria generar costo ilimitado. Cupo doble: mensual y diario.
+
+// El "dia" es el dia calendario de Paraguay (UTC-4, mismo criterio que
+// dailySummary): si se usara UTC, el cupo diario se renovaria a las 20:00
+// hora local, que para el usuario no significa nada.
+const PY_OFFSET_MS = -4 * 3600 * 1000;
+
+function pyDayKey(d: Date): string {
+  const t = new Date(d.getTime() + PY_OFFSET_MS);
+  return `${t.getUTCFullYear()}-${t.getUTCMonth()}-${t.getUTCDate()}`;
+}
+
+/** Proxima medianoche paraguaya, expresada en UTC */
+function nextPyMidnight(): Date {
+  const now = new Date();
+  const py = new Date(now.getTime() + PY_OFFSET_MS);
+  const startOfNext = Date.UTC(py.getUTCFullYear(), py.getUTCMonth(), py.getUTCDate() + 1);
+  return new Date(startOfNext - PY_OFFSET_MS);
+}
+
+/** Primer dia del mes siguiente (el reset mensual usa isSameMonth en UTC) */
+function nextMonthStart(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+}
+
+export interface AssistantQuota {
+  allowed: boolean;
+  /** Cual cupo se agoto; null si todavia hay */
+  scope: 'daily' | 'monthly' | null;
+  remaining: number;
+  dailyRemaining: number;
+  limit: number;
+  dailyLimit: number;
+  /** Cuando se renueva el cupo agotado (o el diario, si no se agoto ninguno) */
+  resetsAt: string;
+  plan: Plan;
+}
+
+/**
+ * Estado del cupo del asistente, reseteando contadores vencidos de paso.
+ * Aplica el mismo criterio de plan vencido que el resto de los limites.
+ */
+export async function checkAssistantLimit(userId: string): Promise<AssistantQuota> {
+  let user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      plan: true,
+      planExpiresAt: true,
+      assistantMsgsThisMonth: true,
+      assistantMsgsToday: true,
+      assistantResetAt: true,
+      assistantDayResetAt: true,
+    },
+  });
+
+  const now = new Date();
+  const monthStale = !isSameMonth(user.assistantResetAt, now);
+  const dayStale = pyDayKey(user.assistantDayResetAt) !== pyDayKey(now);
+
+  if (monthStale || dayStale) {
+    user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(monthStale ? { assistantMsgsThisMonth: 0, assistantResetAt: now } : {}),
+        ...(dayStale ? { assistantMsgsToday: 0, assistantDayResetAt: now } : {}),
+      },
+      select: {
+        plan: true,
+        planExpiresAt: true,
+        assistantMsgsThisMonth: true,
+        assistantMsgsToday: true,
+        assistantResetAt: true,
+        assistantDayResetAt: true,
+      },
+    });
+  }
+
+  const plan = effectivePlan(user);
+  const limits = LIMITS[plan];
+  const remaining = Math.max(0, limits.assistantMonthly - user.assistantMsgsThisMonth);
+  const dailyRemaining = Math.max(0, limits.assistantDaily - user.assistantMsgsToday);
+
+  // El mensual manda: si se agotaron los dos, lo que importa es cuando vuelve el mes
+  const scope: AssistantQuota['scope'] =
+    remaining <= 0 ? 'monthly' : dailyRemaining <= 0 ? 'daily' : null;
+
+  return {
+    allowed: scope === null,
+    scope,
+    remaining,
+    dailyRemaining,
+    limit: limits.assistantMonthly,
+    dailyLimit: limits.assistantDaily,
+    resetsAt: (scope === 'monthly' ? nextMonthStart() : nextPyMidnight()).toISOString(),
+    plan,
+  };
+}
+
+/**
+ * Incrementa los dos contadores del asistente. Llamar SOLO despues de una
+ * llamada exitosa a Anthropic; nunca rompe una respuesta ya generada.
+ */
+export async function incrementAssistantUsage(userId: string): Promise<void> {
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        assistantMsgsThisMonth: { increment: 1 },
+        assistantMsgsToday: { increment: 1 },
+      },
+    });
+  } catch (err) {
+    console.error('[planLimits] Error al incrementar contador del asistente:', err);
   }
 }
 

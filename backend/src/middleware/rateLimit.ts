@@ -13,30 +13,40 @@ export const globalLimiter = rateLimit({
 });
 
 /**
- * Recuperacion de contraseña: 3 solicitudes cada 15 minutos POR EMAIL, no por
- * IP, para que nadie pueda llenarle la casilla a otro. El limiter global por
- * IP sigue aplicando por encima de este.
+ * Limita POR EMAIL en vez de por IP, para que nadie pueda llenarle la casilla
+ * a otro desde IPs distintas. El limiter global por IP sigue aplicando encima.
  */
-export const forgotPasswordLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 3,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req): string => {
-    const email = (req.body as { email?: unknown } | undefined)?.email;
-    if (typeof email === 'string' && email.trim()) return `email:${email.trim().toLowerCase()}`;
-    // Sin email valido el schema lo va a rechazar igual; se agrupa aparte
-    return 'email:invalido';
-  },
-  message: {
-    data: null,
-    error: {
-      code: 'RATE_LIMIT',
-      message: 'Ya pediste varios enlaces de recuperación. Esperá unos minutos e intentá de nuevo.',
+function emailKeyedLimiter(max: number, message: string) {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req): string => {
+      const email = (req.body as { email?: unknown } | undefined)?.email;
+      if (typeof email === 'string' && email.trim()) return `email:${email.trim().toLowerCase()}`;
+      // Sin email valido el schema lo va a rechazar igual; se agrupa aparte
+      return 'email:invalido';
     },
-    meta: null,
-  },
-});
+    message: {
+      data: null,
+      error: { code: 'RATE_LIMIT', message },
+      meta: null,
+    },
+  });
+}
+
+/** Recuperacion de contraseña: 3 solicitudes cada 15 minutos por email */
+export const forgotPasswordLimiter = emailKeyedLimiter(
+  3,
+  'Ya pediste varios enlaces de recuperación. Esperá unos minutos e intentá de nuevo.',
+);
+
+/** Reenvio del codigo de verificacion: 3 cada 15 minutos por email */
+export const resendVerificationLimiter = emailKeyedLimiter(
+  3,
+  'Ya pediste varios códigos. Esperá unos minutos e intentá de nuevo.',
+);
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

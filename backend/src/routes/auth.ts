@@ -2,13 +2,13 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth';
-import { authLimiter, forgotPasswordLimiter } from '../middleware/rateLimit';
+import { authLimiter, forgotPasswordLimiter, resendVerificationLimiter } from '../middleware/rateLimit';
 import { sendEmail } from '../services/email';
 
 const router = Router();
@@ -39,10 +39,13 @@ function welcomeEmailHtml(name: string): string {
          style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:0 0 28px;">
         Ir al dashboard
       </a>
-      <p style="font-size:14px;line-height:1.9;color:#333333;margin:0 0 28px;">
+      <p style="font-size:14px;line-height:1.9;color:#333333;margin:0 0 20px;">
         1. Creá tu bot con nombre y personalidad<br />
-        2. Subí el instructivo con la info de tu negocio<br />
+        2. Cargá tu instructivo con la info de tu negocio<br />
         3. Conectá tu WhatsApp y dejalo responder solo
+      </p>
+      <p style="font-size:14px;line-height:1.6;color:#333333;margin:0 0 28px;">
+        Y si te trabás en algo, escribile al Asistente que está siempre en el panel: te guía paso a paso.
       </p>
       <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
       <p style="font-size:12px;color:#888888;margin:0;">
@@ -53,31 +56,60 @@ function welcomeEmailHtml(name: string): string {
 </html>`;
 }
 
-async function sendWelcomeEmail(email: string, name: string): Promise<void> {
-  if (!env.RESEND_API_KEY) {
-    console.log(`[email] RESEND_API_KEY no configurada — se omite email de bienvenida a ${email}`);
-    return;
+// ─── Verificación de email ────────────────────────────────────────────────────
+
+const VERIFICATION_TTL_MS = 15 * 60 * 1000;
+const MAX_VERIFICATION_ATTEMPTS = 5;
+
+function verificationEmailHtml(name: string, code: string): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
+    <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
+      <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
+      <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
+        Usá este código para confirmar tu email y activar tu cuenta:
+      </p>
+      <p style="font-family:'Courier New',Courier,monospace;font-size:36px;font-weight:bold;letter-spacing:10px;color:#111111;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:10px;text-align:center;padding:18px 8px;margin:0 0 20px;">${code}</p>
+      <p style="font-size:14px;line-height:1.6;color:#333333;margin:0 0 28px;">
+        El código vence en <strong>15 minutos</strong>.
+      </p>
+      <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
+      <p style="font-size:12px;color:#888888;margin:0;">
+        Si no creaste una cuenta en BotForge, ignorá este email.
+      </p>
+    </div>
+  </body>
+</html>`;
+}
+
+/**
+ * Genera y envía un código nuevo, invalidando los anteriores del usuario.
+ * randomInt (CSPRNG) y no Math.random: el código no debe ser predecible.
+ */
+async function issueVerificationCode(user: { id: string; email: string; name: string }): Promise<void> {
+  await prisma.emailVerificationCode.updateMany({
+    where: { userId: user.id, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+  await prisma.emailVerificationCode.create({
+    data: {
+      id: uuidv4(),
+      userId: user.id,
+      code,
+      expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
+    },
+  });
+
+  // Solo fuera de producción: permite probar sin email configurado
+  if (env.NODE_ENV !== 'production') {
+    console.log(`[auth] Código de verificación para ${user.email}: ${code}`);
   }
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: env.EMAIL_FROM,
-        to: [email],
-        subject: 'Bienvenido a BotForge',
-        html: welcomeEmailHtml(name),
-      }),
-    });
-    if (!res.ok) {
-      console.error(`[email] Resend respondió ${res.status} al enviar bienvenida a ${email}`);
-    }
-  } catch (err) {
-    console.error('[email] Error al enviar email de bienvenida:', err);
-  }
+
+  void sendEmail(user.email, 'Tu código de verificación de BotForge', verificationEmailHtml(user.name, code));
 }
 
 function signTokens(userId: string, email: string) {
@@ -110,6 +142,21 @@ function setAuthCookies(res: Response, accessToken: string, refreshToken: string
   });
 }
 
+/** Emite tokens + cookies. Solo se llama con el email ya verificado. */
+async function issueSession(res: Response, user: { id: string; email: string }): Promise<string> {
+  const { accessToken, refreshToken } = signTokens(user.id, user.email);
+  await prisma.refreshToken.create({
+    data: {
+      id: uuidv4(),
+      token: refreshToken,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+  setAuthCookies(res, accessToken, refreshToken);
+  return accessToken;
+}
+
 router.post('/register', authLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = registerSchema.parse(req.body);
@@ -120,24 +167,14 @@ router.post('/register', authLimiter, async (req: Request, res: Response, next: 
     const passwordHash = await bcrypt.hash(body.password, 12);
     const user = await prisma.user.create({
       data: { id: uuidv4(), name: body.name, email: body.email, passwordHash },
-      select: { id: true, name: true, email: true, plan: true, documento: true, createdAt: true },
+      select: { id: true, name: true, email: true },
     });
 
-    const { accessToken, refreshToken } = signTokens(user.id, user.email);
-    await prisma.refreshToken.create({
-      data: {
-        id: uuidv4(),
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
+    // Sin tokens hasta verificar: la sesión se emite recién en /verify-email.
+    // El email de bienvenida también espera a la verificación.
+    await issueVerificationCode(user);
 
-    setAuthCookies(res, accessToken, refreshToken);
-    res.status(201).json({ data: { ...user, accessToken }, error: null, meta: null });
-
-    // Email de bienvenida: opcional, nunca bloquea ni rompe el registro
-    void sendWelcomeEmail(user.email, user.name);
+    res.status(201).json({ data: { needsVerification: true, email: user.email }, error: null, meta: null });
   } catch (err) {
     next(err);
   }
@@ -153,17 +190,17 @@ router.post('/login', authLimiter, async (req: Request, res: Response, next: Nex
     const valid = await bcrypt.compare(body.password, user.passwordHash);
     if (!valid) throw new AppError(401, 'Credenciales inválidas');
 
-    const { accessToken, refreshToken } = signTokens(user.id, user.email);
-    await prisma.refreshToken.create({
-      data: {
-        id: uuidv4(),
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      },
-    });
+    // Recién acá, con la contraseña ya validada: si el chequeo fuera antes,
+    // cualquiera podría averiguar si un email está registrado sin conocerla.
+    if (!user.emailVerified) {
+      throw new AppError(
+        403,
+        'Tu email todavía no está verificado. Revisá tu casilla o pedí un código nuevo.',
+        'EMAIL_NOT_VERIFIED',
+      );
+    }
 
-    setAuthCookies(res, accessToken, refreshToken);
+    const accessToken = await issueSession(res, user);
     res.json({
       data: { id: user.id, name: user.name, email: user.email, plan: user.plan, accessToken },
       error: null,
@@ -173,6 +210,105 @@ router.post('/login', authLimiter, async (req: Request, res: Response, next: Nex
     next(err);
   }
 });
+
+// ─── POST /verify-email ───────────────────────────────────────────────────────
+const verifyEmailSchema = z.object({
+  email: z.string().email(),
+  code: z.string().trim().regex(/^\d{6}$/, 'El código tiene 6 dígitos'),
+});
+
+router.post('/verify-email', authLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, code } = verifyEmailSchema.parse(req.body);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    // Mismo error genérico si el usuario no existe: no revelar emails registrados
+    if (!user) throw new AppError(400, 'Código inválido o vencido', 'VERIFICATION_INVALID');
+
+    if (user.emailVerified) {
+      // Ya estaba verificado (doble click, otra pestaña): no emitir sesión sin
+      // contraseña, que entre por login
+      res.json({ data: { alreadyVerified: true }, error: null, meta: null });
+      return;
+    }
+
+    const stored = await prisma.emailVerificationCode.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!stored) throw new AppError(400, 'Código inválido o vencido', 'VERIFICATION_INVALID');
+
+    // El intento se cobra SIEMPRE, antes de comparar: así la fuerza bruta
+    // quema el código aunque adivine tarde
+    const updated = await prisma.emailVerificationCode.update({
+      where: { id: stored.id },
+      data: { attempts: { increment: 1 } },
+    });
+
+    if (updated.attempts > MAX_VERIFICATION_ATTEMPTS) {
+      await prisma.emailVerificationCode.update({
+        where: { id: stored.id },
+        data: { usedAt: new Date() },
+      });
+      throw new AppError(
+        429,
+        'Demasiados intentos. Pedí un código nuevo.',
+        'VERIFICATION_LOCKED',
+      );
+    }
+
+    if (stored.expiresAt < new Date() || stored.code !== code) {
+      throw new AppError(400, 'Código inválido o vencido', 'VERIFICATION_INVALID');
+    }
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerified: true, emailVerifiedAt: new Date() },
+      }),
+      prisma.emailVerificationCode.update({
+        where: { id: stored.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    // La bienvenida se manda SOLO acá: con el email ya confirmado como real
+    void sendEmail(user.email, 'Bienvenido a BotForge', welcomeEmailHtml(user.name));
+
+    const accessToken = await issueSession(res, user);
+    res.json({
+      data: { id: user.id, name: user.name, email: user.email, plan: user.plan, accessToken },
+      error: null,
+      meta: null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /resend-verification ────────────────────────────────────────────────
+const resendSchema = z.object({ email: z.string().email() });
+
+// Responde siempre { sent: true }, exista o no el usuario y esté verificado o
+// no: cualquier diferencia serviría para enumerar emails registrados.
+router.post(
+  '/resend-verification',
+  resendVerificationLimiter,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email } = resendSchema.parse(req.body);
+      const user = await prisma.user.findUnique({ where: { email } });
+
+      if (user && !user.emailVerified) {
+        await issueVerificationCode(user);
+      }
+
+      res.json({ data: { sent: true }, error: null, meta: null });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 router.post('/refresh', async (req: Request, res: Response, next: NextFunction) => {
   try {

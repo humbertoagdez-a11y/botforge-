@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import twilio from 'twilio';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkWhatsAppAccess } from '../middleware/planLimits';
 import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
@@ -51,6 +51,7 @@ const connectionSchema = z.object({
 router.post(
   '/bots/:botId/request-connection',
   requireAuth,
+  requireVerifiedEmail,
   checkWhatsAppAccess,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -101,6 +102,7 @@ router.post(
 router.get(
   '/bots/:botId/connection-status',
   requireAuth,
+  requireVerifiedEmail,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const bot = await getOwnedBot(req.params.botId, req.user!.userId);
@@ -155,6 +157,7 @@ router.get(
 router.delete(
   '/bots/:botId/connect',
   requireAuth,
+  requireVerifiedEmail,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const bot = await getOwnedBot(req.params.botId, req.user!.userId);

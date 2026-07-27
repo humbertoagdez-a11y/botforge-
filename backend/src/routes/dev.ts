@@ -1,13 +1,14 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { generateDailySummaries } from '../services/dailySummary';
 import { downgradeExpiredPlans, notifyExpiringSoon } from '../services/planExpiration';
 
 const router = Router();
 router.use(requireAuth);
+router.use(requireVerifiedEmail);
 
 /**
  * Permite ejecutar tareas de mantenimiento manualmente. En producción solo lo

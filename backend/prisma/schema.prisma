@@ -44,8 +44,18 @@ model User {
   /// CI o RUC. Opcional: solo hace falta para pagar, Pagopar lo exige.
   /// No se pide en el registro, se pide al ir al checkout.
   documento             String?
+  /// Sin verificar no hay sesion: el registro no devuelve tokens hasta
+  /// confirmar el codigo. Los usuarios previos al deploy quedan en true
+  /// via la migracion, para no dejarlos afuera.
+  emailVerified         Boolean   @default(false)
+  emailVerifiedAt       DateTime?
   messagesUsedThisMonth Int       @default(0)
   messagesResetAt       DateTime  @default(now())
+  /// Cupo del asistente de plataforma (Agente Tipo A), por plan
+  assistantMsgsThisMonth Int      @default(0)
+  assistantMsgsToday     Int      @default(0)
+  assistantResetAt       DateTime @default(now())
+  assistantDayResetAt    DateTime @default(now())
   dailySummaryEnabled   Boolean   @default(true)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
@@ -53,6 +63,7 @@ model User {
   bots                     Bot[]
   refreshTokens            RefreshToken[]
   passwordResetTokens      PasswordResetToken[]
+  emailVerificationCodes   EmailVerificationCode[]
   notificationConfigs      NotificationConfig[]
   platformAssistantMessages PlatformAssistantMessage[]
   pagoparOrders            PagoparOrder[]
@@ -104,6 +115,24 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
+}
+
+/// Codigo de 6 digitos para verificar el email al registrarse. Vive 15
+/// minutos, admite hasta 5 intentos fallidos y al pedir uno nuevo se
+/// invalidan los anteriores del mismo usuario.
+model EmailVerificationCode {
+  id        String    @id @default(uuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_codes")
 }
 
 /// Token de un solo uso para resetear la contraseña. Vive 1 hora.

@@ -12,7 +12,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { api } from '@/lib/api';
+import { api, type ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { AUTH_CARD, AUTH_INPUT, AUTH_LABEL, AUTH_LINK, AUTH_MUTED, AUTH_SUBMIT } from '@/lib/auth-styles';
 
@@ -39,8 +39,17 @@ export default function LoginPage() {
       setAuth(user.accessToken, user);
       router.push('/dashboard');
     } catch (err) {
+      // Contraseña correcta pero email sin verificar: va a completar el paso
+      if ((err as ApiError).code === 'EMAIL_NOT_VERIFIED') {
+        try {
+          sessionStorage.setItem('bf_verify_email', data.email);
+        } catch {
+          // sin sessionStorage el email igual viaja por query
+        }
+        router.push(`/auth/verify-email?email=${encodeURIComponent(data.email)}`);
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'Error al ingresar');
-    } finally {
       setLoading(false);
     }
   }

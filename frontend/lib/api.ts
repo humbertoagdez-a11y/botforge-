@@ -105,6 +105,24 @@ export interface AccountStats {
   recentConversations: ConversationSummary[];
 }
 
+/** Respuesta del registro: ya no devuelve sesión, hay que verificar el email */
+export interface RegisterPending {
+  needsVerification: boolean;
+  email: string;
+}
+
+/** Cupo del asistente de plataforma según el plan */
+export interface AssistantQuota {
+  allowed: boolean;
+  scope: 'daily' | 'monthly' | null;
+  remaining: number;
+  dailyRemaining: number;
+  limit: number;
+  dailyLimit: number;
+  resetsAt: string;
+  plan: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+}
+
 export interface PagoparEstado {
   plan: string;
   montoTotal: number;
@@ -269,10 +287,23 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       }),
+    /** No devuelve sesión: hay que verificar el email antes de entrar */
     register: (name: string, email: string, password: string) =>
-      request<User>('/api/v1/auth/register', {
+      request<RegisterPending>('/api/v1/auth/register', {
         method: 'POST',
         body: JSON.stringify({ name, email, password }),
+      }),
+    /** Verifica el código y recién ahí devuelve la sesión */
+    verifyEmail: (email: string, code: string) =>
+      request<User & { alreadyVerified?: boolean }>('/api/v1/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ email, code }),
+      }),
+    /** Responde { sent: true } exista o no el usuario, a propósito */
+    resendVerification: (email: string) =>
+      request<{ sent: boolean }>('/api/v1/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
       }),
     me: () => request<User>('/api/v1/auth/me'),
     logout: () => request<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
@@ -388,6 +419,7 @@ export const api = {
       ),
     clearHistory: () =>
       request<{ cleared: boolean }>('/api/v1/assistant/dashboard/history/clear', { method: 'POST' }),
+    quota: () => request<AssistantQuota>('/api/v1/assistant/dashboard/quota'),
   },
 
   drive: {

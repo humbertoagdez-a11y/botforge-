@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuthStore, useAssistantStore } from '@/lib/store';
-import { api } from '@/lib/api';
+import { api, type AssistantQuota } from '@/lib/api';
 import { Z } from '@/lib/z-index';
 import GenerativeUICard, { type UIComponent } from '@/components/GenerativeUICard';
 import ThinkingBubble from '@/components/ThinkingBubble';
@@ -82,6 +82,8 @@ interface ChatMessage {
   blocks?: unknown[];
   /** Componente interactivo de Generative UI */
   uiComponent?: UIComponent;
+  /** El mensaje es el aviso de cupo agotado, no una respuesta del asistente */
+  isLimit?: boolean;
   ts: number;
 }
 
@@ -212,6 +214,7 @@ export default function DashboardAssistant(props: Props) {
     name: string;
   } | null>(null);
   const [imageModal, setImageModal] = useState<string | null>(null);
+  const [quota, setQuota] = useState<AssistantQuota | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -227,11 +230,16 @@ export default function DashboardAssistant(props: Props) {
       setIsLoading(false);
       setSelectedImage(null);
       setImageModal(null);
+      setQuota(null);
       return;
     }
 
     let cancelled = false;
     setMessages([buildWelcome(botName)]);
+    api.assistant
+      .quota()
+      .then((q) => { if (!cancelled) setQuota(q); })
+      .catch(() => { /* el cupo es informativo: si falla, no se muestra */ });
     api.assistant
       .history()
       .then(({ messages: rows }) => {
@@ -367,6 +375,25 @@ export default function DashboardAssistant(props: Props) {
         signal: controller.signal,
       });
 
+      // El límite del asistente corta ANTES de abrir el stream, así que llega
+      // como JSON normal y hay que leerlo acá
+      if (res.status === 429) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: { code?: string; message?: string; details?: AssistantQuota };
+        } | null;
+        if (body?.error?.code === 'ASSISTANT_LIMIT') {
+          const fresh = await api.assistant.quota().catch(() => null);
+          if (fresh) setQuota(fresh);
+          updatePlaceholder((last) => ({
+            ...last,
+            streaming: false,
+            content: body.error?.message ?? 'Alcanzaste el límite del asistente de tu plan.',
+            isLimit: true,
+          }));
+          return;
+        }
+      }
+
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
       const reader = res.body.getReader();
@@ -491,6 +518,18 @@ export default function DashboardAssistant(props: Props) {
         }
         return { ...last, streaming: false };
       });
+
+      // El backend cuenta un uso por request: se descuenta local en vez de
+      // pedir el cupo de nuevo en cada mensaje
+      setQuota((q) =>
+        q
+          ? {
+              ...q,
+              remaining: Math.max(0, q.remaining - 1),
+              dailyRemaining: Math.max(0, q.dailyRemaining - 1),
+            }
+          : q,
+      );
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         updatePlaceholder((last) => ({
@@ -611,6 +650,13 @@ export default function DashboardAssistant(props: Props) {
 
   const showEmptyState = messages.length === 1 && messages[0]?.isLocal;
 
+  const sinCupo = quota !== null && !quota.allowed;
+  // El cupo mensual vuelve el 1°; el diario, a la medianoche de Paraguay
+  const textoRenovacion =
+    quota?.scope === 'monthly'
+      ? `el ${new Date(quota.resetsAt).toLocaleDateString('es-PY', { day: 'numeric', month: 'long' })}`
+      : 'a la medianoche';
+
   return (
     <>
       {/* ── TRIGGER FLOTANTE (solo instancia global, oculto con panel abierto) ── */}
@@ -665,10 +711,39 @@ export default function DashboardAssistant(props: Props) {
               {botName ? `Gestionando: ${botName}` : 'Listo para ayudarte'}
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-            <span className="text-[11px] font-medium text-emerald-400">En línea</span>
-          </div>
+          {/* Cupo del plan: discreto, salvo que esté por agotarse */}
+          {quota ? (
+            <div
+              className="flex shrink-0 items-center gap-1.5"
+              title={`Te quedan ${quota.dailyRemaining} mensajes hoy y ${quota.remaining} este mes (plan ${quota.plan})`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  quota.dailyRemaining === 0
+                    ? 'bg-red-400'
+                    : quota.dailyRemaining <= 3
+                      ? 'bg-amber-400'
+                      : 'animate-pulse bg-emerald-400'
+                }`}
+              />
+              <span
+                className={`text-[11px] font-medium ${
+                  quota.dailyRemaining === 0
+                    ? 'text-red-400'
+                    : quota.dailyRemaining <= 3
+                      ? 'text-amber-400'
+                      : 'text-emerald-400'
+                }`}
+              >
+                {quota.dailyRemaining === 0 ? 'Sin cupo' : `${quota.dailyRemaining} hoy`}
+              </span>
+            </div>
+          ) : (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span className="text-[11px] font-medium text-emerald-400">En línea</span>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => void handleNewConversation()}
@@ -842,6 +917,33 @@ export default function DashboardAssistant(props: Props) {
 
         {/* INPUT AREA */}
         <div className="pb-safe shrink-0 border-t border-white/[0.06] bg-black/30 px-4 pb-5 pt-3 backdrop-blur-sm">
+          {quota && !sinCupo && quota.dailyRemaining <= 3 && (
+            <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+              <p className="text-[11px] leading-relaxed text-amber-200/90">
+                Te {quota.dailyRemaining === 1 ? 'queda 1 mensaje' : `quedan ${quota.dailyRemaining} mensajes`} hoy
+                con el asistente. Se renueva {textoRenovacion}.
+              </p>
+            </div>
+          )}
+
+          {sinCupo && (
+            <div className="mb-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2.5">
+              <p className="text-[11px] leading-relaxed text-red-200/90">
+                Agotaste tu cupo {quota?.scope === 'monthly' ? 'mensual' : 'del día'} del asistente
+                (plan {quota?.plan}). Se renueva {textoRenovacion}.
+              </p>
+              {quota && quota.plan !== 'AGENCY' && (
+                <a
+                  href="/pricing"
+                  className="mt-1.5 inline-block text-[11px] font-semibold text-cyan-400 transition-colors hover:text-cyan-300"
+                >
+                  Mejorá tu plan para tener más →
+                </a>
+              )}
+            </div>
+          )}
+
           {selectedImage && (
             <div className="mb-3 flex items-center gap-2 rounded-2xl bg-white/[0.05] p-2.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -886,7 +988,8 @@ export default function DashboardAssistant(props: Props) {
                   }
                 }}
                 rows={1}
-                placeholder="Escribí tu mensaje..."
+                disabled={sinCupo}
+                placeholder={sinCupo ? 'Cupo del asistente agotado' : 'Escribí tu mensaje...'}
                 maxLength={6000}
                 style={{ fontSize: '16px' }}
                 className="max-h-[120px] min-h-[44px] w-full resize-none overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.06] px-4 py-3 leading-relaxed text-white transition-colors placeholder:text-white/30 focus:border-cyan-500/40 focus:outline-none"
@@ -900,7 +1003,7 @@ export default function DashboardAssistant(props: Props) {
             <button
               type="button"
               onClick={() => void handleSend()}
-              disabled={(!input.trim() && !selectedImage) || isLoading}
+              disabled={(!input.trim() && !selectedImage) || isLoading || sinCupo}
               aria-label="Enviar mensaje"
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-violet-600 transition-all duration-150 hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
             >

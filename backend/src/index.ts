@@ -29,7 +29,7 @@ import statsRouter from './routes/stats';
 import activityRouter from './routes/activity';
 import driveRouter, { googleOAuthRouter } from './routes/drive';
 import devRouter from './routes/dev';
-import { requireAuth } from './middleware/auth';
+import { requireAuth, requireVerifiedEmail } from './middleware/auth';
 import { generateDailySummaries } from './services/dailySummary';
 import { downgradeExpiredPlans, notifyExpiringSoon } from './services/planExpiration';
 
@@ -97,6 +97,14 @@ app.get('/health', (_req, res) => {
 
 // Rutas autenticadas
 app.use('/api/v1/auth', authRouter);
+// Sin email verificado no se opera la plataforma. El gate va montado por
+// prefijo y cubre bots + documents + chat (comparten /api/v1/bots). Los
+// routers de whatsapp y pagopar NO se pueden bloquear por prefijo porque
+// mezclan webhooks publicos: sus rutas autenticadas llevan el middleware
+// adentro del archivo.
+app.use('/api/v1/bots', requireAuth, requireVerifiedEmail);
+app.use('/api/v1/stats', requireAuth, requireVerifiedEmail);
+app.use('/api/v1/activity', requireAuth, requireVerifiedEmail);
 app.use('/api/v1/bots', botsRouter);
 app.use('/api/v1/bots/:botId/documents', documentsRouter);
 app.use('/api/v1/bots/:botId/chat', chatRouter);
@@ -108,7 +116,7 @@ app.use('/api/v1/whatsapp', whatsappRouter);
 app.use('/api/v1/pagopar', pagoparRouter);
 app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/activity', activityRouter);
-app.use('/api/v1/drive', requireAuth, driveRouter);
+app.use('/api/v1/drive', requireAuth, requireVerifiedEmail, driveRouter);
 app.use('/api/v1/dev', devRouter);
 
 // Rutas públicas (widget embebido)
@@ -118,7 +126,7 @@ app.use('/api/v1/public', publicRouter);
 app.use('/api/auth/google', googleOAuthRouter);
 
 // Asistente del dashboard (autenticado) — registrar antes que el público
-app.use('/api/v1/assistant/dashboard', assistantDashboardRouter);
+app.use('/api/v1/assistant/dashboard', requireAuth, requireVerifiedEmail, assistantDashboardRouter);
 
 // Asistente Aria de la landing (público)
 app.use('/api/v1/assistant', assistantRouter);

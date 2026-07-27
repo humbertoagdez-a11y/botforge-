@@ -41,14 +41,16 @@ export default function RegisterPage() {
   async function onSubmit(data: FormData) {
     setLoading(true);
     try {
-      const user = await api.auth.register(data.name, data.email, data.password);
-      if (!user.accessToken) throw new Error('No se recibió token');
-      setAuth(user.accessToken, user);
-      toast.success('¡Bienvenido a BotForge!');
-      router.push('/dashboard');
+      // El registro ya no devuelve sesión: primero hay que verificar el email
+      const { email } = await api.auth.register(data.name, data.email, data.password);
+      try {
+        sessionStorage.setItem('bf_verify_email', email);
+      } catch {
+        // sin sessionStorage el email igual viaja por query
+      }
+      router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al registrarse');
-    } finally {
       setLoading(false);
     }
   }
