@@ -12,6 +12,17 @@ import { useAuthStore } from '@/lib/store';
 import { AUTH_CARD, AUTH_LINK, AUTH_MUTED, AUTH_SUBMIT } from '@/lib/auth-styles';
 
 const CODE_LENGTH = 6;
+
+/**
+ * Única fuente de verdad para "el código está completo".
+ *
+ * Se comprueba sobre el ARRAY de casillas, nunca sobre el string concatenado:
+ * al hacer join('') las casillas vacías no dejan hueco, y además todo string
+ * contiene la cadena vacía, así que un `.includes('')` da siempre true.
+ */
+function esCompleto(digitos: string[]): boolean {
+  return digitos.length === CODE_LENGTH && digitos.every((d) => /^\d$/.test(d));
+}
 /** Espera antes de poder pedir otro código */
 const RESEND_COOLDOWN_S = 60;
 /** Clave donde register/login dejan el email antes de redirigir acá */
@@ -114,10 +125,7 @@ function VerifyEmail() {
       inputsRef.current[ultimo]?.focus();
 
       // Código completo: se envía solo, sin obligar a apretar el botón
-      const completo = next.join('');
-      if (completo.length === CODE_LENGTH && !completo.includes('')) {
-        void verificar(completo);
-      }
+      if (esCompleto(next)) void verificar(next.join(''));
       return next;
     });
     setError('');
@@ -161,6 +169,7 @@ function VerifyEmail() {
   }
 
   const codigo = digits.join('');
+  const completo = esCompleto(digits);
 
   return (
     <div className={AUTH_CARD}>
@@ -217,7 +226,7 @@ function VerifyEmail() {
         <Button
           className={`${AUTH_SUBMIT} mt-6`}
           onClick={() => void verificar(codigo)}
-          disabled={verificando || codigo.length !== CODE_LENGTH || codigo.includes('')}
+          disabled={verificando || !completo}
         >
           {verificando && <Loader2 className="h-4 w-4 animate-spin" />}
           Verificar
