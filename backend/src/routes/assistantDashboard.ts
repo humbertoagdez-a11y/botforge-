@@ -18,6 +18,7 @@ import { searchWeb } from '../services/webSearch';
 import { scrapeUrl } from '../services/webScraper';
 import { downloadFileAsBase64, getValidAccessToken } from '../services/googleDrive';
 import { buildPlatformSystemPrompt } from '../services/platformAgent';
+import { CATEGORY_LABEL, createTicket, listUserTickets } from '../services/supportTickets';
 
 const router = Router();
 
@@ -211,6 +212,42 @@ const PLATFORM_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'crear_ticket_soporte',
+    description:
+      'Abre un ticket de soporte con Humberto, el creador de BotForge. Usalo cuando el usuario tiene un reclamo, pide una integración que no existe, necesita atención personalizada, tiene un problema de facturación, o cuando ya intentaste resolver algo y no pudiste. NO lo uses para cosas que podés resolver vos mismo con las otras herramientas.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['CONSULTA', 'RECLAMO', 'INTEGRACION', 'BOT_MAL_RESPONDE', 'FACTURACION', 'OTRO'],
+          description: 'Tipo de caso',
+        },
+        subject: {
+          type: 'string',
+          description: 'Asunto específico y corto, máximo 120 caracteres. Nada genérico como "Consulta" o "Problema".',
+        },
+        body: {
+          type: 'string',
+          description: 'El problema en detalle, en las palabras del usuario. Incluí lo que ya intentaron.',
+        },
+        priority: {
+          type: 'string',
+          enum: ['LOW', 'NORMAL', 'HIGH'],
+          description: 'HIGH solo si el negocio del cliente está caído o perdiendo ventas ahora mismo. Ante la duda, NORMAL.',
+        },
+        botId: { type: 'string', description: 'Solo si el problema es de un bot puntual' },
+      },
+      required: ['category', 'subject', 'body'],
+    },
+  },
+  {
+    name: 'consultar_mis_tickets',
+    description:
+      'Lista los tickets del usuario con su estado actual. Usalo cuando pregunte por el seguimiento de un reclamo o consulta.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'request_plan_upgrade',
     description: 'Inicia el proceso de upgrade de plan. Muestra info del plan objetivo y link de pago.',
     input_schema: {
@@ -304,6 +341,14 @@ const toolInputSchemas = {
     caption: z.string().min(1).max(1000),
     clientPhone: z.string().min(5).max(30),
   }),
+  crear_ticket_soporte: z.object({
+    category: z.enum(['CONSULTA', 'RECLAMO', 'INTEGRACION', 'BOT_MAL_RESPONDE', 'FACTURACION', 'OTRO']),
+    subject: z.string().min(5).max(120),
+    body: z.string().min(10).max(5000),
+    priority: z.enum(['LOW', 'NORMAL', 'HIGH']).optional(),
+    botId: z.string().uuid().optional(),
+  }),
+  consultar_mis_tickets: z.object({}),
 } as const;
 
 type ToolName = keyof typeof toolInputSchemas;
@@ -319,7 +364,7 @@ async function getOwnedBot(botId: string, userId: string) {
 
 /** Componente de Generative UI que el frontend renderiza en el chat */
 interface GenUIComponent {
-  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config';
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config' | 'support_ticket';
   title: string;
   description: string;
   data: Record<string, unknown>;
@@ -829,6 +874,66 @@ async function executeToolCall(
       await sendImageMessage(to, data, mimeType, input.caption);
 
       return { result: { sent: true, file: input.fileName ?? input.fileId, to } };
+    }
+
+    case 'crear_ticket_soporte': {
+      const input = parsed.data as z.infer<typeof toolInputSchemas.crear_ticket_soporte>;
+      // El contexto lo arma createTicket leyendo la base: el modelo no puede
+      // inventar plan, bots ni estados de la cuenta
+      const ticket = await createTicket({
+        userId,
+        botId: input.botId ?? null,
+        category: input.category,
+        subject: input.subject,
+        body: input.body,
+        priority: input.priority,
+      });
+      return {
+        result: {
+          creado: true,
+          ref: ticket.ref,
+          status: ticket.status,
+          note: `Ticket ${ticket.ref} creado. Decile al usuario ese número y que le llega un email de confirmación. NO prometas un plazo de respuesta.`,
+        },
+        ui: {
+          kind: 'support_ticket',
+          title: `Ticket ${ticket.ref} creado`,
+          description: ticket.subject,
+          data: {
+            ref: ticket.ref,
+            categoria: CATEGORY_LABEL[ticket.category],
+            prioridad: ticket.priority,
+            estado: 'ABIERTO',
+          },
+          isActive: true,
+          actionLabel: 'Ticket abierto',
+          undoLabel: 'Ver en Soporte',
+          // El ticket ya se notificó por email: cancelarlo desde la card
+          // dejaría al admin con un aviso de algo que no existe
+          disabled: true,
+        },
+      };
+    }
+
+    case 'consultar_mis_tickets': {
+      const tickets = await listUserTickets(userId);
+      if (tickets.length === 0) {
+        return { result: { tickets: [], message: 'El usuario todavía no abrió ningún ticket.' } };
+      }
+      return {
+        result: {
+          tickets: tickets.map((t) => ({
+            ref: t.ref,
+            asunto: t.subject,
+            categoria: CATEGORY_LABEL[t.category],
+            estado: t.status,
+            prioridad: t.priority,
+            mensajes: t._count.messages,
+            creado: t.createdAt.toISOString().slice(0, 10),
+            bot: t.bot?.name ?? null,
+          })),
+        },
+      };
     }
   }
 }

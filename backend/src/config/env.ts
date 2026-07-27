@@ -46,6 +46,9 @@ const envSchema = z.object({
   // Remitente unico de todos los emails. El dominio tiene que estar verificado
   // en Resend o los envios se rechazan con 403.
   EMAIL_FROM: z.string().optional().default('BotForge <noreply@mibotforge.com>'),
+  // Doble uso: a donde llegan los tickets de soporte, y quien es admin (el
+  // usuario cuyo email coincide con este). Cambiarlo mueve el rol de admin.
+  ADMIN_EMAIL: z.string().optional().default('humbertoagdez@gmail.com'),
   CLOUDINARY_CLOUD_NAME: z.string().optional().default(''),
   CLOUDINARY_API_KEY: z.string().optional().default(''),
   CLOUDINARY_API_SECRET: z.string().optional().default(''),

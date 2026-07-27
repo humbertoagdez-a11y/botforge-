@@ -32,6 +32,29 @@ enum MessageRole {
   ASSISTANT
 }
 
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CLIENT
+  RESOLVED
+  CLOSED
+}
+
+enum TicketCategory {
+  CONSULTA
+  RECLAMO
+  INTEGRACION
+  BOT_MAL_RESPONDE
+  FACTURACION
+  OTRO
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
 model User {
   id                    String    @id @default(uuid())
   email                 String    @unique
@@ -64,6 +87,7 @@ model User {
   refreshTokens            RefreshToken[]
   passwordResetTokens      PasswordResetToken[]
   emailVerificationCodes   EmailVerificationCode[]
+  supportTickets           SupportTicket[]
   notificationConfigs      NotificationConfig[]
   platformAssistantMessages PlatformAssistantMessage[]
   pagoparOrders            PagoparOrder[]
@@ -174,8 +198,52 @@ model Bot {
   whatsappConnections WhatsAppConnection[]
   notificationConfigs NotificationConfig[]
   driveConnection     DriveConnection?
+  supportTickets      SupportTicket[]
 
   @@map("bots")
+}
+
+/// Ticket de soporte que el cliente abre desde el asistente (o a mano) y que
+/// llega por email al creador de la plataforma. El hilo se sigue desde los dos
+/// lados: el cliente en /dashboard/soporte, el admin en la misma pantalla.
+model SupportTicket {
+  id         String         @id @default(uuid())
+  /// Numero corto legible tipo BF-1042, para que el cliente lo cite
+  ref        String         @unique
+  userId     String
+  botId      String?
+  category   TicketCategory
+  priority   TicketPriority @default(NORMAL)
+  status     TicketStatus   @default(OPEN)
+  subject    String
+  /// Contexto que arma el BACKEND leyendo la base (plan, bots, estado del bot).
+  /// Nunca lo escribe el modelo: si no, podria inventar datos de la cuenta.
+  context    String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  resolvedAt DateTime?
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot      Bot?                  @relation(fields: [botId], references: [id], onDelete: SetNull)
+  messages SupportTicketMessage[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id        String   @id @default(uuid())
+  ticketId  String
+  /// 'client' | 'admin'
+  author    String
+  body      String
+  createdAt DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
 }
 
 model DriveConnection {

@@ -111,6 +111,40 @@ export interface RegisterPending {
   email: string;
 }
 
+export type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CLIENT' | 'RESOLVED' | 'CLOSED';
+export type TicketCategory =
+  | 'CONSULTA' | 'RECLAMO' | 'INTEGRACION' | 'BOT_MAL_RESPONDE' | 'FACTURACION' | 'OTRO';
+export type TicketPriority = 'LOW' | 'NORMAL' | 'HIGH';
+
+export interface SupportTicket {
+  id: string;
+  ref: string;
+  subject: string;
+  category: TicketCategory;
+  priority: TicketPriority;
+  status: TicketStatus;
+  context: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  bot: { name: string } | null;
+  /** Solo en la vista de admin */
+  user?: { name: string; email: string; plan: string };
+  _count?: { messages: number };
+}
+
+export interface SupportTicketMessage {
+  id: string;
+  author: 'client' | 'admin';
+  body: string;
+  createdAt: string;
+}
+
+export interface SupportTicketDetail extends SupportTicket {
+  user: { name: string; email: string; plan: string };
+  messages: SupportTicketMessage[];
+}
+
 /** Cupo del asistente de plataforma según el plan */
 export interface AssistantQuota {
   allowed: boolean;
@@ -401,6 +435,38 @@ export const api = {
   //     }),
   //   portal: () => request<{ url: string }>('/api/v1/stripe/portal', { method: 'POST' }),
   // },
+
+  support: {
+    list: () =>
+      request<{ tickets: SupportTicket[]; isAdmin: boolean }>('/api/v1/support/tickets'),
+    get: (id: string) =>
+      request<{ ticket: SupportTicketDetail; isAdmin: boolean }>(`/api/v1/support/tickets/${id}`),
+    create: (input: {
+      category: TicketCategory;
+      subject: string;
+      body: string;
+      priority?: TicketPriority;
+      botId?: string;
+    }) =>
+      request<{ id: string; ref: string; status: TicketStatus }>('/api/v1/support/tickets', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    reply: (id: string, body: string) =>
+      request<SupportTicketMessage>(`/api/v1/support/tickets/${id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      }),
+    adminList: (status?: TicketStatus) =>
+      request<{ tickets: SupportTicket[] }>(
+        `/api/v1/support/admin/tickets${status ? `?status=${status}` : ''}`,
+      ),
+    adminUpdate: (id: string, data: { status?: TicketStatus; priority?: TicketPriority }) =>
+      request<SupportTicket>(`/api/v1/support/admin/tickets/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+  },
 
   pagopar: {
     checkout: (plan: 'STARTER' | 'PRO' | 'AGENCY') =>

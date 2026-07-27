@@ -1,9 +1,9 @@
 'use client';
 
-import { Settings, Power, FileText, HardDrive, Bell } from 'lucide-react';
+import { Settings, Power, FileText, HardDrive, Bell, LifeBuoy } from 'lucide-react';
 
 export interface UIComponent {
-  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config';
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config' | 'support_ticket';
   title: string;
   description: string;
   data: Record<string, unknown>;
@@ -29,6 +29,7 @@ function DynamicIcon({ kind }: { kind: UIComponent['kind'] }) {
     instructivo_preview: FileText,
     drive_status: HardDrive,
     notification_config: Bell,
+    support_ticket: LifeBuoy,
   }[kind] ?? Settings;
   return <Icon className="h-4 w-4 text-cyan-400" />;
 }
@@ -59,6 +60,19 @@ export default function GenerativeUICard({ component, onToggle }: Props) {
             <p className="mt-0.5 text-xs leading-relaxed text-white/50">{component.description}</p>
           </div>
         </div>
+
+        {/* El ref del ticket es el dato que el usuario tiene que retener:
+            va destacado en vez de perdido entre las demás claves */}
+        {component.kind === 'support_ticket' && typeof component.data.ref === 'string' && (
+          <div className="mt-3 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-2.5 text-center">
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-cyan-400/70">
+              Número de tu consulta
+            </p>
+            <p className="font-mono text-xl font-bold tracking-widest text-cyan-300">
+              {component.data.ref}
+            </p>
+          </div>
+        )}
 
         {/* Preview de datos en formato codigo */}
         <div className="mt-3 rounded-lg bg-black/40 p-3 font-mono text-[10px] leading-relaxed">

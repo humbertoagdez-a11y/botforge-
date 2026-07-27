@@ -27,6 +27,7 @@ import assistantDashboardRouter from './routes/assistantDashboard';
 import testRouter from './routes/test';
 import statsRouter from './routes/stats';
 import activityRouter from './routes/activity';
+import supportRouter from './routes/support';
 import driveRouter, { googleOAuthRouter } from './routes/drive';
 import devRouter from './routes/dev';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth';
@@ -116,6 +117,8 @@ app.use('/api/v1/whatsapp', whatsappRouter);
 app.use('/api/v1/pagopar', pagoparRouter);
 app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/activity', activityRouter);
+// El router de soporte trae requireAuth + requireVerifiedEmail adentro
+app.use('/api/v1/support', supportRouter);
 app.use('/api/v1/drive', requireAuth, requireVerifiedEmail, driveRouter);
 app.use('/api/v1/dev', devRouter);
 
