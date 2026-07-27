@@ -12,6 +12,7 @@ import { querySimilarChunks } from './pinecone';
 import { sendEmail } from './email';
 import { searchFileByName, downloadFileAsBase64, getValidAccessToken } from './googleDrive';
 import { isCloudinaryConfigured } from '../config/cloudinary';
+import { logCacheUsage } from '../lib/cacheUsage';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -27,6 +28,43 @@ export interface TenantChatMessage {
 }
 
 // ─── SYSTEM PROMPT DINÁMICO ───────────────────────────────────────────────────
+
+/**
+ * Prompt del tenant partido para prompt caching.
+ *
+ * - `stable` depende solo del bot (nombre, personalidad, idioma y reglas): es
+ *   idéntico en todos los mensajes de ese bot, así que es lo que se cachea.
+ * - `context` es lo que trajo el RAG para ESTE mensaje y cambia siempre. Va
+ *   después y sin marcar: si fuera antes, rompería el prefijo del caché.
+ */
+export interface TenantSystemBlocks {
+  stable: string;
+  context: string;
+}
+
+export function buildTenantSystemBlocks(
+  botName: string,
+  personality: string,
+  language: string,
+  documentsContent: string,
+): TenantSystemBlocks {
+  return {
+    stable: buildTenantStablePrompt(botName, personality, language),
+    context: documentsContent
+      ? `INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:
+${documentsContent}`
+      : '',
+  };
+}
+
+/** Parte cacheable: todo lo que no depende del mensaje puntual */
+export function buildTenantStablePrompt(
+  botName: string,
+  personality: string,
+  language: string,
+): string {
+  return buildTenantSystemPrompt(botName, personality, language, '');
+}
 
 export function buildTenantSystemPrompt(
   botName: string,
@@ -261,8 +299,41 @@ async function runFallback(
  * Ejecuta el loop completo de tool use de Anthropic para el bot desplegado.
  * Devuelve el texto final; las imágenes de Drive quedan en context.pendingImage.
  */
+/**
+ * Marcar el último tool cachea todo el bloque de definiciones (Anthropic
+ * procesa tools → system → messages).
+ */
+const CACHED_TENANT_TOOLS: Anthropic.Tool[] = TENANT_TOOLS.map((tool, i) =>
+  i === TENANT_TOOLS.length - 1
+    ? { ...tool, cache_control: { type: 'ephemeral' as const } }
+    : tool,
+);
+
+/**
+ * Arma los bloques de system para la API. Acepta el prompt entero (string) o
+ * ya partido: así los llamadores que todavía pasan un string siguen andando,
+ * solo que sin caché útil.
+ */
+function toSystemBlocks(systemPrompt: string | TenantSystemBlocks): Anthropic.TextBlockParam[] {
+  if (typeof systemPrompt === 'string') {
+    return [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }];
+  }
+  const blocks: Anthropic.TextBlockParam[] = [
+    { type: 'text', text: systemPrompt.stable, cache_control: { type: 'ephemeral' } },
+  ];
+  if (systemPrompt.context) blocks.push({ type: 'text', text: systemPrompt.context });
+  return blocks;
+}
+
+/** El fallback va sin caché: corre una sola vez, escribirlo sería puro costo */
+function toPlainSystem(systemPrompt: string | TenantSystemBlocks): string {
+  return typeof systemPrompt === 'string'
+    ? systemPrompt
+    : [systemPrompt.stable, systemPrompt.context].filter(Boolean).join('\n\n');
+}
+
 export async function runTenantAgentLoop(
-  systemPrompt: string,
+  systemPrompt: string | TenantSystemBlocks,
   history: TenantChatMessage[],
   userMessage: string,
   context: TenantAgentContext,
@@ -272,20 +343,22 @@ export async function runTenantAgentLoop(
     { role: 'user', content: userMessage },
   ];
   let tokensUsed = 0;
+  const systemBlocks = toSystemBlocks(systemPrompt);
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response = await anthropic.messages.create({
       model: PRIMARY_MODEL,
       max_tokens: 1024,
-      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
-      tools: TENANT_TOOLS,
+      system: systemBlocks,
+      tools: CACHED_TENANT_TOOLS,
       messages: currentMessages,
     });
     tokensUsed += response.usage.input_tokens + response.usage.output_tokens;
+    logCacheUsage('tenant', response.usage);
 
     // El SDK 0.36 no tipa 'refusal' todavia; llega en runtime con fable-5
     if ((response.stop_reason as string) === 'refusal') {
-      const fallback = await runFallback(systemPrompt, currentMessages);
+      const fallback = await runFallback(toPlainSystem(systemPrompt), currentMessages);
       return { content: fallback.content, tokensUsed: tokensUsed + fallback.tokensUsed };
     }
 

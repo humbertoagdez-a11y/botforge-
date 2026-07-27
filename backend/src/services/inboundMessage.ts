@@ -14,7 +14,7 @@ import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 import { getRelevantChunks } from './rag';
-import { buildTenantSystemPrompt, runTenantAgentLoop, type TenantAgentContext } from './tenantAgent';
+import { buildTenantSystemBlocks, runTenantAgentLoop, type TenantAgentContext } from './tenantAgent';
 import { sendEmail } from './email';
 
 // ─── Notificación "el cliente pide un humano" ─────────────────────────────────
@@ -231,7 +231,8 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
   // Agente Tipo B: RAG como contexto inicial + loop de tools nativo
   // (buscar_en_documentos, buscar_archivos_drive, derivar_a_humano)
   const chunks = await getRelevantChunks(bot.id, finalMessage);
-  const systemPrompt = buildTenantSystemPrompt(
+  // Bloques partidos: las reglas y la personalidad se cachean, el RAG no
+  const systemPrompt = buildTenantSystemBlocks(
     bot.name, bot.personality, bot.language, chunks.join('\n\n'),
   );
   const agentContext: TenantAgentContext = {

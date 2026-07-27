@@ -17,7 +17,12 @@ import { deleteChunksByIds } from '../services/pinecone';
 import { searchWeb } from '../services/webSearch';
 import { scrapeUrl } from '../services/webScraper';
 import { downloadFileAsBase64, getValidAccessToken } from '../services/googleDrive';
-import { buildPlatformSystemPrompt } from '../services/platformAgent';
+import {
+  PLATFORM_STATIC_PROMPT,
+  buildPlatformDynamicPrompt,
+  buildPlatformSystemPrompt,
+} from '../services/platformAgent';
+import { logCacheUsage } from '../lib/cacheUsage';
 import { CATEGORY_LABEL, createTicket, listUserTickets } from '../services/supportTickets';
 
 const router = Router();
@@ -263,6 +268,17 @@ const PLATFORM_TOOLS: Anthropic.Tool[] = [
     },
   },
 ];
+
+/**
+ * Anthropic procesa tools → system → messages, así que marcar el ÚLTIMO tool
+ * cachea todo el bloque de definiciones. Son ~17 tools que viajan idénticas en
+ * cada mensaje: es la parte más pesada y más estable del request.
+ */
+const CACHED_PLATFORM_TOOLS: Anthropic.Tool[] = PLATFORM_TOOLS.map((tool, i) =>
+  i === PLATFORM_TOOLS.length - 1
+    ? { ...tool, cache_control: { type: 'ephemeral' as const } }
+    : tool,
+);
 
 // Tools que requieren confirmación explícita del usuario antes de ejecutar
 const DESTRUCTIVE_TOOLS = new Set(['update_bot_config', 'disconnect_whatsapp', 'delete_document']);
@@ -1080,7 +1096,22 @@ router.post(
         : 'CONTEXTO DEL BOT ACTUAL:\nEl usuario no tiene ningún bot seleccionado. Si necesita operar sobre un bot, podés listar sus bots con get_conversations/get_account_stats o pedirle que abra el asistente desde la página del bot.';
 
       const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
-      const systemText = buildPlatformSystemPrompt(user?.name ?? 'Usuario', botContext);
+      const userName = user?.name ?? 'Usuario';
+
+      // Dos bloques: el fijo se cachea, el variable (usuario + contexto del
+      // bot) va después y sin marcar, para no romper el prefijo del caché
+      const systemBlocks: Anthropic.TextBlockParam[] = [
+        {
+          type: 'text',
+          text: PLATFORM_STATIC_PROMPT,
+          cache_control: { type: 'ephemeral' },
+        },
+        {
+          type: 'text',
+          text: buildPlatformDynamicPrompt(userName, botContext),
+        },
+      ];
+
       const anthropicMessages = buildAnthropicMessages(messages, image);
       const confirmed = new Set(confirmedToolUseIds ?? []);
 
@@ -1175,8 +1206,8 @@ router.post(
         const stream = anthropic.messages.stream({
           model: PRIMARY_MODEL,
           max_tokens: 4096,
-          system: systemText,
-          tools: PLATFORM_TOOLS,
+          system: systemBlocks,
+          tools: CACHED_PLATFORM_TOOLS,
           messages: anthropicMessages,
         });
 
@@ -1184,14 +1215,16 @@ router.post(
         stream.on('text', (text) => sendText(text));
 
         const finalMessage = await stream.finalMessage();
+        logCacheUsage('plataforma', finalMessage.usage);
         countUsageOnce();
 
         if ((finalMessage.stop_reason as string) === 'refusal') {
           console.warn(`[assistant-dashboard] ${PRIMARY_MODEL} devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
+          // Sin caché a propósito: corre una sola vez, escribirlo sería puro costo
           const fallback = await anthropic.messages.create({
             model: FALLBACK_MODEL,
             max_tokens: 4096,
-            system: systemText,
+            system: buildPlatformSystemPrompt(userName, botContext),
             messages: anthropicMessages.filter((m) => typeof m.content === 'string'),
           });
           const block = fallback.content[0];

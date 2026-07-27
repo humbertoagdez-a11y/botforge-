@@ -7,7 +7,7 @@ import { AppError } from '../middleware/errorHandler';
 import { checkMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 import { getRelevantChunks, ragStream } from '../services/rag';
 import {
-  buildTenantSystemPrompt,
+  buildTenantSystemBlocks,
   runTenantAgentLoop,
   type TenantAgentContext,
 } from '../services/tenantAgent';
@@ -85,7 +85,7 @@ router.post('/', checkMessageLimit, async (req: Request, res: Response, next: Ne
 
     // Agente Tipo B con loop de tools nativo (mismo motor que WhatsApp)
     const chunks = await getRelevantChunks(bot.id, message);
-    const systemPrompt = buildTenantSystemPrompt(
+    const systemPrompt = buildTenantSystemBlocks(
       bot.name, bot.personality, bot.language, chunks.join('\n\n'),
     );
     const agentContext: TenantAgentContext = {

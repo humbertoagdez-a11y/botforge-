@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
-import { buildTenantSystemPrompt } from './tenantAgent';
+import { buildTenantSystemBlocks } from './tenantAgent';
+import { logCacheUsage } from '../lib/cacheUsage';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -12,15 +13,29 @@ export interface ChatMessage {
   content: string;
 }
 
-// El system prompt del bot desplegado vive en tenantAgent.ts (arquitectura
-// dual): personalidad del dueño + reglas base de calidad de BotForge.
-function buildSystemPrompt(
+/**
+ * El system prompt del bot desplegado vive en tenantAgent.ts (arquitectura
+ * dual): personalidad del dueño + reglas base de calidad de BotForge.
+ *
+ * Se devuelve en dos bloques: el estable (por bot) se cachea, el contexto del
+ * RAG cambia en cada mensaje y va después. Antes se cacheaba el prompt entero,
+ * que incluía el RAG: el caché nunca acertaba y solo pagaba el 25% de
+ * escritura en cada llamada.
+ */
+function buildSystemBlocks(
   botName: string,
   personality: string,
   language: string,
   contextChunks: string[],
-): string {
-  return buildTenantSystemPrompt(botName, personality, language, contextChunks.join('\n\n'));
+): Anthropic.TextBlockParam[] {
+  const { stable, context } = buildTenantSystemBlocks(
+    botName, personality, language, contextChunks.join('\n\n'),
+  );
+  const blocks: Anthropic.TextBlockParam[] = [
+    { type: 'text', text: stable, cache_control: { type: 'ephemeral' } },
+  ];
+  if (context) blocks.push({ type: 'text', text: context });
+  return blocks;
 }
 
 function buildMessages(
@@ -35,16 +50,21 @@ function buildMessages(
 
 async function callGenerate(
   model: string,
-  systemText: string,
+  system: string | Anthropic.TextBlockParam[],
   messages: Anthropic.MessageParam[],
   maxTokens = 1024,
+  scope = 'ai',
 ): Promise<{ content: string; tokensUsed: number; stopReason: string }> {
   const response = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
+    system:
+      typeof system === 'string'
+        ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }]
+        : system,
     messages,
   });
+  logCacheUsage(scope, response.usage);
 
   const block = response.content[0];
   const content = block.type === 'text' ? block.text : '';
@@ -62,14 +82,16 @@ export async function generateBotResponse(
   history: ChatMessage[],
   userMessage: string,
 ): Promise<{ content: string; tokensUsed: number }> {
-  const systemText = buildSystemPrompt(botName, personality, language, contextChunks);
+  const systemBlocks = buildSystemBlocks(botName, personality, language, contextChunks);
   const messages = buildMessages(history, userMessage);
 
-  const primary = await callGenerate(PRIMARY_MODEL, systemText, messages);
+  const primary = await callGenerate(PRIMARY_MODEL, systemBlocks, messages, 1024, 'tenant-web');
 
   if (primary.stopReason === 'refusal') {
     console.warn(`[ai] ${PRIMARY_MODEL} devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
-    const { content, tokensUsed } = await callGenerate(FALLBACK_MODEL, systemText, messages);
+    const { content, tokensUsed } = await callGenerate(
+      FALLBACK_MODEL, systemBlocks, messages, 1024, 'tenant-web-fallback',
+    );
     return { content, tokensUsed };
   }
 
@@ -129,13 +151,13 @@ export async function streamBotResponse(
   onDelta: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<{ content: string; tokensUsed: number }> {
-  const systemText = buildSystemPrompt(botName, personality, language, contextChunks);
+  const systemBlocks = buildSystemBlocks(botName, personality, language, contextChunks);
   const messages = buildMessages(history, userMessage);
 
   const stream = anthropic.messages.stream({
     model: PRIMARY_MODEL,
     max_tokens: 1024,
-    system: [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }],
+    system: systemBlocks,
     messages,
   });
 
@@ -146,10 +168,13 @@ export async function streamBotResponse(
   });
 
   const finalMessage = await stream.finalMessage();
+  logCacheUsage('tenant-web-stream', finalMessage.usage);
 
   if ((finalMessage.stop_reason as string) === 'refusal') {
     console.warn(`[ai] ${PRIMARY_MODEL} stream devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
-    const fallback = await callGenerate(FALLBACK_MODEL, systemText, messages);
+    const fallback = await callGenerate(
+      FALLBACK_MODEL, systemBlocks, messages, 1024, 'tenant-web-fallback',
+    );
     onDelta(fallback.content);
     return fallback;
   }
