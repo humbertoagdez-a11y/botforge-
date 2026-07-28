@@ -822,7 +822,7 @@ function Footer() {
               FAQ
             </button>
             <span className="text-gray-700">|</span>
-            <a href="mailto:hola@botforge.com.py" className="transition-colors hover:text-gray-300">
+            <a href="mailto:humbertoagdez@gmail.com" className="transition-colors hover:text-gray-300">
               Contacto
             </a>
             <span className="text-gray-700">|</span>
@@ -833,12 +833,16 @@ function Footer() {
             <Link href="/privacidad" className="transition-colors hover:text-gray-300">
               Privacidad
             </Link>
+            <span className="text-gray-700">|</span>
+            <Link href="/cookies" className="transition-colors hover:text-gray-300">
+              Cookies
+            </Link>
           </nav>
         </div>
         <div className="mt-8 border-t border-white/5 pt-6 text-center">
           <p className="text-xs text-gray-600">2026 BotForge · Desarrollado en Paraguay</p>
-          <a href="mailto:hola@botforge.com.py" className="mt-1 inline-block text-xs text-gray-600 hover:text-gray-400">
-            hola@botforge.com.py
+          <a href="mailto:humbertoagdez@gmail.com" className="mt-1 inline-block text-xs text-gray-600 hover:text-gray-400">
+            humbertoagdez@gmail.com
           </a>
         </div>
       </div>

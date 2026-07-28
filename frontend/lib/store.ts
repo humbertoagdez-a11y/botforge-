@@ -48,6 +48,28 @@ export const useSidebarStore = create<SidebarState>()((set) => ({
   closeSidebar: () => set({ sidebarOpen: false }),
 }));
 
+// ─── Consentimiento de cookies (persistido, igual que la sesión) ─────────────
+
+type CookieChoice = 'all' | 'necessary';
+
+interface CookieConsentState {
+  /** null = todavía no eligió, y por eso se muestra el banner */
+  choice: CookieChoice | null;
+  decidedAt: string | null;
+  accept: (choice: CookieChoice) => void;
+}
+
+export const useCookieConsentStore = create<CookieConsentState>()(
+  persist(
+    (set) => ({
+      choice: null,
+      decidedAt: null,
+      accept: (choice) => set({ choice, decidedAt: new Date().toISOString() }),
+    }),
+    { name: 'botforge-cookies' },
+  ),
+);
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({

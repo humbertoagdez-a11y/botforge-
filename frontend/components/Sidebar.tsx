@@ -177,6 +177,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           <LogOut className="h-4 w-4" />
           Salir
         </Button>
+
+        <nav className="mt-2 flex flex-wrap gap-x-3 gap-y-1 px-3 text-[10px] text-muted-foreground/70">
+          <Link href="/terminos" className="hover:text-muted-foreground">Términos</Link>
+          <Link href="/privacidad" className="hover:text-muted-foreground">Privacidad</Link>
+          <Link href="/cookies" className="hover:text-muted-foreground">Cookies</Link>
+        </nav>
       </div>
     </aside>
   );
