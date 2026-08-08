@@ -210,23 +210,23 @@ const PLANES = [
 const FAQS = [
   {
     q: 'Necesito saber programar para usarlo?',
-    a: 'No. Todo se configura desde el panel con formularios simples. Si sabes escribir un mensaje, podes usar BotForge.',
+    a: 'No. Todo se configura desde el panel con formularios simples. Si sabés escribir un mensaje, podés usar BotForge.',
   },
   {
     q: 'Funciona con mi numero de WhatsApp actual?',
     a: 'Sí, podés usar tu número actual. Tené en cuenta que al conectarlo a la plataforma, ese número pasa a ser gestionado por el bot y ya no vas a poder usarlo con la app normal de WhatsApp al mismo tiempo. Si querés seguir usando WhatsApp normal en tu celular personal, te recomendamos usar un número distinto para el bot — podés conseguir una línea nueva fácilmente.',
   },
   {
-    q: 'Que pasa si el bot no sabe responder algo?',
-    a: 'Le avisa al cliente que una persona va a responder, y vos recibis el mensaje para atenderlo. Nunca queda sin respuesta.',
+    q: 'Qué pasa si el bot no sabe responder algo?',
+    a: 'Le avisa al cliente que una persona va a responder, y vos recibís el mensaje para atenderlo. Nunca queda sin respuesta.',
   },
   {
-    q: 'Puedo cambiar lo que responde el bot despues?',
-    a: 'Si, en cualquier momento. Subis un documento nuevo o editado y el bot incorpora la informacion de inmediato.',
+    q: 'Puedo cambiar lo que responde el bot después?',
+    a: 'Sí, en cualquier momento. Subís un documento nuevo o editado y el bot incorpora la información de inmediato.',
   },
   {
-    q: 'Cuanto tarda en estar listo el primer bot?',
-    a: 'Menos de 5 minutos desde que te registras hasta que el bot puede responder mensajes reales.',
+    q: 'Cuánto tarda en estar listo el primer bot?',
+    a: 'Menos de 5 minutos desde que te registrás hasta que el bot puede responder mensajes reales.',
   },
 ];
 
