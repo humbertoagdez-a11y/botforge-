@@ -210,8 +210,29 @@ model Bot {
   supportTickets      SupportTicket[]
   npsResponses        NpsResponse[]
   npsPrompts          NpsPrompt[]
+  weeklyReports       WeeklyReport[]
 
   @@map("bots")
+}
+
+/// Reporte semanal de actividad del bot. Se genera los lunes con queries y
+/// agregaciones sobre la base: NUNCA con el modelo de IA, para que los
+/// numeros sean reales y el costo por reporte sea cero.
+model WeeklyReport {
+  id          String   @id @default(uuid())
+  botId       String
+  /// Lunes 00:00 de la semana que cubre (hora Paraguay, guardado en UTC)
+  weekStart   DateTime
+  weekEnd     DateTime
+  /// Contenido en JSON estructurado, no texto libre
+  content     Json
+  generatedAt DateTime @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, weekStart])
+  @@index([botId, weekStart])
+  @@map("weekly_reports")
 }
 
 /// Respuesta de un cliente final a la encuesta. El numero solo no sirve de

@@ -28,12 +28,14 @@ import testRouter from './routes/test';
 import statsRouter from './routes/stats';
 import activityRouter from './routes/activity';
 import supportRouter from './routes/support';
+import reportsRouter from './routes/reports';
 import driveRouter, { googleOAuthRouter } from './routes/drive';
 import devRouter from './routes/dev';
 import { requireAuth, requireVerifiedEmail } from './middleware/auth';
 import { generateDailySummaries } from './services/dailySummary';
 import { downgradeExpiredPlans, notifyExpiringSoon } from './services/planExpiration';
 import { dispatchNpsSurveys } from './services/npsDispatch';
+import { generateWeeklyReports } from './services/weeklyReportDispatch';
 
 const uploadsDir = path.resolve(env.UPLOADS_DIR);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -120,6 +122,7 @@ app.use('/api/v1/stats', statsRouter);
 app.use('/api/v1/activity', activityRouter);
 // El router de soporte trae requireAuth + requireVerifiedEmail adentro
 app.use('/api/v1/support', supportRouter);
+app.use('/api/v1/reports', reportsRouter);
 app.use('/api/v1/drive', requireAuth, requireVerifiedEmail, driveRouter);
 app.use('/api/v1/dev', devRouter);
 
@@ -177,6 +180,19 @@ cron.schedule(
 cron.schedule('*/10 * * * *', () => {
   dispatchNpsSurveys().catch((err) => console.error('[nps] Error en el cron:', err));
 });
+
+// Reportes semanales: lunes 07:00 hora Paraguay, cubriendo la semana que
+// acaba de terminar (lunes anterior a domingo). Cada bot se genera con su
+// error aislado adentro; el .catch cubre un fallo del cron mismo.
+cron.schedule(
+  '0 7 * * 1',
+  () => {
+    generateWeeklyReports().catch((err) =>
+      console.error('[weeklyReport] Error en el cron:', err),
+    );
+  },
+  { timezone: 'America/Asuncion' },
+);
 
 app.listen(env.PORT, () => {
   console.log(`BotForge backend en http://localhost:${env.PORT} [${env.NODE_ENV}]`);

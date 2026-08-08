@@ -173,6 +173,49 @@ export interface SupportTicketDetail extends SupportTicket {
   messages: SupportTicketMessage[];
 }
 
+// ─── Reportes semanales ───────────────────────────────────────────────────────
+// El contenido lo calcula el backend con queries sobre las conversaciones
+// reales. Nada de esto lo redacta el modelo de IA.
+
+export interface WeeklyReportContent {
+  totalConversations: number;
+  totalMessages: number;
+  topQuestions: Array<{ pregunta: string; cantidad: number }>;
+  unansweredQuestions: Array<{ pregunta: string; veces: number }>;
+  humanRequestedCount: number;
+  humanRequestedReasons: Array<{ motivo: string; cantidad: number }>;
+  peakHours: Array<{ hora: number; cantidad: number }>;
+  npsAverage: number | null;
+  npsResponseCount: number;
+  npsPreviousAverage: number | null;
+}
+
+export interface WeeklyReportSummary {
+  id: string;
+  botId: string;
+  botName: string;
+  weekStart: string;
+  weekEnd: string;
+  generatedAt: string;
+  resumen: {
+    totalConversations: number;
+    totalMessages: number;
+    humanRequestedCount: number;
+    npsAverage: number | null;
+    unansweredCount: number;
+  };
+}
+
+export interface WeeklyReportDetail {
+  id: string;
+  botId: string;
+  botName: string;
+  weekStart: string;
+  weekEnd: string;
+  generatedAt?: string;
+  content: WeeklyReportContent;
+}
+
 /** Cupo del asistente de plataforma según el plan */
 export interface AssistantQuota {
   allowed: boolean;
@@ -503,6 +546,43 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
+  },
+
+  reports: {
+    list: (botId?: string) =>
+      request<{ reports: WeeklyReportSummary[] }>(
+        `/api/v1/reports${botId ? `?botId=${encodeURIComponent(botId)}` : ''}`,
+      ),
+    get: (id: string) => request<WeeklyReportDetail>(`/api/v1/reports/${id}`),
+    /** Genera el de la semana pasada a demanda, sin esperar al lunes */
+    generate: (botId: string) =>
+      request<WeeklyReportDetail>('/api/v1/reports/generate', {
+        method: 'POST',
+        body: JSON.stringify({ botId }),
+      }),
+    addKnowledge: (id: string, titulo: string, contenido: string) =>
+      request<{ documentId: string; name: string; mensaje: string }>(
+        `/api/v1/reports/${id}/knowledge`,
+        { method: 'POST', body: JSON.stringify({ titulo, contenido }) },
+      ),
+    /**
+     * Descarga el PDF. No usa request() porque la respuesta es binaria, no el
+     * sobre { data, error }: parsearla como JSON rompería el archivo.
+     */
+    exportPdf: async (id: string): Promise<{ blob: Blob; filename: string }> => {
+      const res = await fetchWithAuth(`/api/v1/reports/${id}/export`);
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
+        notifyPlanLimit(json?.error ?? null);
+        const err: ApiError = new Error(json?.error?.message ?? 'No se pudo generar el PDF');
+        err.statusCode = res.status;
+        err.code = json?.error?.code;
+        throw err;
+      }
+      const disposition = res.headers.get('Content-Disposition') ?? '';
+      const match = /filename="([^"]+)"/.exec(disposition);
+      return { blob: await res.blob(), filename: match?.[1] ?? `reporte-${id}.pdf` };
+    },
   },
 
   pagopar: {

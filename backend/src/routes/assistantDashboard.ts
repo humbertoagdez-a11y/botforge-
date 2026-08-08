@@ -24,6 +24,8 @@ import {
   buildPlatformSystemPrompt,
 } from '../services/platformAgent';
 import { logCacheUsage } from '../lib/cacheUsage';
+import { esNoRespuesta } from '../lib/frasesBot';
+import { agregarConocimiento } from '../services/knowledge';
 import { CATEGORY_LABEL, createTicket, listUserTickets } from '../services/supportTickets';
 
 const router = Router();
@@ -437,25 +439,6 @@ const MSGS_POR_CONVERSACION = 12;
 const RAG_THRESHOLD = 0.3;
 const RAG_TOP_K = 5;
 
-/**
- * Frases con las que el bot admite que no sabe algo. Sirven para detectar
- * conversaciones problematicas sin tener que analizarlas con el modelo.
- */
-const FRASES_SIN_RESPUESTA = [
-  'no tengo esa información',
-  'no tengo esa informacion',
-  'no puedo ayudarte con eso',
-  'no cuento con esa',
-  'voy a derivar',
-  'te lo confirmo',
-  'lo voy a consultar',
-  'no manejo esa',
-  'no sabría decirte',
-  'no sabria decirte',
-  'un encargado',
-  'una persona del equipo',
-];
-
 interface MensajeSimple {
   role: 'USER' | 'ASSISTANT';
   content: string;
@@ -463,9 +446,8 @@ interface MensajeSimple {
 
 /** ¿La conversación muestra señales de que el bot no resolvió? */
 function pareceProblematica(messages: MensajeSimple[]): boolean {
-  const botNoSupo = messages.some(
-    (m) => m.role === 'ASSISTANT' && FRASES_SIN_RESPUESTA.some((f) => m.content.toLowerCase().includes(f)),
-  );
+  // La lista vive en lib/frasesBot.ts: la comparte con el reporte semanal
+  const botNoSupo = messages.some((m) => m.role === 'ASSISTANT' && esNoRespuesta(m.content));
   if (botNoSupo) return true;
 
   // Cliente escribiendo dos veces seguidas: el bot no respondió en el medio
@@ -1120,46 +1102,20 @@ async function executeToolCall(
       const input = parsed.data as z.infer<typeof toolInputSchemas.agregar_conocimiento>;
       const bot = await getOwnedBot(input.botId, userId);
 
-      const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-      const docCount = await prisma.document.count({ where: { botId: bot.id } });
-      const limit = LIMITS[user.plan].docsPerBot;
-      if (docCount >= limit) {
-        throw new Error(`Límite de documentos alcanzado (${docCount}/${limit} del plan ${user.plan}). Eliminá alguno o mejorá el plan.`);
-      }
-
-      const docId = uuidv4();
-      const safeTitulo = input.titulo.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ._-]/g, '').trim();
-      const finalName = `Corrección: ${safeTitulo}`.slice(0, 120);
-      // El título va dentro del contenido: ayuda a que el chunk matchee
-      const texto = `${safeTitulo}\n\n${input.contenido}`;
-      const filePath = path.join(env.UPLOADS_DIR, `${docId}.txt`);
-      await fs.mkdir(env.UPLOADS_DIR, { recursive: true });
-      await fs.writeFile(filePath, texto, 'utf-8');
-
-      let doc = await prisma.document.create({
-        data: {
-          id: docId,
-          botId: bot.id,
-          name: `${finalName}.txt`,
-          mimeType: 'text/plain',
-          filePath,
-          fileSize: Buffer.byteLength(texto, 'utf-8'),
-          status: 'PENDING',
-        },
+      // Misma implementación que usa el botón "Agregar esta información" del
+      // reporte semanal, para que no se desincronicen
+      const doc = await agregarConocimiento({
+        botId: bot.id,
+        userId,
+        titulo: input.titulo,
+        contenido: input.contenido,
       });
-
-      const url = await uploadRawToCloudinary(filePath, doc.id);
-      if (url) {
-        doc = await prisma.document.update({ where: { id: doc.id }, data: { url } });
-        try { await fs.unlink(filePath); } catch { /* limpieza best-effort */ }
-      }
-
-      await documentQueue.add({ documentId: doc.id });
+      const safeTitulo = doc.tituloLimpio;
 
       return {
         result: {
           agregado: true,
-          documentId: doc.id,
+          documentId: doc.documentId,
           name: doc.name,
           // A diferencia de upload_instructivo_text, acá no se pisa nada
           note: 'El dato se agregó como documento nuevo, sin tocar los que ya tenía ni la personalidad. En 1 o 2 minutos queda activo. Decile al dueño que después lo pruebe en el Chat de prueba.',
@@ -1172,7 +1128,7 @@ async function executeToolCall(
           isActive: true,
           actionLabel: 'Documento activo',
           undoLabel: 'Eliminar documento',
-          undoPayload: { botId: bot.id, documentId: doc.id },
+          undoPayload: { botId: bot.id, documentId: doc.documentId },
         },
       };
     }

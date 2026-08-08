@@ -12,12 +12,24 @@ export const LIMITS: Record<Plan, {
   assistantDaily: number;
   /** Encuesta de satisfaccion a los clientes finales */
   nps: boolean;
+  /** Reporte semanal automatico de la actividad del bot */
+  weeklyReports: boolean;
 }> = {
-  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   nps: false },
-  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  nps: true  },
-  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  nps: true  },
-  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, nps: true  },
+  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   nps: false, weeklyReports: false },
+  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  nps: true,  weeklyReports: false },
+  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  nps: true,  weeklyReports: true  },
+  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, nps: true,  weeklyReports: true  },
 };
+
+/**
+ * Cuantos bots recibn reporte semanal. PRO solo el principal (el primero
+ * creado); AGENCY todos. Infinity para que el llamador use slice/take sin
+ * tener que ramificar.
+ */
+export function botsConReporte(plan: Plan): number {
+  if (!LIMITS[plan].weeklyReports) return 0;
+  return plan === 'AGENCY' ? Infinity : 1;
+}
 
 export const PLAN_LIMIT_CODE = 'PLAN_LIMIT_EXCEEDED';
 
