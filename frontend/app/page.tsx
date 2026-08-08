@@ -214,7 +214,7 @@ const FAQS = [
   },
   {
     q: 'Funciona con mi numero de WhatsApp actual?',
-    a: 'Si. Se conecta a tu numero existente en menos de 2 minutos siguiendo los pasos del panel.',
+    a: 'Sí, podés usar tu número actual. Tené en cuenta que al conectarlo a la plataforma, ese número pasa a ser gestionado por el bot y ya no vas a poder usarlo con la app normal de WhatsApp al mismo tiempo. Si querés seguir usando WhatsApp normal en tu celular personal, te recomendamos usar un número distinto para el bot — podés conseguir una línea nueva fácilmente.',
   },
   {
     q: 'Que pasa si el bot no sabe responder algo?',
@@ -376,7 +376,7 @@ function Hero() {
         <div className="text-center md:text-left">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-violet-500/40 bg-violet-600/20 px-4 py-1.5 text-xs font-medium text-violet-300">
             <Sparkles className="h-3.5 w-3.5" />
-            Impulsado por Claude AI — Hecho en Paraguay
+            BotForge — Software hecho en Paraguay
           </div>
 
           <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">

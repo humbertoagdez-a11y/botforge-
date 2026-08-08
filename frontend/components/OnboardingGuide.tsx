@@ -26,7 +26,7 @@ const STEPS: Step[] = [
   },
   {
     title: 'Conectá WhatsApp',
-    desc: 'En el tab WhatsApp de tu bot vinculás tu número en 2 minutos. Aparece despues de crear el bot.',
+    desc: 'En el tab WhatsApp de tu bot vinculás tu número. Ojo: ese número pasa a ser del bot y deja de funcionar en la app normal de WhatsApp.',
   },
   {
     title: 'Probá el Asistente BotForge',

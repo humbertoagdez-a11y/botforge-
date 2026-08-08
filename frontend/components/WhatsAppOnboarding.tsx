@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ClipboardCopy, Loader2, MessageCircle, RefreshCw, Smartphone, Unlink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardCopy, Loader2, MessageCircle, RefreshCw, Smartphone, Unlink } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -357,10 +357,28 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
             Conectar número de WhatsApp
           </CardTitle>
           <CardDescription>
-            Ingresá tu número y te guiamos paso a paso. El proceso toma menos de 2 minutos.
+            Ingresá tu número y te guiamos paso a paso.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* La conexión es el punto de no retorno: el aviso va ANTES del input,
+              no después, para que nadie se entere cuando ya conectó su línea */}
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <div className="text-xs leading-relaxed text-amber-200/90">
+              <p className="font-semibold">Antes de conectar, tené en cuenta:</p>
+              <p className="mt-1">
+                El número que conectes pasa a ser gestionado por el bot y{' '}
+                <span className="font-semibold">ya no vas a poder usarlo con la app normal de
+                WhatsApp al mismo tiempo</span>. El historial de chats anterior tampoco se traslada.
+              </p>
+              <p className="mt-1">
+                Si querés seguir usando WhatsApp normal en tu celular, usá una línea distinta para
+                el bot.
+              </p>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="wa-number">Tu número de WhatsApp</Label>
             <Input
