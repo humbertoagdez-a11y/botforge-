@@ -69,14 +69,24 @@ export async function sendTextMessage(to: string, body: string): Promise<void> {
 
 /**
  * Marca el mensaje del cliente como leido y prende el indicador de
- * "escribiendo...". Meta lo apaga solo cuando mandamos la respuesta o a los
- * ~25 segundos, lo que pase primero.
+ * "escribiendo...".
+ *
+ * Contrato verificado contra la doc de Meta (Cloud API > typing indicators):
+ * POST /{phone-number-id}/messages con status 'read', el wamid del mensaje
+ * entrante y typing_indicator.type 'text'. Meta apaga el indicador cuando
+ * mandamos la respuesta o a los 25 segundos, lo que pase primero.
  *
  * Es puramente cosmetico: nunca lanza ni propaga errores, para que un fallo
  * aca no impida que el cliente reciba la respuesta real.
+ *
+ * Loguea SIEMPRE, exito o fallo. Sin el log de exito no habria forma de
+ * distinguir en Railway entre "anduvo" y "nunca se llamo".
  */
 export async function markAsReadAndTyping(messageId: string): Promise<void> {
-  if (!isMetaConfigured()) return;
+  if (!isMetaConfigured()) {
+    console.warn('[whatsapp] typing indicator omitido: Meta Cloud API no está configurada');
+    return;
+  }
 
   try {
     const res = await fetch(`${GRAPH_BASE}/${env.META_PHONE_NUMBER_ID}/messages`, {
@@ -89,11 +99,15 @@ export async function markAsReadAndTyping(messageId: string): Promise<void> {
         typing_indicator: { type: 'text' },
       }),
     });
-    if (!res.ok) {
-      console.warn(`[meta] No se pudo marcar como leído/escribiendo — ${await describeError(res)}`);
+
+    if (res.ok) {
+      console.log(`[whatsapp] typing indicator enviado (wamid ${messageId})`);
+      return;
     }
+    console.warn(`[whatsapp] error en typing indicator: ${await describeError(res)}`);
   } catch (err) {
-    console.warn('[meta] Error marcando como leído/escribiendo:', err);
+    const detalle = err instanceof Error ? err.message : String(err);
+    console.warn(`[whatsapp] error en typing indicator: ${detalle}`);
   }
 }
 
