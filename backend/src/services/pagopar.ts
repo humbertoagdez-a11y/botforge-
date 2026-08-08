@@ -85,6 +85,57 @@ function describeFallo(body: IniciarResponse | ConsultaResponse): string {
   return 'Pagopar rechazó la operación';
 }
 
+/** Deja ver que el dato viaja y con que largo, sin volcar el CI a los logs */
+function enmascarar(valor: string): string {
+  if (!valor) return '(vacío)';
+  if (valor.length <= 3) return `***(${valor.length} chars)`;
+  return `***${valor.slice(-3)} (${valor.length} chars)`;
+}
+
+/**
+ * Vuelca TODO lo que hace falta para diagnosticar un rechazo de Pagopar:
+ * status HTTP, body crudo completo, y el payload que se mando.
+ *
+ * El body crudo es lo importante: Pagopar devuelve el motivo real en
+ * `resultado`, y antes solo se logueaba un resumen que se comia el detalle.
+ *
+ * Nunca se loguea PAGOPAR_PRIVATE_KEY. El token es un sha1 derivado, asi que
+ * se enmascara igual, y el documento del comprador se enmascara por ser un
+ * dato personal.
+ */
+function logFalloPagopar(
+  operacion: string,
+  status: number,
+  rawBody: string,
+  payload?: Record<string, unknown>,
+): void {
+  console.error(`[pagopar] ${operacion} — HTTP ${status}`);
+  console.error(`[pagopar] respuesta cruda: ${rawBody.slice(0, 2000)}`);
+
+  if (!payload) return;
+  const comprador = payload.comprador as Record<string, unknown> | undefined;
+  console.error(
+    '[pagopar] payload enviado:',
+    JSON.stringify(
+      {
+        ...payload,
+        token: enmascarar(String(payload.token ?? '')),
+        public_key: enmascarar(String(payload.public_key ?? '')),
+        ...(comprador
+          ? {
+              comprador: {
+                ...comprador,
+                documento: enmascarar(String(comprador.documento ?? '')),
+              },
+            }
+          : {}),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 // ─── Iniciar transacción ──────────────────────────────────────────────────────
 
 /**
@@ -170,14 +221,26 @@ export async function iniciarTransaccion(
     body: JSON.stringify(body),
   });
 
+  // Se lee el body UNA vez como texto: antes, con un status != 2xx se tiraba
+  // sin mirarlo, y ahi justamente viene el motivo real del rechazo
+  const rawBody = await res.text();
+
   if (!res.ok) {
+    logFalloPagopar('iniciar-transaccion rechazada', res.status, rawBody, body);
     throw new AppError(502, `Pagopar no respondió correctamente (HTTP ${res.status})`);
   }
 
-  const data = (await res.json()) as IniciarResponse;
+  let data: IniciarResponse;
+  try {
+    data = JSON.parse(rawBody) as IniciarResponse;
+  } catch {
+    logFalloPagopar('iniciar-transaccion devolvió algo que no es JSON', res.status, rawBody, body);
+    throw new AppError(502, 'No se pudo iniciar el pago. Intentá de nuevo.');
+  }
 
   if (data.respuesta !== true || !Array.isArray(data.resultado)) {
-    console.error('[pagopar] Falló iniciar-transaccion:', describeFallo(data));
+    logFalloPagopar('iniciar-transaccion falló', res.status, rawBody, body);
+    console.error(`[pagopar] motivo: ${describeFallo(data)}`);
     throw new AppError(502, 'No se pudo iniciar el pago. Intentá de nuevo.');
   }
 
@@ -229,14 +292,24 @@ export async function consultarPedido(hashPedido: string): Promise<PedidoConsult
     }),
   });
 
+  const rawBody = await res.text();
+
   if (!res.ok) {
+    logFalloPagopar('consulta de pedido rechazada', res.status, rawBody);
     throw new AppError(502, `Pagopar no respondió correctamente (HTTP ${res.status})`);
   }
 
-  const data = (await res.json()) as ConsultaResponse;
+  let data: ConsultaResponse;
+  try {
+    data = JSON.parse(rawBody) as ConsultaResponse;
+  } catch {
+    logFalloPagopar('consulta de pedido devolvió algo que no es JSON', res.status, rawBody);
+    return null;
+  }
 
   if (data.respuesta !== true || !Array.isArray(data.resultado)) {
-    console.error('[pagopar] Falló la consulta de pedido:', describeFallo(data));
+    logFalloPagopar('consulta de pedido falló', res.status, rawBody);
+    console.error(`[pagopar] motivo: ${describeFallo(data)}`);
     return null;
   }
 
