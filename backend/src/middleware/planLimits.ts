@@ -12,24 +12,26 @@ export const LIMITS: Record<Plan, {
   assistantDaily: number;
   /** Encuesta de satisfaccion a los clientes finales */
   nps: boolean;
-  /** Reporte semanal automatico de la actividad del bot */
+  /**
+   * Informe semanal individual de CADA bot activo del usuario, sin tope de
+   * cantidad. Se limita por profundidad, no por cantidad de bots: cobrarle
+   * Profesional a alguien con 3 bots y mandarle el informe de uno solo se
+   * siente una estafa, y la queja cuesta mas que el reporte extra.
+   */
   weeklyReports: boolean;
+  /**
+   * Informe consolidado que compara todos los bots entre si (rankings de
+   * volumen, satisfaccion y deuda de conocimiento). Solo Agencia: tiene
+   * sentido unicamente cuando se manejan varios bots a la vez, y es el
+   * diferencial concreto del plan.
+   */
+  consolidatedReports: boolean;
 }> = {
-  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   nps: false, weeklyReports: false },
-  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  nps: true,  weeklyReports: false },
-  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  nps: true,  weeklyReports: true  },
-  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, nps: true,  weeklyReports: true  },
+  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   nps: false, weeklyReports: false, consolidatedReports: false },
+  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  nps: true,  weeklyReports: false, consolidatedReports: false },
+  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  nps: true,  weeklyReports: true,  consolidatedReports: false },
+  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, nps: true,  weeklyReports: true,  consolidatedReports: true  },
 };
-
-/**
- * Cuantos bots recibn reporte semanal. PRO solo el principal (el primero
- * creado); AGENCY todos. Infinity para que el llamador use slice/take sin
- * tener que ramificar.
- */
-export function botsConReporte(plan: Plan): number {
-  if (!LIMITS[plan].weeklyReports) return 0;
-  return plan === 'AGENCY' ? Infinity : 1;
-}
 
 export const PLAN_LIMIT_CODE = 'PLAN_LIMIT_EXCEEDED';
 

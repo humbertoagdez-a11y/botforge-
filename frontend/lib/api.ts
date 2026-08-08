@@ -177,17 +177,38 @@ export interface SupportTicketDetail extends SupportTicket {
 // El contenido lo calcula el backend con queries sobre las conversaciones
 // reales. Nada de esto lo redacta el modelo de IA.
 
+export type TonoResumen = 'positivo' | 'neutral' | 'alerta';
+
+/** Prosa armada por reglas en el backend, nunca por el modelo de IA */
+export interface ResumenEjecutivo {
+  titulo: string;
+  tono: TonoResumen;
+  parrafos: string[];
+}
+
 export interface WeeklyReportContent {
   totalConversations: number;
   totalMessages: number;
+  botMessages?: number;
   topQuestions: Array<{ pregunta: string; cantidad: number }>;
   unansweredQuestions: Array<{ pregunta: string; veces: number }>;
   humanRequestedCount: number;
   humanRequestedReasons: Array<{ motivo: string; cantidad: number }>;
   peakHours: Array<{ hora: number; cantidad: number }>;
+  /** Escala 1 a 5, igual que el resto del producto */
   npsAverage: number | null;
   npsResponseCount: number;
   npsPreviousAverage: number | null;
+  prevConversations?: number | null;
+  prevMessages?: number | null;
+  resumen?: ResumenEjecutivo;
+}
+
+export interface PuntoHistorial {
+  weekStart: string;
+  conversations: number;
+  messages: number;
+  nps: number | null;
 }
 
 export interface WeeklyReportSummary {
@@ -203,6 +224,8 @@ export interface WeeklyReportSummary {
     humanRequestedCount: number;
     npsAverage: number | null;
     unansweredCount: number;
+    titulo: string | null;
+    tono: TonoResumen | null;
   };
 }
 
@@ -214,6 +237,64 @@ export interface WeeklyReportDetail {
   weekEnd: string;
   generatedAt?: string;
   content: WeeklyReportContent;
+  historial: PuntoHistorial[];
+}
+
+export interface WeeklyReportList {
+  reports: WeeklyReportSummary[];
+  bots: Array<{ id: string; name: string }>;
+  /** Lo decide el backend con el plan vigente, no el frontend con user.plan */
+  capabilities: { consolidated: boolean };
+}
+
+// ─── Consolidado (Agencia) ────────────────────────────────────────────────────
+
+export interface FilaConsolidada {
+  botId: string;
+  botName: string;
+  conversations: number;
+  messages: number;
+  nps: number | null;
+  npsResponses: number;
+  unanswered: number;
+  unansweredQuestions: number;
+  deltaConversations: number | null;
+}
+
+export interface ConsolidatedContent {
+  totalBots: number;
+  totalConversations: number;
+  totalMessages: number;
+  totalUnanswered: number;
+  npsAverage: number | null;
+  npsResponseCount: number;
+  prevConversations: number | null;
+  bots: FilaConsolidada[];
+  topUnanswered: Array<{ pregunta: string; veces: number; botName: string }>;
+  resumen?: ResumenEjecutivo;
+}
+
+export interface ConsolidatedSummary {
+  id: string;
+  weekStart: string;
+  weekEnd: string;
+  generatedAt: string;
+  resumen: {
+    totalBots: number;
+    totalConversations: number;
+    totalUnanswered: number;
+    npsAverage: number | null;
+    titulo: string | null;
+    tono: TonoResumen | null;
+  };
+}
+
+export interface ConsolidatedDetail {
+  id: string;
+  weekStart: string;
+  weekEnd: string;
+  generatedAt?: string;
+  content: ConsolidatedContent;
 }
 
 /** Cupo del asistente de plataforma según el plan */
@@ -550,27 +631,48 @@ export const api = {
 
   reports: {
     list: (botId?: string) =>
-      request<{ reports: WeeklyReportSummary[] }>(
+      request<WeeklyReportList>(
         `/api/v1/reports${botId ? `?botId=${encodeURIComponent(botId)}` : ''}`,
       ),
     get: (id: string) => request<WeeklyReportDetail>(`/api/v1/reports/${id}`),
-    /** Genera el de la semana pasada a demanda, sin esperar al lunes */
-    generate: (botId: string) =>
-      request<WeeklyReportDetail>('/api/v1/reports/generate', {
+    /**
+     * Genera a demanda el informe de la semana pasada, sin esperar al lunes.
+     * Sin botId genera el de todos los bots más el consolidado si corresponde.
+     */
+    generate: (botId?: string) =>
+      request<{
+        weekStart: string;
+        weekEnd: string;
+        reports: Array<{ id: string; botId: string; botName: string }>;
+        fallidos: string[];
+        consolidatedId: string | null;
+      }>('/api/v1/reports/generate', {
         method: 'POST',
-        body: JSON.stringify({ botId }),
+        body: JSON.stringify(botId ? { botId } : {}),
       }),
     addKnowledge: (id: string, titulo: string, contenido: string) =>
       request<{ documentId: string; name: string; mensaje: string }>(
         `/api/v1/reports/${id}/knowledge`,
         { method: 'POST', body: JSON.stringify({ titulo, contenido }) },
       ),
+    consolidated: {
+      list: () => request<{ reports: ConsolidatedSummary[] }>('/api/v1/reports/consolidated'),
+      get: (id: string) => request<ConsolidatedDetail>(`/api/v1/reports/consolidated/${id}`),
+    },
     /**
-     * Descarga el PDF. No usa request() porque la respuesta es binaria, no el
-     * sobre { data, error }: parsearla como JSON rompería el archivo.
+     * Descarga el PDF, individual o consolidado. No usa request() porque la
+     * respuesta es binaria, no el sobre { data, error }: parsearla como JSON
+     * rompería el archivo.
      */
-    exportPdf: async (id: string): Promise<{ blob: Blob; filename: string }> => {
-      const res = await fetchWithAuth(`/api/v1/reports/${id}/export`);
+    exportPdf: async (
+      id: string,
+      tipo: 'individual' | 'consolidado' = 'individual',
+    ): Promise<{ blob: Blob; filename: string }> => {
+      const path =
+        tipo === 'consolidado'
+          ? `/api/v1/reports/consolidated/${id}/export`
+          : `/api/v1/reports/${id}/export`;
+      const res = await fetchWithAuth(path);
       if (!res.ok) {
         const json = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
         notifyPlanLimit(json?.error ?? null);
@@ -581,7 +683,7 @@ export const api = {
       }
       const disposition = res.headers.get('Content-Disposition') ?? '';
       const match = /filename="([^"]+)"/.exec(disposition);
-      return { blob: await res.blob(), filename: match?.[1] ?? `reporte-${id}.pdf` };
+      return { blob: await res.blob(), filename: match?.[1] ?? `informe-${id}.pdf` };
     },
   },
 

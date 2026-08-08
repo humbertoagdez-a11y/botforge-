@@ -97,6 +97,7 @@ model User {
   notificationConfigs      NotificationConfig[]
   platformAssistantMessages PlatformAssistantMessage[]
   pagoparOrders            PagoparOrder[]
+  consolidatedReports      ConsolidatedReport[]
 
   @@map("users")
 }
@@ -233,6 +234,29 @@ model WeeklyReport {
   @@unique([botId, weekStart])
   @@index([botId, weekStart])
   @@map("weekly_reports")
+}
+
+/// Informe consolidado del plan Agencia: compara todos los bots del usuario
+/// entre si en una sola vista. Modelo aparte y no un WeeklyReport con botId
+/// nulo, por tres razones: el contenido tiene otra forma (rankings entre bots,
+/// no detalle de uno), cuelga del usuario y no de un bot (borrar un bot no
+/// debe borrar la comparacion historica), y un botId nullable romperia el
+/// @@unique de arriba, porque Postgres considera distintos a todos los NULL.
+model ConsolidatedReport {
+  id          String   @id @default(uuid())
+  userId      String
+  /// Lunes 00:00 de la semana que cubre (hora Paraguay, guardado en UTC)
+  weekStart   DateTime
+  weekEnd     DateTime
+  /// Contenido en JSON estructurado, no texto libre
+  content     Json
+  generatedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([userId, weekStart])
+  @@map("consolidated_reports")
 }
 
 /// Respuesta de un cliente final a la encuesta. El numero solo no sirve de

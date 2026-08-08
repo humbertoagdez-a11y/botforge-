@@ -4,6 +4,8 @@ dist/
 .env.local
 *.env.local
 uploads/
+# PDF de muestra que genera npm run reporte:muestra
+backend/tmp/
 .next/
 coverage/
 *.log

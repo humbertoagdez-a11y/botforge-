@@ -13,7 +13,8 @@
     "test": "jest",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "reporte:muestra": "tsx src/scripts/reporteDeMuestra.ts tmp"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",
