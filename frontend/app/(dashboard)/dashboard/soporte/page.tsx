@@ -311,7 +311,7 @@ function NuevoTicketDialog({
             <Label>Tipo</Label>
             <Select value={category} onValueChange={(v) => setCategory(v as TicketCategory)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent className="theme-dashboard">
                 {(Object.keys(CATEGORY_LABEL) as TicketCategory[]).map((c) => (
                   <SelectItem key={c} value={c}>{CATEGORY_LABEL[c]}</SelectItem>
                 ))}
@@ -468,7 +468,7 @@ function Soporte() {
           {vistaAdmin && (
             <Select value={filtro} onValueChange={(v) => setFiltro(v as TicketStatus | 'TODOS')}>
               <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent className="theme-dashboard">
                 <SelectItem value="TODOS">Todos los estados</SelectItem>
                 {STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>

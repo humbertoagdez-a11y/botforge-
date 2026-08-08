@@ -44,6 +44,15 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        // Faltaba: --popover y --popover-foreground existian en globals.css
+        // pero no estaban mapeados aca, asi que bg-popover y
+        // text-popover-foreground no generaban NADA. El dropdown del Select
+        // quedaba transparente y con el texto heredado del tema claro sobre
+        // el dashboard oscuro: contraste 1.01:1, invisible salvo en hover.
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

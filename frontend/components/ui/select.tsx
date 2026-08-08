@@ -27,6 +27,14 @@ const SelectTrigger = React.forwardRef<
 ));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
+/**
+ * OJO al usarlo dentro del dashboard: este contenido va en un Portal, o sea
+ * que se renderiza en document.body y queda FUERA del `.theme-dashboard` del
+ * layout. Sin esa clase, bg-popover y text-popover-foreground resuelven
+ * contra el tema claro y el desplegable sale blanco sobre el panel oscuro.
+ *
+ * Por eso todos los usos del dashboard le pasan className="theme-dashboard".
+ */
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
