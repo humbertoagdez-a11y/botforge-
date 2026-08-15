@@ -13,7 +13,7 @@ import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
-import { runTenantTurn } from './tenantAgent';
+import { runTenantTurn, type PendingImage } from './tenantAgent';
 import { sendEmail } from './email';
 import { getNpsState, npsFollowUp, parseNpsReply, saveComment, saveScore } from './nps';
 
@@ -145,11 +145,9 @@ export async function handleVerificationCode(
 
 // ─── Pipeline principal ───────────────────────────────────────────────────────
 
-export interface PendingImage {
-  imageBase64: string;
-  mimeType: string;
-  fileName: string;
-}
+// El tipo vive en tenantAgent (que es quien la produce); se re-exporta para
+// que los webhooks no tengan que importar de dos lados
+export type { PendingImage } from './tenantAgent';
 
 export interface InboundResult {
   /** Texto a enviarle al cliente */

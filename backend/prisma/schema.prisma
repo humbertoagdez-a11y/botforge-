@@ -220,6 +220,7 @@ model Bot {
   npsResponses        NpsResponse[]
   npsPrompts          NpsPrompt[]
   weeklyReports       WeeklyReport[]
+  images              BotImage[]
 
   @@map("bots")
 }
@@ -413,6 +414,36 @@ model Document {
   chunks     Chunk[]
 
   @@map("documents")
+}
+
+/// Imagen que el dueño sube para que el bot se la mande a los clientes por
+/// WhatsApp: fotos de productos, el catalogo, el menu.
+///
+/// Modelo aparte de Document y no una extension: un Document existe para ser
+/// troceado, embebido y buscado por similitud (tiene chunks, status de
+/// procesamiento y cola de Bull), y nada de eso aplica a una imagen. Lo unico
+/// que comparten es que los sube el dueño.
+model BotImage {
+  id          String   @id @default(uuid())
+  botId       String
+  /// Nombre corto para identificarla en el panel
+  name        String
+  /// Lo que el modelo lee para decidir CUANDO mandarla. Es el campo que
+  /// determina si la imagen sirve o no: sin una buena descripcion el bot
+  /// nunca la elige.
+  description String
+  /// URL persistente en Cloudinary; Meta la descarga de ahi
+  url         String
+  /// public_id de Cloudinary, para poder borrar el archivo al borrar la fila
+  publicId    String
+  mimeType    String
+  fileSize    Int
+  createdAt   DateTime @default(now())
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@map("bot_images")
 }
 
 model Chunk {

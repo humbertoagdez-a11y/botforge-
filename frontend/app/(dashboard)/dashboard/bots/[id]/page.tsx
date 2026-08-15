@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, Bot, FileText, HardDrive, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { ArrowLeft, Bot, FileText, HardDrive, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
 // Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ import DocumentUploader, { DocumentRow } from '@/components/DocumentUploader';
 import DocumentDropzone from '@/components/DocumentDropzone';
 import InstructivoWizard from '@/components/InstructivoWizard';
 import ChatWidget from '@/components/ChatWidget';
+import BotImages from '@/components/BotImages';
 import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
 import { useAssistantStore, useAuthStore } from '@/lib/store';
@@ -427,6 +428,10 @@ export default function BotDetailPage() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="images" className="gap-1.5">
+            <ImageIcon className="h-3.5 w-3.5" />
+            Imágenes
+          </TabsTrigger>
           <TabsTrigger value="chat" className="gap-1.5">
             <MessageSquare className="h-3.5 w-3.5" />
             Chat de prueba
@@ -478,6 +483,11 @@ export default function BotDetailPage() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* Images tab */}
+        <TabsContent value="images" className="mt-4">
+          <BotImages botId={id} />
         </TabsContent>
 
         {/* Chat tab */}

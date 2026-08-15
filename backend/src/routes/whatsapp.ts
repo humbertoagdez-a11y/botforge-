@@ -13,7 +13,7 @@ import {
   processInboundMessage,
   VERIFICATION_CODE_RE,
 } from '../services/inboundMessage';
-import { sendTextMessage, sendImageMessage, isTwilioConfigured } from '../services/twilioMessaging';
+import { sendTextMessage, sendPendingImage, isTwilioConfigured } from '../services/twilioMessaging';
 
 const router = Router();
 
@@ -311,10 +311,9 @@ router.post(
         if (result.text) await sendTextMessage(from, result.text);
         if (result.pendingImage) {
           try {
-            const { imageBase64, mimeType, fileName } = result.pendingImage;
-            await sendImageMessage(from, imageBase64, mimeType, fileName);
+            await sendPendingImage(from, result.pendingImage);
           } catch (mediaErr) {
-            console.error('[whatsapp] Error enviando imagen de Drive:', mediaErr);
+            console.error('[whatsapp] Error enviando la imagen adjunta:', mediaErr);
           }
         }
         res.type('text/xml').send('<Response></Response>');

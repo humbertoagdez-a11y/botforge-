@@ -1,6 +1,7 @@
 import twilio from 'twilio';
 import { env } from '../config/env';
 import { cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
+import type { PendingImage } from './tenantAgent';
 
 export function isTwilioConfigured(): boolean {
   return Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WHATSAPP_FROM);
@@ -22,6 +23,16 @@ export async function sendTextMessage(to: string, body: string): Promise<void> {
     from: env.TWILIO_WHATSAPP_FROM,
     to: toWhatsApp(to),
     body,
+  });
+}
+
+/** Envia una imagen ya hospedada en una URL publica. Misma firma que en Meta. */
+export async function sendImageByUrl(to: string, imageUrl: string, caption: string): Promise<void> {
+  await getClient().messages.create({
+    from: env.TWILIO_WHATSAPP_FROM,
+    to: toWhatsApp(to),
+    body: caption,
+    mediaUrl: [imageUrl],
   });
 }
 
@@ -49,10 +60,17 @@ export async function sendImageMessage(
     },
   );
 
-  await getClient().messages.create({
-    from: env.TWILIO_WHATSAPP_FROM,
-    to: toWhatsApp(to),
-    body: caption,
-    mediaUrl: [uploadRes.secure_url],
-  });
+  await sendImageByUrl(to, uploadRes.secure_url, caption);
+}
+
+/**
+ * Entrega la imagen que dejo el agente. Mismo despacho que en metaMessaging:
+ * URL directa si ya esta hospedada, subida previa si llego como binario.
+ */
+export async function sendPendingImage(to: string, img: PendingImage): Promise<void> {
+  if (img.source === 'url') {
+    await sendImageByUrl(to, img.url, img.caption);
+    return;
+  }
+  await sendImageMessage(to, img.imageBase64, img.mimeType, img.caption);
 }

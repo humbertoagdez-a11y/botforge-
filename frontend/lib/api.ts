@@ -34,6 +34,26 @@ export interface Bot {
   _count?: { documents: number; conversations: number };
 }
 
+/** Imagen que el bot le manda a los clientes por WhatsApp */
+export interface BotImage {
+  id: string;
+  name: string;
+  /** Lo que el bot lee para decidir cuándo mandarla */
+  description: string;
+  url: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+}
+
+export interface BotImageList {
+  images: BotImage[];
+  plan: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+  /** null = sin tope (Agencia). 0 = el plan no incluye imágenes. */
+  limit: number | null;
+  used: number;
+}
+
 export interface BotDocument {
   id: string;
   botId: string;
@@ -553,6 +573,19 @@ export const api = {
     },
     delete: (botId: string, docId: string) =>
       request<{ ok: boolean }>(`/api/v1/bots/${botId}/documents/${docId}`, { method: 'DELETE' }),
+  },
+
+  images: {
+    list: (botId: string) => request<BotImageList>(`/api/v1/bots/${botId}/images`),
+    upload: (botId: string, file: File, name: string, description: string) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('name', name);
+      form.append('description', description);
+      return request<BotImage>(`/api/v1/bots/${botId}/images`, { method: 'POST', body: form });
+    },
+    delete: (botId: string, imageId: string) =>
+      request<{ deleted: boolean }>(`/api/v1/bots/${botId}/images/${imageId}`, { method: 'DELETE' }),
   },
 
   // El chat del bot no pasa por request(): es SSE y lo maneja ChatWidget

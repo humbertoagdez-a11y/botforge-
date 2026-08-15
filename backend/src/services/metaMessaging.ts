@@ -7,6 +7,7 @@
  */
 import { env } from '../config/env';
 import { cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
+import type { PendingImage } from './tenantAgent';
 
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -177,4 +178,17 @@ export async function downloadMedia(
     buffer: await binRes.arrayBuffer(),
     mimeType: meta.mime_type ?? 'application/octet-stream',
   };
+}
+
+/**
+ * Entrega la imagen que dejo el agente. Es solo un despacho entre las dos
+ * primitivas de arriba: las imagenes del panel ya viven en Cloudinary y van
+ * por URL; las de Drive llegan como binario y hay que hospedarlas primero.
+ */
+export async function sendPendingImage(to: string, img: PendingImage): Promise<void> {
+  if (img.source === 'url') {
+    await sendImageByUrl(to, img.url, img.caption);
+    return;
+  }
+  await sendImageMessage(to, img.imageBase64, img.mimeType, img.caption);
 }

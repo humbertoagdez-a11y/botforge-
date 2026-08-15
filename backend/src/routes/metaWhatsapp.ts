@@ -6,7 +6,7 @@ import {
   downloadMedia,
   isMetaConfigured,
   markAsReadAndTyping,
-  sendImageMessage,
+  sendPendingImage,
   sendTextMessage,
 } from '../services/metaMessaging';
 import {
@@ -203,10 +203,10 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
 
   if (result.pendingImage) {
     try {
-      const { imageBase64, mimeType, fileName } = result.pendingImage;
-      await sendImageMessage(clientNumber, imageBase64, mimeType, fileName);
+      await sendPendingImage(clientNumber, result.pendingImage);
     } catch (mediaErr) {
-      console.error('[meta] Error enviando imagen de Drive:', mediaErr);
+      // El texto ya salió: que falle la imagen no puede tumbar la respuesta
+      console.error('[meta] Error enviando la imagen adjunta:', mediaErr);
     }
   }
 }

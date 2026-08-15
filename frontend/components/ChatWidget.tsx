@@ -46,8 +46,8 @@ interface UIMessage {
   role: 'USER' | 'ASSISTANT';
   content: string;
   streaming?: boolean;
-  /** Nombre del archivo de Drive que el bot adjuntó en esta respuesta */
-  attachment?: string;
+  /** Imagen que el bot adjuntó a esta respuesta */
+  attachment?: { caption: string; url: string | null };
 }
 
 /** Lo que el bot está haciendo, para mostrarlo mientras usa una herramienta */
@@ -68,8 +68,12 @@ type SseEvent =
       conversationId: string;
       messageId: string;
       tokensUsed: number;
-      /** El bot adjuntó una imagen de Drive; acá solo se avisa */
-      imagen?: { fileName: string } | null;
+      /**
+       * El bot adjuntó una imagen. Las del panel traen url y se muestran tal
+       * cual las recibe el cliente; las de Drive vienen sin url (llegan como
+       * binario) y solo se anuncian.
+       */
+      imagen?: { caption: string; url: string | null } | null;
     }
   | { type: 'error'; message: string };
 
@@ -183,7 +187,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
             setConversationId(event.conversationId);
             setMessages((m) => [
               ...m.slice(0, -1),
-              { role: 'ASSISTANT', content: accText, attachment: event.imagen?.fileName },
+              { role: 'ASSISTANT', content: accText, attachment: event.imagen ?? undefined },
             ]);
           } else if (event.type === 'error') {
             throw new Error(event.message);
@@ -257,13 +261,26 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
                 </p>
               )}
 
-              {/* En WhatsApp el cliente recibe la imagen adjunta; acá no hay
-                  canal para mandarla, así que al menos se avisa que existe */}
+              {/* La imagen se muestra igual que la recibiría el cliente. Las
+                  de Drive no traen url (viajan como binario): de esas se avisa */}
               {msg.attachment && (
-                <p className="mt-2 flex items-center gap-1.5 border-t border-current/10 pt-2 text-xs opacity-70">
-                  <ImageIcon className="h-3.5 w-3.5 shrink-0" />
-                  En WhatsApp se envía adjunta la imagen {msg.attachment}
-                </p>
+                <div className="mt-2 border-t border-current/10 pt-2">
+                  {msg.attachment.url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={msg.attachment.url}
+                      alt={msg.attachment.caption}
+                      className="max-h-56 w-full rounded-lg object-contain"
+                      loading="lazy"
+                    />
+                  ) : null}
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs opacity-70">
+                    <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                    {msg.attachment.url
+                      ? `Se envía adjunta: ${msg.attachment.caption}`
+                      : `En WhatsApp se envía adjunta la imagen ${msg.attachment.caption}`}
+                  </p>
+                </div>
               )}
             </div>
 

@@ -6,6 +6,13 @@ import type { Plan } from '@prisma/client';
 export const LIMITS: Record<Plan, {
   bots: number;
   docsPerBot: number;
+  /**
+   * Imagenes que el bot puede mandarle a los clientes por WhatsApp (catalogo,
+   * fotos de producto, menu). En Free es 0 porque Free tampoco tiene WhatsApp:
+   * no habria canal por donde enviarlas. De ahi para arriba escala junto con
+   * los documentos, que es el otro contenido que sube el dueño.
+   */
+  imagesPerBot: number;
   monthlyMessages: number;
   whatsapp: boolean;
   assistantMonthly: number;
@@ -35,10 +42,10 @@ export const LIMITS: Record<Plan, {
    */
   consolidatedReports: boolean;
 }> = {
-  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   testMonthly: 60,   testDaily: 25,  nps: false, weeklyReports: false, consolidatedReports: false },
-  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  testMonthly: 300,  testDaily: 60,  nps: true,  weeklyReports: false, consolidatedReports: false },
-  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  testMonthly: 900,  testDaily: 150, nps: true,  weeklyReports: true,  consolidatedReports: false },
-  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, testMonthly: 2500, testDaily: 400, nps: true,  weeklyReports: true,  consolidatedReports: true  },
+  FREE:    { bots: 1,         docsPerBot: 3,         imagesPerBot: 0,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   testMonthly: 60,   testDaily: 25,  nps: false, weeklyReports: false, consolidatedReports: false },
+  STARTER: { bots: 1,         docsPerBot: 10,        imagesPerBot: 8,         monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  testMonthly: 300,  testDaily: 60,  nps: true,  weeklyReports: false, consolidatedReports: false },
+  PRO:     { bots: 5,         docsPerBot: 50,        imagesPerBot: 30,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  testMonthly: 900,  testDaily: 150, nps: true,  weeklyReports: true,  consolidatedReports: false },
+  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  imagesPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, testMonthly: 2500, testDaily: 400, nps: true,  weeklyReports: true,  consolidatedReports: true  },
 };
 
 export const PLAN_LIMIT_CODE = 'PLAN_LIMIT_EXCEEDED';

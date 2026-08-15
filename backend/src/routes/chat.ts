@@ -148,9 +148,15 @@ router.post('/stream', async (req: Request, res: Response, next: NextFunction) =
           conversationId: conversation.id,
           messageId: assistantMsg.id,
           tokensUsed,
-          // El panel no puede mandar la imagen por WhatsApp, pero avisa que en
-          // el canal real el cliente la habría recibido adjunta
-          imagen: pendingImage ? { fileName: pendingImage.fileName } : null,
+          // Las imágenes del panel ya viven en Cloudinary, así que el Chat de
+          // prueba puede mostrar exactamente la misma que recibiría el cliente.
+          // Las de Drive llegan como binario y no se suben acá solo para la
+          // vista previa: de esas se avisa el nombre.
+          imagen: pendingImage
+            ? pendingImage.source === 'url'
+              ? { caption: pendingImage.caption, url: pendingImage.url }
+              : { caption: pendingImage.caption, url: null }
+            : null,
         });
       }
     } catch (streamErr) {

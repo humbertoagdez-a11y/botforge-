@@ -39,14 +39,22 @@ export interface TenantSystemBlocks {
   context: string;
 }
 
+/** Lo mínimo que el modelo necesita para elegir una imagen */
+export interface ImagenDisponible {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export function buildTenantSystemBlocks(
   botName: string,
   personality: string,
   language: string,
   documentsContent: string,
+  imagenes: ImagenDisponible[] = [],
 ): TenantSystemBlocks {
   return {
-    stable: buildTenantStablePrompt(botName, personality, language),
+    stable: buildTenantStablePrompt(botName, personality, language, imagenes),
     context: documentsContent
       ? `INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:
 ${documentsContent}`
@@ -54,13 +62,35 @@ ${documentsContent}`
   };
 }
 
+/**
+ * Catálogo de imágenes para el prompt. Va en el bloque ESTABLE, no en el de
+ * contexto: cambia por bot pero es idéntico en todos los mensajes de ese bot,
+ * que es justo la condición para que el caché sirva. Si fuera al bloque
+ * variable se reescribiría en cada mensaje sin acertar nunca.
+ *
+ * Va la descripción, no la URL: la URL no le sirve al modelo para decidir y
+ * solo gastaría tokens. El envío lo resuelve la herramienta contra la base.
+ */
+function bloqueImagenes(imagenes: ImagenDisponible[]): string {
+  if (imagenes.length === 0) return '';
+  const lista = imagenes
+    .map((i) => `- id: ${i.id} | ${i.name}: ${i.description}`)
+    .join('\n');
+  return `
+
+IMÁGENES QUE PODÉS ENVIAR:
+Tenés estas imágenes cargadas. Cuando el cliente pida ver algo que coincida con una de estas descripciones, mandásela con la herramienta enviar_imagen usando su id. No inventes ids ni prometas imágenes que no estén en esta lista.
+${lista}`;
+}
+
 /** Parte cacheable: todo lo que no depende del mensaje puntual */
 export function buildTenantStablePrompt(
   botName: string,
   personality: string,
   language: string,
+  imagenes: ImagenDisponible[] = [],
 ): string {
-  return buildTenantSystemPrompt(botName, personality, language, '');
+  return `${buildTenantSystemPrompt(botName, personality, language, '')}${bloqueImagenes(imagenes)}`;
 }
 
 export function buildTenantSystemPrompt(
@@ -94,6 +124,22 @@ ${baseRules}`;
 }
 
 // ─── TOOL REGISTRY DEL TENANT ─────────────────────────────────────────────────
+
+const TOOL_ENVIAR_IMAGEN: Anthropic.Tool = {
+  name: 'enviar_imagen',
+  description:
+    'Envía una imagen al cliente cuando la conversación lo amerite: pidió ver un producto, un catálogo, un menú, o cualquier cosa que tengas como imagen disponible. Revisá las descripciones de las imágenes disponibles en tu contexto para elegir la correcta. Si ninguna corresponde a lo que pidió, no uses esta herramienta.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      imageId: {
+        type: 'string',
+        description: 'El id de la imagen a enviar, tal como figura en la lista de imágenes disponibles',
+      },
+    },
+    required: ['imageId'],
+  },
+};
 
 export const TENANT_TOOLS: Anthropic.Tool[] = [
   {
@@ -134,6 +180,42 @@ export const TENANT_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
+/**
+ * Herramientas que ve ESTE bot.
+ *
+ * La lista es por bot y no global por dos motivos:
+ *
+ * - `enviar_imagen` solo tiene sentido si el dueño subió imágenes. Ofrecérsela
+ *   a un bot sin imágenes es invitarlo a llamarla para que le devuelvan "no hay
+ *   ninguna", gastando una ronda.
+ * - `buscar_archivos_drive` tiene casi la misma descripción que `enviar_imagen`
+ *   ("fotos de productos, el menú, el catálogo"). Con las dos presentes el
+ *   modelo elige medio al azar, y como Drive quedó fuera de la hoja de ruta,
+ *   la mayoría de los bots no la tiene conectada. Se muestra solo si el bot
+ *   realmente tiene Drive activo.
+ *
+ * No afecta el prompt caching: para un bot dado la lista es idéntica en todos
+ * sus mensajes, igual que el bloque estable del system. Cambia cuando el dueño
+ * sube o borra una imagen, que es exactamente cuando el prompt también cambia.
+ */
+export function buildTenantTools(opts: {
+  tieneImagenes: boolean;
+  driveActivo: boolean;
+}): Anthropic.Tool[] {
+  const tools = [TENANT_TOOLS[0]]; // buscar_en_documentos, siempre
+  if (opts.driveActivo) tools.push(TENANT_TOOLS[1]);
+  if (opts.tieneImagenes) tools.push(TOOL_ENVIAR_IMAGEN);
+  tools.push(TENANT_TOOLS[2]); // derivar_a_humano, siempre al final
+
+  // El cache_control va en la ÚLTIMA herramienta: marca el corte del bloque
+  // entero de definiciones (Anthropic procesa tools → system → messages)
+  return tools.map((tool, i) =>
+    i === tools.length - 1
+      ? { ...tool, cache_control: { type: 'ephemeral' as const } }
+      : tool,
+  );
+}
+
 // ─── CONTEXTO DE EJECUCIÓN ────────────────────────────────────────────────────
 
 export interface TenantAgentContext {
@@ -143,17 +225,30 @@ export interface TenantAgentContext {
   clientId: string;
   /** Canal por el que llegó el mensaje */
   channel: 'whatsapp' | 'web' | 'widget';
-  /** Salida lateral: imagen encontrada en Drive lista para enviar al cliente.
-      El binario nunca viaja en el tool_result (reventaría el contexto del
-      modelo); el canal la manda con twilioMessaging.sendImageMessage. */
-  pendingImage?: { imageBase64: string; mimeType: string; fileName: string };
+  /** Salida lateral: imagen lista para enviarle al cliente. El binario nunca
+      viaja en el tool_result (reventaría el contexto del modelo); el canal la
+      manda con su propio sendPendingImage. */
+  pendingImage?: PendingImage;
 }
+
+/**
+ * Imagen que el agente decidió mandarle al cliente.
+ *
+ * Dos origenes con el mismo destino: las que el dueño subio al panel ya viven
+ * en Cloudinary y solo hace falta pasar la URL, mientras que las de Drive se
+ * bajan como binario y hay que hospedarlas primero. El canal resuelve cual
+ * usar; ninguno de los dos caminos duplica el envio.
+ */
+export type PendingImage =
+  | { source: 'url'; url: string; caption: string }
+  | { source: 'base64'; imageBase64: string; mimeType: string; caption: string };
 
 // ─── EXECUTOR DE TOOLS ────────────────────────────────────────────────────────
 
 const toolSchemas = {
   buscar_en_documentos: { query: 'string' },
   buscar_archivos_drive: { query: 'string' },
+  enviar_imagen: { imageId: 'string' },
   derivar_a_humano: { motivo: 'string' },
 } as const;
 
@@ -212,7 +307,7 @@ export async function executeTenantTool(
         if (!isCloudinaryConfigured()) {
           return { found: false, message: 'El envío de imágenes no está disponible en este momento.' };
         }
-        context.pendingImage = { imageBase64: data, mimeType, fileName: match.name };
+        context.pendingImage = { source: 'base64', imageBase64: data, mimeType, caption: match.name };
 
         return {
           found: true,
@@ -223,6 +318,32 @@ export async function executeTenantTool(
         console.error('[drive] Error buscando archivo:', err);
         return { found: false, message: 'Hubo un error accediendo a Drive. Intentá de nuevo.' };
       }
+    }
+
+    case 'enviar_imagen': {
+      const imageId = readStringField(input, 'imageId');
+      // Se lee de la base filtrando por botId: aunque el modelo alucine un id,
+      // nunca puede mandar una imagen de otro negocio
+      const imagen = await prisma.botImage.findFirst({
+        where: { id: imageId, botId: context.botId },
+        select: { id: true, name: true, url: true },
+      });
+      if (!imagen) {
+        return {
+          enviada: false,
+          message: 'Esa imagen no existe. Revisá la lista de imágenes disponibles en tu contexto y usá uno de esos ids.',
+        };
+      }
+
+      // El canal la manda al entregar la respuesta, con el mismo mecanismo que
+      // ya usaba Drive. La URL de Cloudinary va directo: no se vuelve a subir.
+      context.pendingImage = { source: 'url', url: imagen.url, caption: imagen.name };
+
+      return {
+        enviada: true,
+        nombre: imagen.name,
+        message: `La imagen "${imagen.name}" se envía junto con tu respuesta. No incluyas ningún link ni describas la imagen: el cliente la va a ver.`,
+      };
     }
 
     case 'derivar_a_humano': {
@@ -291,18 +412,10 @@ async function runFallback(
 }
 
 /**
- * Ejecuta el loop completo de tool use de Anthropic para el bot desplegado.
- * Devuelve el texto final; las imágenes de Drive quedan en context.pendingImage.
+ * Fallback si el llamador no arma la lista por bot. Equivale a un bot sin
+ * imágenes y sin Drive, que es el caso más común.
  */
-/**
- * Marcar el último tool cachea todo el bloque de definiciones (Anthropic
- * procesa tools → system → messages).
- */
-const CACHED_TENANT_TOOLS: Anthropic.Tool[] = TENANT_TOOLS.map((tool, i) =>
-  i === TENANT_TOOLS.length - 1
-    ? { ...tool, cache_control: { type: 'ephemeral' as const } }
-    : tool,
-);
+const CACHED_TENANT_TOOLS = buildTenantTools({ tieneImagenes: false, driveActivo: false });
 
 /**
  * Arma los bloques de system para la API. Acepta el prompt entero (string) o
@@ -354,13 +467,14 @@ export interface TenantStreamHooks {
 async function runRound(
   systemBlocks: Anthropic.TextBlockParam[],
   messages: Anthropic.MessageParam[],
+  tools: Anthropic.Tool[],
   stream?: TenantStreamHooks,
 ): Promise<{ response: Anthropic.Message; emitioTexto: boolean }> {
   const request = {
     model: PRIMARY_MODEL,
     max_tokens: 1024,
     system: systemBlocks,
-    tools: CACHED_TENANT_TOOLS,
+    tools,
     messages,
   };
 
@@ -384,6 +498,8 @@ export async function runTenantAgentLoop(
   userMessage: string,
   context: TenantAgentContext,
   stream?: TenantStreamHooks,
+  /** Herramientas de ESTE bot. Sin esto, las del bot más simple. */
+  tools: Anthropic.Tool[] = CACHED_TENANT_TOOLS,
 ): Promise<{ content: string; tokensUsed: number }> {
   let currentMessages: Anthropic.MessageParam[] = [
     ...history.map((m): Anthropic.MessageParam => ({ role: m.role, content: m.content })),
@@ -393,7 +509,7 @@ export async function runTenantAgentLoop(
   const systemBlocks = toSystemBlocks(systemPrompt);
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const { response, emitioTexto } = await runRound(systemBlocks, currentMessages, stream);
+    const { response, emitioTexto } = await runRound(systemBlocks, currentMessages, tools, stream);
     tokensUsed += response.usage.input_tokens + response.usage.output_tokens;
     logCacheUsage('tenant', response.usage);
 
@@ -473,8 +589,8 @@ export interface TenantTurnParams {
 export interface TenantTurnResult {
   content: string;
   tokensUsed: number;
-  /** Imagen de Drive que el agente quiere adjuntar, si la hubo */
-  pendingImage?: { imageBase64: string; mimeType: string; fileName: string };
+  /** Imagen que el agente quiere adjuntar a esta respuesta, si la hubo */
+  pendingImage?: PendingImage;
 }
 
 /**
@@ -494,11 +610,27 @@ export interface TenantTurnResult {
 export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTurnResult> {
   const { bot, history, message, clientId, channel, stream } = params;
 
-  const chunks = await getRelevantChunks(bot.id, message);
-  // Bloques partidos: las reglas y la personalidad se cachean, el RAG no
+  const [chunks, imagenes, drive] = await Promise.all([
+    getRelevantChunks(bot.id, message),
+    prisma.botImage.findMany({
+      where: { botId: bot.id },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, name: true, description: true },
+    }),
+    prisma.driveConnection.findUnique({
+      where: { botId: bot.id },
+      select: { isActive: true },
+    }),
+  ]);
+
+  // Bloques partidos: reglas, personalidad e imágenes se cachean; el RAG no
   const systemPrompt = buildTenantSystemBlocks(
-    bot.name, bot.personality, bot.language, chunks.join('\n\n'),
+    bot.name, bot.personality, bot.language, chunks.join('\n\n'), imagenes,
   );
+  const tools = buildTenantTools({
+    tieneImagenes: imagenes.length > 0,
+    driveActivo: Boolean(drive?.isActive),
+  });
 
   const context: TenantAgentContext = {
     botId: bot.id,
@@ -508,7 +640,7 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
   };
 
   const { content, tokensUsed } = await runTenantAgentLoop(
-    systemPrompt, history, message, context, stream,
+    systemPrompt, history, message, context, stream, tools,
   );
 
   return { content, tokensUsed, pendingImage: context.pendingImage };
