@@ -53,7 +53,7 @@ interface UIMessage {
 /** Lo que el bot está haciendo, para mostrarlo mientras usa una herramienta */
 const TOOL_LABEL: Record<string, string> = {
   buscar_en_documentos: 'Buscando en los documentos...',
-  buscar_archivos_drive: 'Buscando la foto en Drive...',
+  buscar_archivos_drive: 'Buscando la foto...',
   derivar_a_humano: 'Avisando a un encargado...',
 };
 

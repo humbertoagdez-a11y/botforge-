@@ -10,14 +10,12 @@ import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { LIMITS, checkAssistantLimit, incrementAssistantUsage } from '../middleware/planLimits';
-import { uploadRawToCloudinary, isCloudinaryConfigured } from '../config/cloudinary';
-import { sendImageMessage, isTwilioConfigured } from '../services/twilioMessaging';
+import { uploadRawToCloudinary } from '../config/cloudinary';
 import { documentQueue } from '../lib/queue';
 import { deleteChunksByIds, querySimilarChunks } from '../services/pinecone';
 import { getEmbedding } from '../services/embeddings';
 import { searchWeb } from '../services/webSearch';
 import { scrapeUrl } from '../services/webScraper';
-import { downloadFileAsBase64, getValidAccessToken } from '../services/googleDrive';
 import {
   PLATFORM_STATIC_PROMPT,
   buildPlatformDynamicPrompt,
@@ -204,21 +202,12 @@ const PLATFORM_TOOLS: Anthropic.Tool[] = [
       required: ['url', 'botId'],
     },
   },
-  {
-    name: 'send_drive_image',
-    description: 'Busca una imagen en la carpeta de Drive del bot y la manda al cliente de WhatsApp. Usá esto cuando el cliente pida ver un producto específico. Requiere que el bot tenga Google Drive conectado.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        botId: { type: 'string' },
-        fileId: { type: 'string', description: 'ID del archivo en Drive' },
-        fileName: { type: 'string' },
-        caption: { type: 'string', description: 'Texto que acompaña la imagen' },
-        clientPhone: { type: 'string', description: 'Número del cliente con prefijo whatsapp:' },
-      },
-      required: ['botId', 'fileId', 'caption', 'clientPhone'],
-    },
-  },
+  // La tool send_drive_image vivia aca. Se retiro: Google Drive dejo de
+  // ofrecerse porque su verificacion no esta aprobada, y no hay forma de que un
+  // usuario conecte una carpeta. Ofrecersela al modelo solo lo llevaba a
+  // proponerle al dueño una funcion que no puede activar. El envio de imagenes
+  // ahora se hace con las que el dueño sube al panel (tool enviar_imagen del
+  // agente tenant). El backend de Drive queda intacto por si se retoma.
   {
     name: 'leer_conversaciones_del_bot',
     description:
@@ -400,13 +389,6 @@ const toolInputSchemas = {
     url: z.string().url().max(500),
     botId: z.string().min(1),
   }),
-  send_drive_image: z.object({
-    botId: z.string().min(1),
-    fileId: z.string().min(1).max(200),
-    fileName: z.string().max(200).optional(),
-    caption: z.string().min(1).max(1000),
-    clientPhone: z.string().min(5).max(30),
-  }),
   crear_ticket_soporte: z.object({
     category: z.enum(['CONSULTA', 'RECLAMO', 'INTEGRACION', 'BOT_MAL_RESPONDE', 'FACTURACION', 'OTRO']),
     subject: z.string().min(5).max(120),
@@ -470,7 +452,7 @@ async function getOwnedBot(botId: string, userId: string) {
 
 /** Componente de Generative UI que el frontend renderiza en el chat */
 interface GenUIComponent {
-  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config' | 'support_ticket';
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'notification_config' | 'support_ticket';
   title: string;
   description: string;
   data: Record<string, unknown>;
@@ -945,41 +927,6 @@ async function executeToolCall(
           undoPayload: { botId: bot.id, documentId: doc.id },
         },
       };
-    }
-
-    case 'send_drive_image': {
-      const input = parsed.data as z.infer<typeof toolInputSchemas.send_drive_image>;
-      const bot = await getOwnedBot(input.botId, userId);
-
-      const connection = await prisma.driveConnection.findUnique({ where: { botId: bot.id } });
-      if (!connection?.isActive) {
-        return { result: { sent: false, reason: 'Este bot no tiene Google Drive conectado. Se configura desde el panel del bot.' } };
-      }
-      if (!isTwilioConfigured()) {
-        return { result: { sent: false, reason: 'Twilio no está configurado en el servidor.' } };
-      }
-      if (!isCloudinaryConfigured()) {
-        return { result: { sent: false, reason: 'Cloudinary no está configurado (necesario para hospedar la imagen).' } };
-      }
-
-      // Solo se puede mandar a clientes con conversacion existente en este bot
-      const to = input.clientPhone.startsWith('whatsapp:') ? input.clientPhone : `whatsapp:${input.clientPhone}`;
-      const conversation = await prisma.conversation.findFirst({
-        where: { botId: bot.id, channelId: to },
-      });
-      if (!conversation) {
-        return { result: { sent: false, reason: `No hay ninguna conversación de este bot con ${to}. Solo se pueden mandar imágenes a clientes existentes.` } };
-      }
-
-      const accessToken = await getValidAccessToken(connection);
-      const { data, mimeType } = await downloadFileAsBase64(accessToken, input.fileId);
-      if (!mimeType.startsWith('image/')) {
-        return { result: { sent: false, reason: 'El archivo de Drive no es una imagen.' } };
-      }
-
-      await sendImageMessage(to, data, mimeType, input.caption);
-
-      return { result: { sent: true, file: input.fileName ?? input.fileId, to } };
     }
 
     case 'leer_conversaciones_del_bot': {

@@ -62,9 +62,18 @@ const SECCIONES: LegalSection[] = [
         </p>
         <L>
           <Li><T>Free</T> — sin costo. 1 bot, 3 documentos, 100 mensajes por mes, sin WhatsApp.</Li>
-          <Li><T>Básico</T> — Gs. 150.000. 1 bot, 10 documentos por bot, 1.000 mensajes por mes, con WhatsApp.</Li>
-          <Li><T>Profesional</T> — Gs. 350.000. 5 bots, 50 documentos por bot, 4.000 mensajes por mes.</Li>
-          <Li><T>Agencia</T> — Gs. 750.000. Bots y documentos ilimitados, 10.000 mensajes por mes.</Li>
+          <Li>
+            <T>Básico</T> — Gs. 150.000. 1 bot, 10 documentos por bot, 1.000 mensajes por mes, con
+            WhatsApp, hasta 8 imágenes por bot y encuestas de satisfacción.
+          </Li>
+          <Li>
+            <T>Profesional</T> — Gs. 350.000. 5 bots, 50 documentos por bot, 4.000 mensajes por mes,
+            hasta 30 imágenes por bot e informe semanal de cada bot.
+          </Li>
+          <Li>
+            <T>Agencia</T> — Gs. 750.000. Bots, documentos e imágenes ilimitados, 10.000 mensajes
+            por mes e informe consolidado que compara todos tus bots.
+          </Li>
         </L>
         <p className="pt-2">
           El asistente del panel también tiene un cupo diario y mensual según el plan, que podés ver

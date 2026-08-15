@@ -737,6 +737,12 @@ export const api = {
     quota: () => request<AssistantQuota>('/api/v1/assistant/dashboard/quota'),
   },
 
+  /**
+   * Google Drive. NINGUNA pantalla llama a estos métodos hoy: la integración se
+   * retiró de la vista del usuario porque su verificación ante Google no está
+   * aprobada. Se dejan (igual que el backend) para poder retomarla sin
+   * reescribir el cliente. No enlazar desde ningún botón hasta entonces.
+   */
   drive: {
     status: (botId: string) =>
       request<{ connected: boolean; folderName: string | null; since: string | null }>(

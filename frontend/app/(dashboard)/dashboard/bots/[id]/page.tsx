@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, Bot, FileText, HardDrive, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { ArrowLeft, Bot, FileText, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
 // Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -100,122 +100,12 @@ const updateSchema = z.object({
 });
 type UpdateData = z.infer<typeof updateSchema>;
 
-// ─── Sección Google Drive (tab Configuración) ─────────────────────────────────
-
-function DriveSection({ botId }: { botId: string }) {
-  const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
-  const [folderName, setFolderName] = useState('catálogo');
-  const [working, setWorking] = useState(false);
-
-  useEffect(() => {
-    api.drive
-      .status(botId)
-      .then((s) => {
-        setConnected(s.connected);
-        if (s.folderName) setFolderName(s.folderName);
-      })
-      .catch(() => { /* la sección degrada a "no conectado" */ })
-      .finally(() => setLoading(false));
-  }, [botId]);
-
-  async function handleConnect() {
-    setWorking(true);
-    try {
-      const { authUrl } = await api.drive.authorize(botId);
-      window.location.href = authUrl;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo iniciar la conexión con Google');
-      setWorking(false);
-    }
-  }
-
-  async function handleSaveFolder() {
-    setWorking(true);
-    try {
-      const res = await api.drive.updateFolder(botId, folderName.trim());
-      toast.success(`Carpeta actualizada: ${res.files} archivo${res.files === 1 ? '' : 's'} encontrados`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo cambiar la carpeta');
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  async function handleDisconnect() {
-    setWorking(true);
-    try {
-      await api.drive.disconnect(botId);
-      setConnected(false);
-      toast.success('Google Drive desconectado');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo desconectar');
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  return (
-    <Card className="max-w-xl">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <HardDrive className="h-4 w-4 text-cyan-400" />
-          Google Drive
-        </CardTitle>
-        <CardDescription>
-          Conectá una carpeta con fotos de tus productos y el bot las manda solo cuando un cliente las pide
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {loading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : !connected ? (
-          <Button onClick={handleConnect} disabled={working} className="gap-2">
-            {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDrive className="h-4 w-4" />}
-            Conectar Google Drive
-          </Button>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <Badge variant="success" className="text-[10px]">Conectado</Badge>
-              <span className="text-xs text-muted-foreground">Carpeta: {folderName}</span>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="drive-folder">Nombre de la carpeta en tu Drive</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="drive-folder"
-                  value={folderName}
-                  onChange={(e) => setFolderName(e.target.value)}
-                  placeholder="catálogo"
-                />
-                <Button
-                  variant="outline"
-                  onClick={handleSaveFolder}
-                  disabled={working || folderName.trim().length === 0}
-                >
-                  {working ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar'}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                El bot busca las imágenes dentro de esta carpeta de tu Drive
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={handleDisconnect}
-              disabled={working}
-            >
-              Desconectar Drive
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+// La sección de Google Drive vivía acá. Se retiró de la vista: la integración
+// exige una verificación de Google que todavía no está aprobada, así que
+// ofrecer el botón solo llevaba a una pantalla de permisos que falla. El
+// backend (routes/drive.ts, services/googleDrive.ts, el modelo DriveConnection
+// y la tool buscar_archivos_drive) queda intacto para poder retomarlo; lo único
+// que se sacó es la puerta de entrada del usuario.
 
 /** Encuesta de satisfacción al cliente final. Disponible desde el plan Básico. */
 function NpsCard({
@@ -322,21 +212,6 @@ export default function BotDetailPage() {
       .catch(() => { toast.error('Error al cargar el bot'); router.push('/dashboard'); })
       .finally(() => setLoadingBot(false));
   }, [id]);
-
-  // Vuelta del OAuth de Google Drive: toast + abrir el tab Configuración
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const drive = params.get('drive');
-    if (!drive) return;
-    if (drive === 'connected') {
-      toast.success('Google Drive conectado exitosamente');
-      setActiveTab('config');
-    } else if (drive === 'error') {
-      toast.error('No se pudo conectar Google Drive. Intentá de nuevo.');
-    }
-    window.history.replaceState({}, '', window.location.pathname);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Poll docs every 5s while any is PENDING or PROCESSING
   useEffect(() => {
@@ -575,7 +450,6 @@ export default function BotDetailPage() {
           </div>
 
           <div className="mt-4">
-            <DriveSection botId={id} />
           </div>
         </TabsContent>
 

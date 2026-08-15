@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, IdCard, Loader2, ShieldCheck, Zap } from 'lucide-react';
+import { Check, IdCard, Loader2, ShieldCheck, Sparkles, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,54 +19,107 @@ import { useAuthStore } from '@/lib/store';
 
 type PlanPago = 'STARTER' | 'PRO' | 'AGENCY';
 
-const PLANS = [
+/**
+ * Beneficios por plan.
+ *
+ * FUENTE DE VERDAD: backend/src/middleware/planLimits.ts (LIMITS). Los números
+ * de acá son un espejo de ese archivo y tienen que moverse juntos — el frontend
+ * no puede importar del backend, así que la sincronía es manual. Si tocás un
+ * límite allá, actualizá esta lista.
+ *
+ * `nuevo: true` marca lo que NO trae el plan anterior. Es lo que hace visible
+ * por qué conviene pagar más, en vez de dejar cuatro listas parecidas.
+ */
+interface Beneficio {
+  texto: string;
+  nuevo?: boolean;
+}
+
+const PLANS: Array<{
+  id: 'FREE' | 'STARTER' | 'PRO' | 'AGENCY';
+  name: string;
+  priceGs: number;
+  priceUsd: number;
+  /** Una línea que resume para quién es el plan */
+  para: string;
+  features: Beneficio[];
+  nota?: string;
+  highlight: boolean;
+  payPlan: 'STARTER' | 'PRO' | 'AGENCY' | null;
+}> = [
   {
-    id: 'FREE' as const,
+    id: 'FREE',
     name: 'Free',
     priceGs: 0,
     priceUsd: 0,
-    bots: '1 bot',
-    docs: '3 documentos',
-    msgs: '100 mensajes/mes',
-    wa: false,
+    para: 'Para probar cómo responde tu bot',
+    features: [
+      { texto: '1 bot' },
+      { texto: '100 mensajes por mes' },
+      { texto: '3 documentos de entrenamiento' },
+      { texto: '25 mensajes por día en el Chat de prueba' },
+      { texto: 'Asistente de configuración: 5 mensajes por día' },
+    ],
+    nota: 'No incluye WhatsApp: tu bot responde solo en el Chat de prueba del panel.',
     highlight: false,
     payPlan: null,
   },
   {
-    id: 'STARTER' as const,
+    id: 'STARTER',
     name: 'Básico',
     priceGs: 150000,
     priceUsd: 20,
-    bots: '1 bot',
-    docs: '10 documentos',
-    msgs: '1.000 mensajes/mes',
-    wa: true,
+    para: 'Para un negocio que ya quiere atender por WhatsApp',
+    features: [
+      { texto: 'Conexión a WhatsApp Business', nuevo: true },
+      { texto: 'Hasta 8 imágenes que tu bot le manda a los clientes', nuevo: true },
+      { texto: 'Encuestas de satisfacción a tus clientes', nuevo: true },
+      { texto: '1.000 mensajes por mes' },
+      { texto: '1 bot' },
+      { texto: '10 documentos de entrenamiento' },
+      { texto: 'Asistente de configuración: 15 mensajes por día' },
+    ],
     highlight: false,
-    payPlan: 'STARTER' as const,
+    payPlan: 'STARTER',
   },
   {
-    id: 'PRO' as const,
+    id: 'PRO',
     name: 'Profesional',
     priceGs: 350000,
     priceUsd: 47,
-    bots: '5 bots',
-    docs: '50 documentos',
-    msgs: '4.000 mensajes/mes',
-    wa: true,
+    para: 'Para varios locales, marcas o líneas de negocio',
+    features: [
+      { texto: 'Informe semanal automático de cada uno de tus bots', nuevo: true },
+      { texto: 'Hasta 5 bots', nuevo: true },
+      { texto: '4.000 mensajes por mes' },
+      { texto: 'Hasta 30 imágenes por bot' },
+      { texto: '50 documentos por bot' },
+      { texto: 'Conexión a WhatsApp Business' },
+      { texto: 'Encuestas de satisfacción a tus clientes' },
+      { texto: 'Asistente de configuración: 40 mensajes por día' },
+    ],
     highlight: true,
-    payPlan: 'PRO' as const,
+    payPlan: 'PRO',
   },
   {
-    id: 'AGENCY' as const,
+    id: 'AGENCY',
     name: 'Agencia',
     priceGs: 750000,
     priceUsd: 99,
-    bots: 'Bots ilimitados',
-    docs: 'Docs ilimitados',
-    msgs: '10.000 mensajes/mes',
-    wa: true,
+    para: 'Para quien maneja los bots de varios clientes',
+    features: [
+      { texto: 'Informe consolidado que compara todos tus bots entre sí', nuevo: true },
+      { texto: 'Bots ilimitados', nuevo: true },
+      { texto: 'Documentos e imágenes sin límite', nuevo: true },
+      { texto: '10.000 mensajes por mes' },
+      { texto: 'Informe semanal de cada bot' },
+      { texto: 'Conexión a WhatsApp Business' },
+      { texto: 'Encuestas de satisfacción a tus clientes' },
+      { texto: 'Asistente de configuración: 100 mensajes por día' },
+    ],
+    nota: 'El informe consolidado rankea tus bots por volumen y satisfacción, y te dice cuál necesita atención primero. Solo en Agencia.',
     highlight: false,
-    payPlan: 'AGENCY' as const,
+    payPlan: 'AGENCY',
   },
 ];
 
@@ -154,6 +207,9 @@ export default function PricingPage() {
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         {PLANS.map((plan) => {
           const isCurrent = user?.plan === plan.id;
+          // Local para que TS lo estreche: dentro del map, plan.payPlan sigue
+          // siendo la unión con null aunque el ternario lo descarte
+          const payPlan = plan.payPlan;
           return (
             <div
               key={plan.id}
@@ -182,31 +238,38 @@ export default function PricingPage() {
                     </>
                   )}
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">{plan.para}</p>
               </div>
 
-              <ul className="mb-6 flex-1 space-y-2 text-sm text-muted-foreground">
-                {[plan.bots, plan.docs, plan.msgs, ...(plan.wa ? ['WhatsApp incluido'] : [])].map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 shrink-0 text-green-500" />
-                    {f}
+              <ul className="mb-6 flex-1 space-y-2 text-sm">
+                {plan.features.map((f) => (
+                  <li key={f.texto} className="flex items-start gap-2">
+                    {/* Lo que suma respecto del plan anterior se destaca: es lo
+                        que responde "por qué pagar más" de un vistazo */}
+                    {f.nuevo ? (
+                      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    ) : (
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
+                    )}
+                    <span className={f.nuevo ? 'font-medium text-foreground' : 'text-muted-foreground'}>
+                      {f.texto}
+                    </span>
                   </li>
                 ))}
               </ul>
 
-              {plan.id === 'FREE' && (
-                <p className="mb-4 text-xs text-muted-foreground">
-                  Probá tu bot en el Chat de prueba antes de conectar WhatsApp.
-                </p>
+              {plan.nota && (
+                <p className="mb-4 text-xs text-muted-foreground">{plan.nota}</p>
               )}
 
-              {plan.payPlan ? (
+              {payPlan ? (
                 <Button
                   variant={plan.highlight ? 'default' : 'outline'}
                   className="w-full"
                   disabled={isCurrent || loading !== null}
-                  onClick={() => handleUpgrade(plan.payPlan)}
+                  onClick={() => handleUpgrade(payPlan)}
                 >
-                  {loading === plan.payPlan && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {loading === payPlan && <Loader2 className="h-4 w-4 animate-spin" />}
                   {isCurrent ? 'Plan actual' : 'Contratar'}
                 </Button>
               ) : (

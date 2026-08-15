@@ -163,19 +163,40 @@ const RUBRO_CARDS = [
   { icon: GraduationCap, title: 'Academias', desc: 'Inscripciones, horarios y dudas resueltas' },
 ];
 
+/**
+ * Espejo de backend/src/middleware/planLimits.ts (LIMITS), igual que la tabla
+ * de /pricing. Si cambia un limite alla, hay que actualizar los dos lugares.
+ *
+ * Nada de esta lista puede prometer algo que el codigo no cumpla hoy: aca
+ * figuraban "Acceso a API" y "Soporte prioritario" para Agencia, y ninguna de
+ * las dos existe (no hay API publica, y la prioridad de un ticket la elige el
+ * usuario al abrirlo, no su plan). Tambien decia "Panel de estadisticas" como
+ * beneficio de Profesional cuando lo tienen todos los planes.
+ */
 const PLANES = [
   {
     name: 'FREE',
     price: 'Gs. 0',
     highlight: false,
-    features: ['1 bot activo', '100 mensajes por mes', '3 documentos', 'Probá tu bot en el Chat de prueba'],
+    features: [
+      '1 bot',
+      '100 mensajes por mes',
+      '3 documentos de entrenamiento',
+      'Chat de prueba en el panel',
+    ],
     cta: 'Empezar gratis',
   },
   {
     name: 'BASICO',
     price: 'Gs. 150.000',
     highlight: false,
-    features: ['1 bot activo', '1.000 mensajes por mes', '10 documentos por bot', 'WhatsApp incluido'],
+    features: [
+      'Conexion a WhatsApp Business',
+      'Hasta 8 imagenes que tu bot envia',
+      'Encuestas de satisfaccion',
+      '1.000 mensajes por mes',
+      '10 documentos de entrenamiento',
+    ],
     cta: 'Elegir Basico',
   },
   {
@@ -183,11 +204,12 @@ const PLANES = [
     price: 'Gs. 350.000',
     highlight: true,
     features: [
-      '5 bots activos',
+      'Informe semanal de cada bot',
+      'Hasta 5 bots',
       '4.000 mensajes por mes',
+      'Hasta 30 imagenes por bot',
       '50 documentos por bot',
-      'WhatsApp + Chat web',
-      'Panel de estadisticas',
+      'Todo lo del plan Basico',
     ],
     cta: 'Elegir Profesional',
   },
@@ -196,12 +218,11 @@ const PLANES = [
     price: 'Gs. 750.000',
     highlight: false,
     features: [
+      'Informe consolidado entre todos tus bots',
       'Bots ilimitados',
+      'Documentos e imagenes sin limite',
       '10.000 mensajes por mes',
-      'Documentos ilimitados',
       'Todo lo del plan Profesional',
-      'Soporte prioritario',
-      'Acceso a API',
     ],
     cta: 'Elegir Agencia',
   },

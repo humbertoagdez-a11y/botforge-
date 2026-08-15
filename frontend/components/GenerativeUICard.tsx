@@ -1,9 +1,9 @@
 'use client';
 
-import { Settings, Power, FileText, HardDrive, Bell, LifeBuoy } from 'lucide-react';
+import { Settings, Power, FileText, Bell, LifeBuoy } from 'lucide-react';
 
 export interface UIComponent {
-  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'drive_status' | 'notification_config' | 'support_ticket';
+  kind: 'config_change' | 'instructivo_preview' | 'bot_status' | 'notification_config' | 'support_ticket';
   title: string;
   description: string;
   data: Record<string, unknown>;
@@ -27,7 +27,6 @@ function DynamicIcon({ kind }: { kind: UIComponent['kind'] }) {
     config_change: Settings,
     bot_status: Power,
     instructivo_preview: FileText,
-    drive_status: HardDrive,
     notification_config: Bell,
     support_ticket: LifeBuoy,
   }[kind] ?? Settings;

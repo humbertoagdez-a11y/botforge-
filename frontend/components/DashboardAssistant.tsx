@@ -50,7 +50,6 @@ const TOOL_LABELS: Record<string, string> = {
   request_plan_upgrade: 'Preparando upgrade de plan...',
   search_web: 'Buscando en internet...',
   scrape_website: 'Leyendo el sitio web...',
-  send_drive_image: 'Enviando imagen de Drive...',
 };
 
 interface ExecStep {
