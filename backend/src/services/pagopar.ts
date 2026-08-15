@@ -70,6 +70,8 @@ export interface PedidoConsultado {
   monto?: string | number;
   numero_pedido?: string | number;
   forma_pago?: string;
+  /** Comprobante que emite Pagopar al acreditar; null hasta que se paga */
+  numero_comprobante_interno?: string | null;
   fecha_pago?: string | null;
   cancelado?: boolean;
 }

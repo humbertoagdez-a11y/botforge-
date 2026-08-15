@@ -124,6 +124,14 @@ model PagoparOrder {
   idPedidoComercio String    @unique
   pagado           Boolean   @default(false)
   fechaPago        DateTime?
+  /// Medio con el que efectivamente pagó (QR, transferencia, tarjeta...).
+  /// Lo dice la notificacion; se guarda para no depender de volver a
+  /// consultarle a Pagopar cada vez que alguien mira el pedido.
+  formaPago        String?
+  /// Numero de comprobante que emite Pagopar al acreditar el pago. Es el dato
+  /// con el que se concilia un cobro ante un reclamo, asi que se persiste en
+  /// vez de quedar solo en el log del webhook.
+  numeroComprobante String?
   createdAt        DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

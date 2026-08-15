@@ -95,17 +95,45 @@ function extraerNotificaciones(raw: unknown): NotificacionPagopar[] {
 
   const desdeObjeto = (obj: Record<string, unknown>): NotificacionPagopar[] => {
     const r = obj.resultado;
-    // form-urlencoded deja `resultado` como el JSON sin parsear
+
     if (typeof r === 'string') {
+      // Ojo: `resultado` es ambiguo. Como envoltorio de form-urlencoded trae el
+      // JSON de las notificaciones, pero DENTRO de una notificación es el texto
+      // de estado ("Pedido encontrado"). Solo se trata como envoltorio si
+      // realmente parsea a objeto; si no, se sigue de largo y se evalúa el
+      // objeto como la notificación misma.
       try {
-        return comoArray(JSON.parse(r));
+        const parsed: unknown = JSON.parse(r);
+        if (parsed && typeof parsed === 'object') return comoArray(parsed);
       } catch {
-        return [];
+        // Era el texto de estado, no un JSON
       }
+    } else if (r !== undefined) {
+      const filas = comoArray(r);
+      if (filas.length > 0) return filas;
     }
-    if (r !== undefined) return comoArray(r);
+
     // Sin envoltorio: la notificación es el objeto mismo
     return obj.hash_pedido ? [obj as NotificacionPagopar] : [];
+  };
+
+  /**
+   * form-urlencoded con arrays anidados: `resultado[0][hash_pedido]=abc...`
+   * Es como PHP serializa un array por defecto, así que es una forma probable
+   * de que llegue. Los valores quedan todos como string —incluido `pagado`,
+   * que llega "true"— y de eso ya se ocupa esPagoConfirmado.
+   */
+  const desdeFormAnidado = (texto: string): NotificacionPagopar[] => {
+    const porIndice = new Map<string, Record<string, unknown>>();
+    for (const [clave, valor] of new URLSearchParams(texto)) {
+      const m = /^resultado\[(\d*)\]\[([^\]]+)\]$/.exec(clave);
+      if (!m) continue;
+      const idx = m[1] || '0';
+      const fila = porIndice.get(idx) ?? {};
+      fila[m[2]] = valor;
+      porIndice.set(idx, fila);
+    }
+    return [...porIndice.values()] as NotificacionPagopar[];
   };
 
   if (raw && typeof raw === 'object' && !Buffer.isBuffer(raw)) {
@@ -119,7 +147,8 @@ function extraerNotificaciones(raw: unknown): NotificacionPagopar[] {
   try {
     const parsed: unknown = JSON.parse(texto);
     if (parsed && typeof parsed === 'object') {
-      return desdeObjeto(parsed as Record<string, unknown>);
+      const filas = desdeObjeto(parsed as Record<string, unknown>);
+      if (filas.length > 0) return filas;
     }
   } catch {
     // No era JSON: se intenta como form-urlencoded
@@ -128,12 +157,15 @@ function extraerNotificaciones(raw: unknown): NotificacionPagopar[] {
   try {
     const form = new URLSearchParams(texto);
     const campo = form.get('resultado');
-    if (campo) return comoArray(JSON.parse(campo));
+    if (campo) {
+      const filas = comoArray(JSON.parse(campo));
+      if (filas.length > 0) return filas;
+    }
   } catch {
-    // Tampoco era urlencoded válido
+    // `resultado` no traía JSON; puede ser la forma anidada
   }
 
-  return [];
+  return desdeFormAnidado(texto);
 }
 
 /** Campos de la notificación que traen datos personales del comprador */
@@ -211,12 +243,21 @@ async function activarPlan(
   order: { id: string; userId: string; plan: string; idPedidoComercio: string },
   fechaPago: Date,
   origen: 'webhook' | 'consulta',
+  /** Datos del cobro que informa Pagopar. Se guardan para conciliar después. */
+  cobro: { formaPago?: string | null; numeroComprobante?: string | null } = {},
 ): Promise<boolean> {
   const validaHasta = new Date(Date.now() + PLAN_DURACION_MS);
 
   const marcado = await prisma.pagoparOrder.updateMany({
     where: { id: order.id, pagado: false },
-    data: { pagado: true, fechaPago },
+    data: {
+      pagado: true,
+      fechaPago,
+      // Solo se escriben si vinieron: un undefined dejaría la columna intacta,
+      // pero un null explícito borraría lo que ya se había guardado
+      ...(cobro.formaPago ? { formaPago: cobro.formaPago } : {}),
+      ...(cobro.numeroComprobante ? { numeroComprobante: cobro.numeroComprobante } : {}),
+    },
   });
 
   if (marcado.count === 0) {
@@ -275,10 +316,21 @@ router.post('/webhook', async (req: Request, res: Response) => {
       const fechaPago = notif!.fecha_pago ? new Date(String(notif!.fecha_pago)) : new Date();
       // Fecha inválida (Pagopar la manda como "YYYY-MM-DD HH:mm:ss", que algunos
       // motores no parsean): no puede impedir que se active el plan
+      const texto = (campo: unknown): string | null =>
+        typeof campo === 'string' && campo.trim() ? campo.trim()
+          : typeof campo === 'number' ? String(campo)
+            : null;
+
       await activarPlan(
         order,
         Number.isNaN(fechaPago.getTime()) ? new Date() : fechaPago,
         'webhook',
+        {
+          formaPago: texto(notif!.forma_pago),
+          // Pagopar lo manda como string, pero según el medio puede venir
+          // numérico; se normaliza a texto para no perder ceros a la izquierda
+          numeroComprobante: texto(notif!.numero_comprobante_interno),
+        },
       );
     }
   } catch (err) {
@@ -327,6 +379,10 @@ router.get(
           order,
           Number.isNaN(fecha.getTime()) ? new Date() : fecha,
           'consulta',
+          {
+            formaPago: remoto.forma_pago ?? null,
+            numeroComprobante: remoto.numero_comprobante_interno ?? null,
+          },
         );
         pagado = true;
       }
@@ -338,7 +394,10 @@ router.get(
           pagado,
           confirmadoPorWebhook: order.pagado,
           fechaPago: order.fechaPago,
-          formaPago: remoto?.forma_pago ?? null,
+          // Lo guardado manda; si el pedido es viejo y no tiene nada, se cae a
+          // lo que responda Pagopar en esta consulta
+          formaPago: order.formaPago ?? remoto?.forma_pago ?? null,
+          numeroComprobante: order.numeroComprobante ?? remoto?.numero_comprobante_interno ?? null,
           cancelado: remoto?.cancelado ?? false,
         },
         error: null,
