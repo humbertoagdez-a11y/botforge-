@@ -1,3 +1,12 @@
+> **DOCUMENTO HISTÓRICO — 2026-07-04. NO ES LA REFERENCIA ACTUAL.**
+>
+> Quedó desactualizado: es anterior a Pagopar, verificación de email, tickets,
+> prompt caching, NPS, informes semanales e imágenes. Sus límites por plan y su
+> lista de pendientes ya no coinciden con el código.
+>
+> **La documentación vigente está en [`docs/`](docs/00-INDICE.md).**
+> Este archivo se conserva solo como registro de cómo era el sistema en julio.
+
 # ARCHITECTURE.md — BotForge
 
 Documento maestro de contexto. Actualizar al final de cada sesión.
