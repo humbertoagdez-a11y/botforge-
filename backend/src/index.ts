@@ -105,8 +105,24 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Momento en que arrancó ESTE proceso. Junto con el commit alcanza para saber
+// si un deploy entró: si el commit es el que esperás y startedAt es posterior
+// al push, el código nuevo está corriendo.
+const STARTED_AT = new Date().toISOString();
+
 app.get('/health', (_req, res) => {
-  res.json({ data: { status: 'ok', timestamp: new Date().toISOString() }, error: null, meta: null });
+  res.json({
+    data: {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      startedAt: STARTED_AT,
+      // Railway las inyecta en el build; vacías en local
+      commit: env.RAILWAY_GIT_COMMIT_SHA ? env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7) : 'local',
+      commitMessage: env.RAILWAY_GIT_COMMIT_MESSAGE || null,
+    },
+    error: null,
+    meta: null,
+  });
 });
 
 // Rutas autenticadas

@@ -67,6 +67,12 @@ const envSchema = z.object({
   // En Railway DEBE ser https://botforge-production-b16f.up.railway.app
   BACKEND_URL: z.string().default('http://localhost:3001'),
   UPLOADS_DIR: z.string().default('./uploads'),
+  // Las inyecta Railway sola en cada build. Se exponen en /health para poder
+  // confirmar QUE COMMIT esta corriendo sin entrar al dashboard: sin esto, la
+  // unica forma de saber si un fix ya esta desplegado es mirar la consola de
+  // Railway y compararla a ojo con el git log.
+  RAILWAY_GIT_COMMIT_SHA: z.string().optional().default(''),
+  RAILWAY_GIT_COMMIT_MESSAGE: z.string().optional().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);
