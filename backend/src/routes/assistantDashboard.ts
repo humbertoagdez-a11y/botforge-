@@ -9,7 +9,7 @@ import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { LIMITS, checkAssistantLimit, incrementAssistantUsage } from '../middleware/planLimits';
+import { LIMITS, checkAssistantLimit, effectivePlan, incrementAssistantUsage } from '../middleware/planLimits';
 import { uploadRawToCloudinary } from '../config/cloudinary';
 import { documentQueue } from '../lib/queue';
 import { deleteChunksByIds, querySimilarChunks } from '../services/pinecone';
@@ -556,9 +556,13 @@ async function executeToolCall(
       // Limite de documentos del plan
       const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
       const docCount = await prisma.document.count({ where: { botId: bot.id } });
-      const limit = LIMITS[user.plan].docsPerBot;
+      // effectivePlan y no user.plan: un plan pago vencido vale FREE, igual que
+      // en el resto de la plataforma. Sin esto el asistente era un desvio para
+      // seguir usando los limites del plan que ya no se esta pagando.
+      const planVigente = effectivePlan(user);
+      const limit = LIMITS[planVigente].docsPerBot;
       if (docCount >= limit) {
-        throw new Error(`Límite de documentos alcanzado (${docCount}/${limit} del plan ${user.plan}). Eliminá alguno o mejorá el plan.`);
+        throw new Error(`Límite de documentos alcanzado (${docCount}/${limit} del plan ${planVigente}). Eliminá alguno o mejorá el plan.`);
       }
 
       const safeName = path.basename(input.filename).replace(/[^a-zA-Z0-9._-]/g, '-');
@@ -661,7 +665,7 @@ async function executeToolCall(
 
       const [user, totalBots, totalConversations, readyDocs, messagesToday, monthlyMessages, totalMessages] =
         await Promise.all([
-          prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { plan: true, messagesUsedThisMonth: true } }),
+          prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { plan: true, planExpiresAt: true, messagesUsedThisMonth: true } }),
           prisma.bot.count({ where: { userId } }),
           prisma.conversation.count({ where: { bot: { userId } } }),
           prisma.document.count({ where: { bot: { userId }, status: 'READY' } }),
@@ -670,10 +674,11 @@ async function executeToolCall(
           prisma.message.count({ where: { role: 'ASSISTANT', conversation: { bot: { userId } } } }),
         ]);
 
-      const limits = LIMITS[user.plan];
+      const planVigente = effectivePlan(user);
+      const limits = LIMITS[planVigente];
       return {
         result: {
-          plan: user.plan,
+          plan: planVigente,
           monthlyLimit: limits.monthlyMessages,
           messagesUsedThisMonth: user.messagesUsedThisMonth,
           messagesToday,
@@ -763,9 +768,10 @@ async function executeToolCall(
         where: { id: userId },
         include: { _count: { select: { bots: true } } },
       });
-      const limit = LIMITS[user.plan].bots;
+      const planVigente = effectivePlan(user);
+      const limit = LIMITS[planVigente].bots;
       if (user._count.bots >= limit) {
-        throw new Error(`Límite de bots alcanzado (${user._count.bots}/${limit} del plan ${user.plan}). Mejorá el plan para crear más.`);
+        throw new Error(`Límite de bots alcanzado (${user._count.bots}/${limit} del plan ${planVigente}). Mejorá el plan para crear más.`);
       }
       const bot = await prisma.bot.create({
         data: { id: uuidv4(), userId, name: input.name, language: input.language, personality: input.personality },
@@ -867,9 +873,13 @@ async function executeToolCall(
       // Limite de documentos del plan (mismo criterio que upload_instructivo_text)
       const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
       const docCount = await prisma.document.count({ where: { botId: bot.id } });
-      const limit = LIMITS[user.plan].docsPerBot;
+      // effectivePlan y no user.plan: un plan pago vencido vale FREE, igual que
+      // en el resto de la plataforma. Sin esto el asistente era un desvio para
+      // seguir usando los limites del plan que ya no se esta pagando.
+      const planVigente = effectivePlan(user);
+      const limit = LIMITS[planVigente].docsPerBot;
       if (docCount >= limit) {
-        throw new Error(`Límite de documentos alcanzado (${docCount}/${limit} del plan ${user.plan}). Eliminá alguno o mejorá el plan.`);
+        throw new Error(`Límite de documentos alcanzado (${docCount}/${limit} del plan ${planVigente}). Eliminá alguno o mejorá el plan.`);
       }
 
       const content = await scrapeUrl(input.url);

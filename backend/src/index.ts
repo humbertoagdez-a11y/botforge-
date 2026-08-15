@@ -221,8 +221,39 @@ cron.schedule(
   { timezone: 'America/Asuncion' },
 );
 
+// ─── Guardas de proceso ───────────────────────────────────────────────────────
+// Desde Node 15 una promesa rechazada sin handler TERMINA el proceso. En un
+// servidor web eso significa que un `void algo()` que falla —una notificacion,
+// un email, un contador— tira abajo todas las requests en vuelo. Se loguea y se
+// sigue: el fallo puntual ya esta contenido en su propio flujo.
+process.on('unhandledRejection', (motivo) => {
+  console.error('[proceso] Promesa rechazada sin manejar:', motivo);
+});
+
+// Una excepcion sincronica sin capturar SI deja el proceso en estado indefinido:
+// se loguea y se sale para que Railway levante una instancia limpia.
+process.on('uncaughtException', (err) => {
+  console.error('[proceso] Excepción no capturada, reiniciando:', err);
+  process.exit(1);
+});
+
+/** Que integraciones quedaron activas segun las variables presentes */
+function resumenIntegraciones(): string {
+  const estado = (ok: boolean) => (ok ? 'OK' : 'sin configurar');
+  return [
+    `Meta WhatsApp: ${estado(Boolean(env.META_WHATSAPP_TOKEN && env.META_PHONE_NUMBER_ID))}`,
+    `Pagopar: ${estado(Boolean(env.PAGOPAR_PUBLIC_KEY && env.PAGOPAR_PRIVATE_KEY))}`,
+    `Cloudinary: ${estado(Boolean(env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY))}`,
+    `Resend (emails): ${estado(Boolean(env.RESEND_API_KEY))}`,
+    `Twilio: ${env.TWILIO_WHATSAPP_ENABLED ? 'activo' : 'apagado'}`,
+  ].join(' · ');
+}
+
 app.listen(env.PORT, () => {
   console.log(`BotForge backend en http://localhost:${env.PORT} [${env.NODE_ENV}]`);
+  // Sin esto, un despliegue al que le falta una clave se ve igual que uno sano
+  // hasta que un cliente toca la funcion que no anda
+  console.log(`[arranque] ${resumenIntegraciones()}`);
 });
 
 export default app;

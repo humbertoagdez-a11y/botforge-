@@ -231,7 +231,7 @@ export default function BotImages({ botId }: { botId: string }) {
 
       {/* ── Subir ─────────────────────────────────────────────────────────── */}
       <Dialog open={abierto} onOpenChange={(o) => (o ? setAbierto(true) : cerrar())}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="theme-dashboard max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Subir una imagen</DialogTitle>
             <DialogDescription>

@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
-import { LIMITS } from '../middleware/planLimits';
+import { LIMITS, effectivePlan } from '../middleware/planLimits';
 import { sendEmail } from './email';
 
 // Paraguay: UTC-4 como offset por defecto (según spec). El cron dispara a las
@@ -113,6 +113,7 @@ export async function generateDailySummaries(): Promise<number> {
       name: true,
       email: true,
       plan: true,
+      planExpiresAt: true,
       messagesUsedThisMonth: true,
       bots: { where: { isActive: true }, select: { id: true, name: true } },
     },
@@ -144,12 +145,15 @@ export async function generateDailySummaries(): Promise<number> {
       // Sin actividad hoy: no mandamos email (evita spam de "0 mensajes")
       if (totalMessagesToday === 0) continue;
 
+      // El plan vencido ya vale FREE para el enforcement: el email tiene que
+      // mostrar el mismo limite que se aplica, no el del plan que caduco
+      const planVigente = effectivePlan(user);
       const html = summaryEmailHtml({
         name: user.name,
         bots: botSummaries,
         monthlyUsed: user.messagesUsedThisMonth,
-        monthlyLimit: LIMITS[user.plan].monthlyMessages,
-        planLabel: PLAN_LABEL[user.plan] ?? user.plan,
+        monthlyLimit: LIMITS[planVigente].monthlyMessages,
+        planLabel: PLAN_LABEL[planVigente] ?? planVigente,
       });
 
       const ok = await sendEmail(user.email, 'Tu resumen de hoy en BotForge', html);

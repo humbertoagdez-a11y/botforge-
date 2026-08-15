@@ -325,7 +325,7 @@ function Rendimiento() {
                 <SelectTrigger className="h-9 w-full max-w-[280px] text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="theme-dashboard">
                   {semanas.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {rangoSemana(s.weekStart, s.weekEnd)}
@@ -364,7 +364,7 @@ function Rendimiento() {
 
       {/* ── Agregar conocimiento ─────────────────────────────────────────── */}
       <Dialog open={pregunta !== null} onOpenChange={(o) => !o && setPregunta(null)}>
-        <DialogContent>
+        <DialogContent className="theme-dashboard">
           <DialogHeader>
             <DialogTitle>Enseñale esto a tu bot</DialogTitle>
             <DialogDescription>
