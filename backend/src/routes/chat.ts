@@ -16,7 +16,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { checkMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
+import { assertTestChatLimit, incrementTestChatUsage } from '../middleware/planLimits';
 import { runTenantTurn } from '../services/tenantAgent';
 
 const router = Router({ mergeParams: true });
@@ -84,9 +84,14 @@ async function getHistory(conversationId: string, userMessage: string) {
 }
 
 // ─── POST /stream  (Server-Sent Events) ─────────────────────────────────────
-router.post('/stream', checkMessageLimit, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/stream', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { message, conversationId } = chatSchema.parse(req.body);
+
+    // Cupo propio del Chat de prueba. NO se toca monthlyMessages: probar el
+    // bot no le puede comer al dueño los mensajes que necesita para vender.
+    await assertTestChatLimit(req.user!.userId);
+
     const { bot, conversation } = await resolveConversation(
       req.params.botId,
       req.user!.userId,
@@ -137,7 +142,7 @@ router.post('/stream', checkMessageLimit, async (req: Request, res: Response, ne
             tokensUsed,
           },
         });
-        await incrementMessageUsage(req.user!.userId);
+        await incrementTestChatUsage(req.user!.userId);
         sendEvent({
           type: 'done',
           conversationId: conversation.id,

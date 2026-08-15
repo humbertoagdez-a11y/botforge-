@@ -10,6 +10,14 @@ export const LIMITS: Record<Plan, {
   whatsapp: boolean;
   assistantMonthly: number;
   assistantDaily: number;
+  /**
+   * Cupo del Chat de prueba del panel. Va aparte de monthlyMessages a
+   * proposito: el dueño probando su propio bot no le puede comer los mensajes
+   * que necesita para atender clientes. Igual lleva tope, porque cada prueba
+   * es una llamada a Anthropic que se paga.
+   */
+  testMonthly: number;
+  testDaily: number;
   /** Encuesta de satisfaccion a los clientes finales */
   nps: boolean;
   /**
@@ -27,10 +35,10 @@ export const LIMITS: Record<Plan, {
    */
   consolidatedReports: boolean;
 }> = {
-  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   nps: false, weeklyReports: false, consolidatedReports: false },
-  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  nps: true,  weeklyReports: false, consolidatedReports: false },
-  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  nps: true,  weeklyReports: true,  consolidatedReports: false },
-  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, nps: true,  weeklyReports: true,  consolidatedReports: true  },
+  FREE:    { bots: 1,         docsPerBot: 3,         monthlyMessages: 100,    whatsapp: false, assistantMonthly: 10,  assistantDaily: 5,   testMonthly: 60,   testDaily: 25,  nps: false, weeklyReports: false, consolidatedReports: false },
+  STARTER: { bots: 1,         docsPerBot: 10,        monthlyMessages: 1000,   whatsapp: true,  assistantMonthly: 100, assistantDaily: 15,  testMonthly: 300,  testDaily: 60,  nps: true,  weeklyReports: false, consolidatedReports: false },
+  PRO:     { bots: 5,         docsPerBot: 50,        monthlyMessages: 4000,   whatsapp: true,  assistantMonthly: 300, assistantDaily: 40,  testMonthly: 900,  testDaily: 150, nps: true,  weeklyReports: true,  consolidatedReports: false },
+  AGENCY:  { bots: Infinity,  docsPerBot: Infinity,  monthlyMessages: 10000,  whatsapp: true,  assistantMonthly: 800, assistantDaily: 100, testMonthly: 2500, testDaily: 400, nps: true,  weeklyReports: true,  consolidatedReports: true  },
 };
 
 export const PLAN_LIMIT_CODE = 'PLAN_LIMIT_EXCEEDED';
@@ -102,9 +110,11 @@ export async function incrementMessageUsage(userId: string): Promise<void> {
   }
 }
 
-// ─── Cupo del asistente de plataforma ─────────────────────────────────────────
-// El asistente llama a la API de Anthropic en cada mensaje: sin tope, un solo
-// usuario Free podria generar costo ilimitado. Cupo doble: mensual y diario.
+// ─── Cupos dobles (mensual + diario) ──────────────────────────────────────────
+// Los usan el asistente de plataforma y el Chat de prueba: los dos llaman a la
+// API de Anthropic en cada mensaje, asi que sin tope un solo usuario Free
+// podria generar costo ilimitado. La mecanica es identica en los dos, asi que
+// vive una sola vez y se parametriza con las columnas de cada uno.
 
 // El "dia" es el dia calendario de Paraguay (UTC-4, mismo criterio que
 // dailySummary): si se usara UTC, el cupo diario se renovaria a las 20:00
@@ -143,49 +153,72 @@ export interface AssistantQuota {
   plan: Plan;
 }
 
+/** Que columnas y que limites usa cada cupo doble */
+interface DefinicionCupo {
+  mes: 'assistantMsgsThisMonth' | 'testMsgsThisMonth';
+  dia: 'assistantMsgsToday' | 'testMsgsToday';
+  resetMes: 'assistantResetAt' | 'testResetAt';
+  resetDia: 'assistantDayResetAt' | 'testDayResetAt';
+  limiteMes: (l: (typeof LIMITS)[Plan]) => number;
+  limiteDia: (l: (typeof LIMITS)[Plan]) => number;
+}
+
+const CUPO_ASISTENTE: DefinicionCupo = {
+  mes: 'assistantMsgsThisMonth',
+  dia: 'assistantMsgsToday',
+  resetMes: 'assistantResetAt',
+  resetDia: 'assistantDayResetAt',
+  limiteMes: (l) => l.assistantMonthly,
+  limiteDia: (l) => l.assistantDaily,
+};
+
+const CUPO_CHAT_PRUEBA: DefinicionCupo = {
+  mes: 'testMsgsThisMonth',
+  dia: 'testMsgsToday',
+  resetMes: 'testResetAt',
+  resetDia: 'testDayResetAt',
+  limiteMes: (l) => l.testMonthly,
+  limiteDia: (l) => l.testDaily,
+};
+
 /**
- * Estado del cupo del asistente, reseteando contadores vencidos de paso.
+ * Estado de un cupo doble, reseteando contadores vencidos de paso.
  * Aplica el mismo criterio de plan vencido que el resto de los limites.
  */
-export async function checkAssistantLimit(userId: string): Promise<AssistantQuota> {
-  let user = await prisma.user.findUniqueOrThrow({
+async function checkCupoDoble(userId: string, cupo: DefinicionCupo): Promise<AssistantQuota> {
+  const campos = {
+    plan: true, planExpiresAt: true,
+    [cupo.mes]: true, [cupo.dia]: true,
+    [cupo.resetMes]: true, [cupo.resetDia]: true,
+  } as const;
+
+  type Fila = Record<string, unknown> & { plan: Plan; planExpiresAt: Date | null };
+  let user = (await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: {
-      plan: true,
-      planExpiresAt: true,
-      assistantMsgsThisMonth: true,
-      assistantMsgsToday: true,
-      assistantResetAt: true,
-      assistantDayResetAt: true,
-    },
-  });
+    select: campos,
+  })) as unknown as Fila;
 
   const now = new Date();
-  const monthStale = !isSameMonth(user.assistantResetAt, now);
-  const dayStale = pyDayKey(user.assistantDayResetAt) !== pyDayKey(now);
+  const monthStale = !isSameMonth(user[cupo.resetMes] as Date, now);
+  const dayStale = pyDayKey(user[cupo.resetDia] as Date) !== pyDayKey(now);
 
   if (monthStale || dayStale) {
-    user = await prisma.user.update({
+    user = (await prisma.user.update({
       where: { id: userId },
       data: {
-        ...(monthStale ? { assistantMsgsThisMonth: 0, assistantResetAt: now } : {}),
-        ...(dayStale ? { assistantMsgsToday: 0, assistantDayResetAt: now } : {}),
+        ...(monthStale ? { [cupo.mes]: 0, [cupo.resetMes]: now } : {}),
+        ...(dayStale ? { [cupo.dia]: 0, [cupo.resetDia]: now } : {}),
       },
-      select: {
-        plan: true,
-        planExpiresAt: true,
-        assistantMsgsThisMonth: true,
-        assistantMsgsToday: true,
-        assistantResetAt: true,
-        assistantDayResetAt: true,
-      },
-    });
+      select: campos,
+    })) as unknown as Fila;
   }
 
   const plan = effectivePlan(user);
   const limits = LIMITS[plan];
-  const remaining = Math.max(0, limits.assistantMonthly - user.assistantMsgsThisMonth);
-  const dailyRemaining = Math.max(0, limits.assistantDaily - user.assistantMsgsToday);
+  const limiteMes = cupo.limiteMes(limits);
+  const limiteDia = cupo.limiteDia(limits);
+  const remaining = Math.max(0, limiteMes - (user[cupo.mes] as number));
+  const dailyRemaining = Math.max(0, limiteDia - (user[cupo.dia] as number));
 
   // El mensual manda: si se agotaron los dos, lo que importa es cuando vuelve el mes
   const scope: AssistantQuota['scope'] =
@@ -196,29 +229,55 @@ export async function checkAssistantLimit(userId: string): Promise<AssistantQuot
     scope,
     remaining,
     dailyRemaining,
-    limit: limits.assistantMonthly,
-    dailyLimit: limits.assistantDaily,
+    limit: limiteMes,
+    dailyLimit: limiteDia,
     resetsAt: (scope === 'monthly' ? nextMonthStart() : nextPyMidnight()).toISOString(),
     plan,
   };
 }
 
 /**
- * Incrementa los dos contadores del asistente. Llamar SOLO despues de una
- * llamada exitosa a Anthropic; nunca rompe una respuesta ya generada.
+ * Incrementa los dos contadores de un cupo. Llamar SOLO despues de una llamada
+ * exitosa a Anthropic; nunca rompe una respuesta ya generada.
  */
-export async function incrementAssistantUsage(userId: string): Promise<void> {
+async function incrementarCupo(userId: string, cupo: DefinicionCupo, etiqueta: string): Promise<void> {
   try {
     await prisma.user.update({
       where: { id: userId },
-      data: {
-        assistantMsgsThisMonth: { increment: 1 },
-        assistantMsgsToday: { increment: 1 },
-      },
+      data: { [cupo.mes]: { increment: 1 }, [cupo.dia]: { increment: 1 } },
     });
   } catch (err) {
-    console.error('[planLimits] Error al incrementar contador del asistente:', err);
+    console.error(`[planLimits] Error al incrementar contador de ${etiqueta}:`, err);
   }
+}
+
+export const checkAssistantLimit = (userId: string) => checkCupoDoble(userId, CUPO_ASISTENTE);
+export const incrementAssistantUsage = (userId: string) =>
+  incrementarCupo(userId, CUPO_ASISTENTE, 'el asistente');
+
+/**
+ * Cupo del Chat de prueba del panel.
+ *
+ * Deliberadamente separado de monthlyMessages: el dueño probando su propio bot
+ * no le puede consumir los mensajes que necesita para atender clientes reales.
+ * Un Free con 100 mensajes que prueba 30 veces se quedaba con 70 para vender.
+ */
+export const checkTestChatLimit = (userId: string) => checkCupoDoble(userId, CUPO_CHAT_PRUEBA);
+export const incrementTestChatUsage = (userId: string) =>
+  incrementarCupo(userId, CUPO_CHAT_PRUEBA, 'el Chat de prueba');
+
+/** Corta el Chat de prueba si el usuario agotó su cupo de pruebas */
+export async function assertTestChatLimit(userId: string): Promise<void> {
+  const cupo = await checkTestChatLimit(userId);
+  if (cupo.allowed) return;
+  throw new AppError(
+    429,
+    cupo.scope === 'daily'
+      ? `Llegaste al límite de ${cupo.dailyLimit} mensajes de prueba por día. Se renueva a la medianoche. Esto no afecta los mensajes de tus clientes.`
+      : `Llegaste al límite de ${cupo.limit} mensajes de prueba del mes en tu plan ${cupo.plan}. Esto no afecta los mensajes de tus clientes.`,
+    PLAN_LIMIT_CODE,
+    { limit: cupo.limit, dailyLimit: cupo.dailyLimit, scope: cupo.scope, resetsAt: cupo.resetsAt, plan: cupo.plan },
+  );
 }
 
 export function checkBotLimit(req: Request, _res: Response, next: NextFunction): void {

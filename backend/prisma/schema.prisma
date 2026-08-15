@@ -85,6 +85,14 @@ model User {
   assistantMsgsToday     Int      @default(0)
   assistantResetAt       DateTime @default(now())
   assistantDayResetAt    DateTime @default(now())
+  /// Cupo del Chat de prueba del panel. Contador aparte del de clientes
+  /// reales: probar el propio bot no puede comerse los mensajes que el
+  /// negocio necesita para vender. Igual tiene tope, porque cada mensaje
+  /// es una llamada a Anthropic con costo real.
+  testMsgsThisMonth      Int      @default(0)
+  testMsgsToday          Int      @default(0)
+  testResetAt            DateTime @default(now())
+  testDayResetAt         DateTime @default(now())
   dailySummaryEnabled   Boolean   @default(true)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt

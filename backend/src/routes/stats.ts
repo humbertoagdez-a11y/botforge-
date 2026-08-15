@@ -34,7 +34,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       totalMessages,
       recentConversations,
     ] = await Promise.all([
-      prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { plan: true } }),
+      prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { plan: true, planExpiresAt: true },
+      }),
       prisma.bot.count({ where: { userId } }),
       prisma.bot.count({ where: { userId, isActive: true } }),
       prisma.bot.count({ where: { userId, whatsappNumber: { not: null } } }),
@@ -75,11 +78,14 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       }),
     ]);
 
-    const limits = LIMITS[user.plan];
+    // effectivePlan y no user.plan: un plan vencido ya vale FREE para el
+    // enforcement, y el panel tiene que mostrar el mismo limite que se aplica
+    const planVigente = effectivePlan(user);
+    const limits = LIMITS[planVigente];
 
     res.json({
       data: {
-        plan: user.plan,
+        plan: planVigente,
         planLimits: {
           bots: Number.isFinite(limits.bots) ? limits.bots : null,
           docsPerBot: Number.isFinite(limits.docsPerBot) ? limits.docsPerBot : null,
