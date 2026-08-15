@@ -136,6 +136,106 @@ function extraerNotificaciones(raw: unknown): NotificacionPagopar[] {
   return [];
 }
 
+/** Campos de la notificación que traen datos personales del comprador */
+const CAMPOS_SENSIBLES = new Set([
+  'token',
+  'documento_comprador',
+  'email_comprador',
+  'telefono_comprador',
+  'nombre_comprador',
+  'direccion_comprador',
+]);
+
+/**
+ * Deja el payload COMPLETO en los logs, que es la única forma de saber qué
+ * manda Pagopar de verdad en cada tipo de pago (la doc no detalla el formato
+ * exacto de cada medio). Los datos del comprador y el token van enmascarados:
+ * el resto se imprime tal cual, con su tipo, porque justamente el tipo es lo
+ * que importa — Pagopar puede mandar `pagado` como booleano, como "1" o como
+ * "true" según el medio de pago, y en JavaScript el string "false" es truthy.
+ */
+function logNotificacion(notif: NotificacionPagopar): void {
+  const visible: Record<string, string> = {};
+  for (const [clave, valor] of Object.entries(notif)) {
+    visible[clave] = CAMPOS_SENSIBLES.has(clave)
+      ? `«oculto»(${typeof valor})`
+      : `${JSON.stringify(valor)} (${typeof valor})`;
+  }
+  console.log('[pagopar] notificación recibida:', JSON.stringify(visible, null, 2));
+}
+
+/**
+ * ¿Esta notificación confirma un pago?
+ *
+ * Pagopar es PHP y no serializa los booleanos de forma consistente: según el
+ * medio de pago el mismo campo puede llegar como `true`, `"true"`, `1` o `"1"`.
+ * El chequeo anterior era `!notif.pagado`, que además de perderse esos casos
+ * tenía el problema inverso y peor: el string `"false"` es truthy en
+ * JavaScript, así que un pago NO realizado se habría dado por bueno.
+ *
+ * Se acepta también `estado`/`pagado_monto` como respaldo, pero se loguea
+ * cuando el campo esperado no vino, para poder confirmarlo contra un payload
+ * real en vez de seguir adivinando.
+ */
+function esPagoConfirmado(notif: NotificacionPagopar): boolean {
+  const interpretar = (valor: unknown): boolean | null => {
+    if (typeof valor === 'boolean') return valor;
+    if (typeof valor === 'number') return valor === 1;
+    if (typeof valor === 'string') {
+      const v = valor.trim().toLowerCase();
+      if (['true', '1', 't', 'si', 'sí', 'yes'].includes(v)) return true;
+      if (['false', '0', 'f', 'no', ''].includes(v)) return false;
+    }
+    return null;
+  };
+
+  const directo = interpretar(notif.pagado);
+  if (directo !== null) return directo;
+
+  console.warn(
+    `[pagopar] la notificación no trae un campo 'pagado' interpretable ` +
+      `(llegó ${JSON.stringify(notif.pagado)}). Campos presentes: ` +
+      `${Object.keys(notif).join(', ')}`,
+  );
+  return false;
+}
+
+/**
+ * Marca el pedido como pagado y activa el plan. Idempotente: el `pagado: false`
+ * en el where hace que solo gane el primero que llegue, así el webhook y la
+ * consulta al volver del checkout no pueden aplicar el plan dos veces.
+ *
+ * Devuelve true si esta llamada fue la que lo activó.
+ */
+async function activarPlan(
+  order: { id: string; userId: string; plan: string; idPedidoComercio: string },
+  fechaPago: Date,
+  origen: 'webhook' | 'consulta',
+): Promise<boolean> {
+  const validaHasta = new Date(Date.now() + PLAN_DURACION_MS);
+
+  const marcado = await prisma.pagoparOrder.updateMany({
+    where: { id: order.id, pagado: false },
+    data: { pagado: true, fechaPago },
+  });
+
+  if (marcado.count === 0) {
+    console.log(`[pagopar] pedido ${order.idPedidoComercio} ya estaba pagado (${origen})`);
+    return false;
+  }
+
+  await prisma.user.update({
+    where: { id: order.userId },
+    data: { plan: order.plan as Plan, planExpiresAt: validaHasta },
+  });
+
+  console.log(
+    `[pagopar] pago confirmado por ${origen} — pedido ${order.idPedidoComercio}, ` +
+      `plan ${order.plan} activo hasta ${validaHasta.toISOString()}`,
+  );
+  return true;
+}
+
 router.post('/webhook', async (req: Request, res: Response) => {
   const notificaciones = extraerNotificaciones(req.body);
   const notif = notificaciones[0];
@@ -160,32 +260,26 @@ router.post('/webhook', async (req: Request, res: Response) => {
     return;
   }
 
+  // El payload completo va al log SIEMPRE, incluso si después no confirma
+  // pago: es lo único que permite ver qué manda Pagopar en cada medio
+  if (notif) logNotificacion(notif);
+
   try {
     const order = await prisma.pagoparOrder.findUnique({ where: { hashPedido } });
 
     if (!order) {
       console.warn('[pagopar] Notificación de un pedido desconocido');
-    } else if (!notif?.pagado) {
+    } else if (!esPagoConfirmado(notif!)) {
       console.log('[pagopar] Notificación recibida sin pago confirmado:', order.idPedidoComercio);
-    } else if (order.pagado) {
-      // Pagopar reintenta si no recibe el 200: no volver a aplicar el plan
-      console.log('[pagopar] Notificación duplicada ignorada:', order.idPedidoComercio);
     } else {
-      const fechaPago = notif.fecha_pago ? new Date(notif.fecha_pago) : new Date();
-      const validaHasta = new Date(Date.now() + PLAN_DURACION_MS);
-
-      await prisma.$transaction([
-        prisma.pagoparOrder.update({
-          where: { id: order.id },
-          data: { pagado: true, fechaPago },
-        }),
-        prisma.user.update({
-          where: { id: order.userId },
-          data: { plan: order.plan as Plan, planExpiresAt: validaHasta },
-        }),
-      ]);
-
-      console.log('[pagopar] Pago confirmado, plan actualizado:', order.plan);
+      const fechaPago = notif!.fecha_pago ? new Date(String(notif!.fecha_pago)) : new Date();
+      // Fecha inválida (Pagopar la manda como "YYYY-MM-DD HH:mm:ss", que algunos
+      // motores no parsean): no puede impedir que se active el plan
+      await activarPlan(
+        order,
+        Number.isNaN(fechaPago.getTime()) ? new Date() : fechaPago,
+        'webhook',
+      );
     }
   } catch (err) {
     console.error('[pagopar] Error procesando la notificación:', err);
@@ -219,12 +313,29 @@ router.get(
 
       const remoto = await consultarPedido(hashPedido);
 
+      // Si Pagopar dice que está pagado y nuestra base no, se activa acá.
+      //
+      // Antes esta consulta calculaba `pagado` para mostrarlo y no escribía
+      // nada: si el webhook no llegaba —URL mal configurada, caída, timeout,
+      // Pagopar sin reintentar— el usuario pagaba, esta pantalla le decía
+      // "pagado", y el plan nunca se le activaba. El webhook sigue siendo el
+      // camino principal; esto es la red de contención.
+      let pagado = order.pagado;
+      if (!pagado && remoto?.pagado === true) {
+        const fecha = remoto.fecha_pago ? new Date(remoto.fecha_pago) : new Date();
+        await activarPlan(
+          order,
+          Number.isNaN(fecha.getTime()) ? new Date() : fecha,
+          'consulta',
+        );
+        pagado = true;
+      }
+
       res.json({
         data: {
           plan: order.plan,
           montoTotal: order.montoTotal,
-          // La base manda: la marca el webhook tras validar el token
-          pagado: order.pagado || remoto?.pagado === true,
+          pagado,
           confirmadoPorWebhook: order.pagado,
           fechaPago: order.fechaPago,
           formaPago: remoto?.forma_pago ?? null,
