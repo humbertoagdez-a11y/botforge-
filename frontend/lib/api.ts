@@ -555,13 +555,10 @@ export const api = {
       request<{ ok: boolean }>(`/api/v1/bots/${botId}/documents/${docId}`, { method: 'DELETE' }),
   },
 
-  chat: {
-    send: (botId: string, message: string, conversationId?: string) =>
-      request<{ conversationId: string; message: ChatMessage }>(`/api/v1/bots/${botId}/chat`, {
-        method: 'POST',
-        body: JSON.stringify({ message, ...(conversationId ? { conversationId } : {}) }),
-      }),
-  },
+  // El chat del bot no pasa por request(): es SSE y lo maneja ChatWidget
+  // directamente contra /bots/:id/chat/stream. Acá vivía un api.chat.send que
+  // pegaba a un POST /chat sin streaming; nadie lo llamaba y corría por un
+  // motor distinto al de WhatsApp, así que se eliminaron los dos.
 
   stats: {
     get: () => request<AccountStats>('/api/v1/stats'),

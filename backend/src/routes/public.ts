@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
-import { ragStream } from '../services/rag';
+import { runTenantTurn } from '../services/tenantAgent';
 import { AppError } from '../middleware/errorHandler';
 import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 
@@ -70,12 +70,20 @@ router.post('/bots/:botId/chat/stream', async (req: Request, res: Response, next
     }
 
     try {
-      const { content, tokensUsed } = await ragStream(
-        bot.id, bot.name, bot.personality, bot.language,
-        history, message,
-        (text) => send({ type: 'delta', text }),
-        ac.signal,
-      );
+      // Mismo motor que WhatsApp y que el Chat de prueba del panel
+      const { content, tokensUsed } = await runTenantTurn({
+        bot,
+        history,
+        message,
+        clientId: `widget web (${conversation.id})`,
+        channel: 'widget',
+        stream: {
+          onDelta: (text) => send({ type: 'delta', text }),
+          onDiscard: () => send({ type: 'discard' }),
+          onToolUse: (name) => send({ type: 'tool', name }),
+          signal: ac.signal,
+        },
+      });
 
       if (!ac.signal.aborted) {
         const msg = await prisma.message.create({

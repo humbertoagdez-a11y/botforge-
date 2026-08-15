@@ -1,6 +1,17 @@
+/**
+ * Llamadas a Anthropic que NO son el bot desplegado.
+ *
+ * El motor del bot tenant (system prompt, RAG, tools, fallback) vive entero en
+ * tenantAgent.ts y no se duplica aca. Este archivo tenia una segunda
+ * implementacion —generateBotResponse y streamBotResponse— que llamaba al
+ * modelo SIN el parametro tools: el Chat de prueba del panel corria por ahi y
+ * el bot no podia buscar en documentos, mandar fotos de Drive ni derivar a un
+ * humano, todo lo cual si hacia en WhatsApp. El dueño probaba una cosa y sus
+ * clientes recibian otra. Se elimino; ahora los tres canales entran por
+ * runTenantTurn.
+ */
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
-import { buildTenantSystemBlocks } from './tenantAgent';
 import { logCacheUsage } from '../lib/cacheUsage';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
@@ -8,49 +19,9 @@ const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 const PRIMARY_MODEL = 'claude-sonnet-5';
 const FALLBACK_MODEL = 'claude-opus-4-8';
 
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-/**
- * El system prompt del bot desplegado vive en tenantAgent.ts (arquitectura
- * dual): personalidad del dueño + reglas base de calidad de BotForge.
- *
- * Se devuelve en dos bloques: el estable (por bot) se cachea, el contexto del
- * RAG cambia en cada mensaje y va después. Antes se cacheaba el prompt entero,
- * que incluía el RAG: el caché nunca acertaba y solo pagaba el 25% de
- * escritura en cada llamada.
- */
-function buildSystemBlocks(
-  botName: string,
-  personality: string,
-  language: string,
-  contextChunks: string[],
-): Anthropic.TextBlockParam[] {
-  const { stable, context } = buildTenantSystemBlocks(
-    botName, personality, language, contextChunks.join('\n\n'),
-  );
-  const blocks: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: stable, cache_control: { type: 'ephemeral' } },
-  ];
-  if (context) blocks.push({ type: 'text', text: context });
-  return blocks;
-}
-
-function buildMessages(
-  history: ChatMessage[],
-  userMessage: string,
-): Anthropic.MessageParam[] {
-  return [
-    ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user' as const, content: userMessage },
-  ];
-}
-
 async function callGenerate(
   model: string,
-  system: string | Anthropic.TextBlockParam[],
+  system: string,
   messages: Anthropic.MessageParam[],
   maxTokens = 1024,
   scope = 'ai',
@@ -58,10 +29,7 @@ async function callGenerate(
   const response = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system:
-      typeof system === 'string'
-        ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }]
-        : system,
+    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
     messages,
   });
   logCacheUsage(scope, response.usage);
@@ -72,30 +40,6 @@ async function callGenerate(
   const stopReason = (response.stop_reason as string) ?? '';
 
   return { content, tokensUsed, stopReason };
-}
-
-export async function generateBotResponse(
-  botName: string,
-  personality: string,
-  language: string,
-  contextChunks: string[],
-  history: ChatMessage[],
-  userMessage: string,
-): Promise<{ content: string; tokensUsed: number }> {
-  const systemBlocks = buildSystemBlocks(botName, personality, language, contextChunks);
-  const messages = buildMessages(history, userMessage);
-
-  const primary = await callGenerate(PRIMARY_MODEL, systemBlocks, messages, 1024, 'tenant-web');
-
-  if (primary.stopReason === 'refusal') {
-    console.warn(`[ai] ${PRIMARY_MODEL} devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
-    const { content, tokensUsed } = await callGenerate(
-      FALLBACK_MODEL, systemBlocks, messages, 1024, 'tenant-web-fallback',
-    );
-    return { content, tokensUsed };
-  }
-
-  return { content: primary.content, tokensUsed: primary.tokensUsed };
 }
 
 const INSTRUCTIVO_SYSTEM = `Sos un experto en crear instructivos de entrenamiento para chatbots de ventas en WhatsApp. Tu tarea es tomar las respuestas del dueño de un negocio y generar un documento de entrenamiento completo, claro y estructurado para que la IA pueda responder perfectamente a los clientes.
@@ -139,48 +83,4 @@ export async function generateInstructivo(
   }
 
   return primary.content;
-}
-
-export async function streamBotResponse(
-  botName: string,
-  personality: string,
-  language: string,
-  contextChunks: string[],
-  history: ChatMessage[],
-  userMessage: string,
-  onDelta: (text: string) => void,
-  signal?: AbortSignal,
-): Promise<{ content: string; tokensUsed: number }> {
-  const systemBlocks = buildSystemBlocks(botName, personality, language, contextChunks);
-  const messages = buildMessages(history, userMessage);
-
-  const stream = anthropic.messages.stream({
-    model: PRIMARY_MODEL,
-    max_tokens: 1024,
-    system: systemBlocks,
-    messages,
-  });
-
-  signal?.addEventListener('abort', () => stream.abort());
-
-  stream.on('text', (text) => {
-    onDelta(text);
-  });
-
-  const finalMessage = await stream.finalMessage();
-  logCacheUsage('tenant-web-stream', finalMessage.usage);
-
-  if ((finalMessage.stop_reason as string) === 'refusal') {
-    console.warn(`[ai] ${PRIMARY_MODEL} stream devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
-    const fallback = await callGenerate(
-      FALLBACK_MODEL, systemBlocks, messages, 1024, 'tenant-web-fallback',
-    );
-    onDelta(fallback.content);
-    return fallback;
-  }
-
-  const content = finalMessage.content[0]?.type === 'text' ? finalMessage.content[0].text : '';
-  const tokensUsed = finalMessage.usage.input_tokens + finalMessage.usage.output_tokens;
-
-  return { content, tokensUsed };
 }

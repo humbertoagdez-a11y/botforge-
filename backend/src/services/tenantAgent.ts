@@ -7,8 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
-import { getEmbedding } from './embeddings';
-import { querySimilarChunks } from './pinecone';
+import { getRelevantChunks } from './rag';
 import { sendEmail } from './email';
 import { searchFileByName, downloadFileAsBase64, getValidAccessToken } from './googleDrive';
 import { isCloudinaryConfigured } from '../config/cloudinary';
@@ -19,8 +18,6 @@ const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 const PRIMARY_MODEL = 'claude-sonnet-5';
 const FALLBACK_MODEL = 'claude-opus-4-8';
 const MAX_TURNS = 5;
-const SIMILARITY_THRESHOLD = 0.3;
-const TOP_K = 5;
 
 export interface TenantChatMessage {
   role: 'user' | 'assistant';
@@ -180,11 +177,9 @@ export async function executeTenantTool(
   switch (toolName) {
     case 'buscar_en_documentos': {
       const query = readStringField(input, 'query');
-      const vector = await getEmbedding(query);
-      const similar = await querySimilarChunks(vector, context.botId, TOP_K);
-      const chunks = similar
-        .filter((c) => c.score >= SIMILARITY_THRESHOLD)
-        .map((c) => c.content);
+      // Misma funcion que arma el contexto inicial del turno: una sola
+      // definicion de TOP_K y del umbral para toda la plataforma
+      const chunks = await getRelevantChunks(context.botId, query);
       if (chunks.length === 0) {
         return { found: false, message: 'No hay información sobre eso en los documentos del negocio.' };
       }
@@ -332,11 +327,63 @@ function toPlainSystem(systemPrompt: string | TenantSystemBlocks): string {
     : [systemPrompt.stable, systemPrompt.context].filter(Boolean).join('\n\n');
 }
 
+/**
+ * Enganches opcionales para entregar la respuesta a medida que se genera.
+ *
+ * El loop es el MISMO con streaming y sin streaming: solo cambia si la ronda se
+ * pide con messages.stream o con messages.create. Es a proposito — tener un
+ * "motor para el panel" y otro "motor para WhatsApp" fue justamente el bug que
+ * hacia que el dueño aprobara un comportamiento distinto al que veian sus
+ * clientes.
+ */
+export interface TenantStreamHooks {
+  onDelta: (text: string) => void;
+  /**
+   * El modelo escribio texto y despues decidio usar una herramienta. Ese texto
+   * no es la respuesta final —en WhatsApp el cliente nunca lo ve, porque el
+   * loop solo devuelve el texto de la ronda final— asi que el canal tiene que
+   * descartar lo emitido en esa ronda.
+   */
+  onDiscard?: () => void;
+  /** Para que el canal muestre en que esta trabajando el bot */
+  onToolUse?: (toolName: string) => void;
+  signal?: AbortSignal;
+}
+
+/** Una ronda del loop, con o sin streaming segun haya hooks */
+async function runRound(
+  systemBlocks: Anthropic.TextBlockParam[],
+  messages: Anthropic.MessageParam[],
+  stream?: TenantStreamHooks,
+): Promise<{ response: Anthropic.Message; emitioTexto: boolean }> {
+  const request = {
+    model: PRIMARY_MODEL,
+    max_tokens: 1024,
+    system: systemBlocks,
+    tools: CACHED_TENANT_TOOLS,
+    messages,
+  };
+
+  if (!stream) {
+    return { response: await anthropic.messages.create(request), emitioTexto: false };
+  }
+
+  let emitioTexto = false;
+  const s = anthropic.messages.stream(request);
+  stream.signal?.addEventListener('abort', () => s.abort());
+  s.on('text', (text) => {
+    emitioTexto = true;
+    stream.onDelta(text);
+  });
+  return { response: await s.finalMessage(), emitioTexto };
+}
+
 export async function runTenantAgentLoop(
   systemPrompt: string | TenantSystemBlocks,
   history: TenantChatMessage[],
   userMessage: string,
   context: TenantAgentContext,
+  stream?: TenantStreamHooks,
 ): Promise<{ content: string; tokensUsed: number }> {
   let currentMessages: Anthropic.MessageParam[] = [
     ...history.map((m): Anthropic.MessageParam => ({ role: m.role, content: m.content })),
@@ -346,19 +393,15 @@ export async function runTenantAgentLoop(
   const systemBlocks = toSystemBlocks(systemPrompt);
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const response = await anthropic.messages.create({
-      model: PRIMARY_MODEL,
-      max_tokens: 1024,
-      system: systemBlocks,
-      tools: CACHED_TENANT_TOOLS,
-      messages: currentMessages,
-    });
+    const { response, emitioTexto } = await runRound(systemBlocks, currentMessages, stream);
     tokensUsed += response.usage.input_tokens + response.usage.output_tokens;
     logCacheUsage('tenant', response.usage);
 
     // El SDK 0.36 no tipa 'refusal' todavia; llega en runtime con fable-5
     if ((response.stop_reason as string) === 'refusal') {
+      if (emitioTexto) stream?.onDiscard?.();
       const fallback = await runFallback(toPlainSystem(systemPrompt), currentMessages);
+      if (stream) stream.onDelta(fallback.content);
       return { content: fallback.content, tokensUsed: tokensUsed + fallback.tokensUsed };
     }
 
@@ -367,8 +410,14 @@ export async function runTenantAgentLoop(
         (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
       );
 
+      // Lo que se haya emitido en esta ronda es razonamiento previo a la
+      // herramienta, no la respuesta: se descarta para que el canal muestre
+      // exactamente lo mismo que recibiria un cliente de WhatsApp
+      if (emitioTexto) stream?.onDiscard?.();
+
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const toolUse of toolUseBlocks) {
+        stream?.onToolUse?.(toolUse.name);
         try {
           const result = await executeTenantTool(toolUse.name, toolUse.input, context);
           toolResults.push({
@@ -401,5 +450,66 @@ export async function runTenantAgentLoop(
     break;
   }
 
-  return { content: 'Disculpá, no pude procesar tu consulta. ¿Podés escribirla de nuevo?', tokensUsed };
+  const agotado = 'Disculpá, no pude procesar tu consulta. ¿Podés escribirla de nuevo?';
+  if (stream) stream.onDelta(agotado);
+  return { content: agotado, tokensUsed };
+}
+
+// ─── PUNTO DE ENTRADA UNICO DEL BOT ───────────────────────────────────────────
+
+export interface TenantTurnParams {
+  bot: { id: string; name: string; personality: string; language: string };
+  /** Historial ya ordenado del mas viejo al mas nuevo, sin el mensaje actual */
+  history: TenantChatMessage[];
+  /** Texto del cliente, ya transcripto y con el contexto de imagen si lo hubo */
+  message: string;
+  /** Numero de WhatsApp o etiqueta del canal, para las notificaciones */
+  clientId: string;
+  channel: 'whatsapp' | 'web' | 'widget';
+  /** Si viene, la respuesta se entrega token a token */
+  stream?: TenantStreamHooks;
+}
+
+export interface TenantTurnResult {
+  content: string;
+  tokensUsed: number;
+  /** Imagen de Drive que el agente quiere adjuntar, si la hubo */
+  pendingImage?: { imageBase64: string; mimeType: string; fileName: string };
+}
+
+/**
+ * Un turno completo del bot desplegado: RAG, system prompt, tools y fallback.
+ *
+ * ESTA es la unica forma de hacer hablar al bot. WhatsApp, el Chat de prueba
+ * del panel y el widget publico entran todos por aca, con los mismos
+ * parametros: mismo modelo, mismas herramientas, mismo limite de rondas, mismo
+ * umbral de RAG y mismo prompt. Si alguien necesita un comportamiento distinto
+ * para un canal, va como parametro de esta funcion — nunca como una segunda
+ * implementacion, que es como se llego a que el panel y WhatsApp respondieran
+ * distinto sin que nadie se diera cuenta.
+ *
+ * Lo unico que NO hace es persistir mensajes ni tocar el cupo del plan: eso
+ * depende del canal y lo resuelve cada llamador.
+ */
+export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTurnResult> {
+  const { bot, history, message, clientId, channel, stream } = params;
+
+  const chunks = await getRelevantChunks(bot.id, message);
+  // Bloques partidos: las reglas y la personalidad se cachean, el RAG no
+  const systemPrompt = buildTenantSystemBlocks(
+    bot.name, bot.personality, bot.language, chunks.join('\n\n'),
+  );
+
+  const context: TenantAgentContext = {
+    botId: bot.id,
+    botName: bot.name,
+    clientId,
+    channel,
+  };
+
+  const { content, tokensUsed } = await runTenantAgentLoop(
+    systemPrompt, history, message, context, stream,
+  );
+
+  return { content, tokensUsed, pendingImage: context.pendingImage };
 }

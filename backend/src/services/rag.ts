@@ -1,40 +1,27 @@
+/**
+ * Recuperacion de contexto para el bot tenant.
+ *
+ * Unica implementacion de la busqueda semantica: la usan el contexto inicial de
+ * cada turno y la herramienta buscar_en_documentos. Antes cada una tenia su
+ * propia copia de TOP_K y del umbral, que es exactamente como se desincronizan
+ * dos caminos que deberian devolver lo mismo.
+ *
+ * Ya no vive aca la generacion de respuestas: el motor del bot es uno solo y
+ * esta en tenantAgent.ts.
+ */
 import { getEmbedding } from './embeddings';
 import { querySimilarChunks } from './pinecone';
-import { generateBotResponse, streamBotResponse, type ChatMessage } from './ai';
 
-export type { ChatMessage };
+export const SIMILARITY_THRESHOLD = 0.3;
+export const TOP_K = 5;
 
-const SIMILARITY_THRESHOLD = 0.3;
-const TOP_K = 5;
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 export async function getRelevantChunks(botId: string, userMessage: string): Promise<string[]> {
   const queryVector = await getEmbedding(userMessage);
   const similar = await querySimilarChunks(queryVector, botId, TOP_K);
   return similar.filter((c) => c.score >= SIMILARITY_THRESHOLD).map((c) => c.content);
-}
-
-export async function ragChat(
-  botId: string,
-  botName: string,
-  personality: string,
-  language: string,
-  history: ChatMessage[],
-  userMessage: string,
-): Promise<{ content: string; tokensUsed: number }> {
-  const chunks = await getRelevantChunks(botId, userMessage);
-  return generateBotResponse(botName, personality, language, chunks, history, userMessage);
-}
-
-export async function ragStream(
-  botId: string,
-  botName: string,
-  personality: string,
-  language: string,
-  history: ChatMessage[],
-  userMessage: string,
-  onDelta: (text: string) => void,
-  signal?: AbortSignal,
-): Promise<{ content: string; tokensUsed: number }> {
-  const chunks = await getRelevantChunks(botId, userMessage);
-  return streamBotResponse(botName, personality, language, chunks, history, userMessage, onDelta, signal);
 }

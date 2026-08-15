@@ -1,3 +1,15 @@
+/**
+ * Chat de prueba del panel: el dueño prueba su bot antes de conectarlo.
+ *
+ * Corre por el MISMO motor que WhatsApp (runTenantTurn): mismo modelo, mismas
+ * herramientas, mismo limite de rondas, mismo umbral de RAG y mismo system
+ * prompt. Lo unico que cambia es el canal por el que entra y sale el texto.
+ *
+ * Es la razon de ser de esta pantalla: si el panel respondiera distinto que
+ * WhatsApp, el dueño aprobaria un comportamiento que sus clientes nunca van a
+ * recibir. Antes pasaba exactamente eso — esta ruta llamaba a un motor sin
+ * herramientas.
+ */
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
@@ -5,12 +17,7 @@ import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
-import { getRelevantChunks, ragStream } from '../services/rag';
-import {
-  buildTenantSystemBlocks,
-  runTenantAgentLoop,
-  type TenantAgentContext,
-} from '../services/tenantAgent';
+import { runTenantTurn } from '../services/tenantAgent';
 
 const router = Router({ mergeParams: true });
 
@@ -21,6 +28,7 @@ const chatSchema = z.object({
   conversationId: z.string().uuid().optional(),
 });
 
+/** Mismo tamaño de ventana que usa el pipeline de WhatsApp */
 const HISTORY_LIMIT = 10;
 
 async function resolveConversation(
@@ -41,6 +49,9 @@ async function resolveConversation(
     ? await prisma.conversation.findUnique({ where: { id: conversationId } })
     : null;
 
+  // Una conversación ajena nunca se continúa aunque llegue un id válido
+  if (conversation && conversation.botId !== bot.id) conversation = null;
+
   if (!conversation) {
     conversation = await prisma.conversation.create({
       data: {
@@ -55,6 +66,7 @@ async function resolveConversation(
   return { bot, conversation };
 }
 
+/** Lee la ventana de historial y persiste el mensaje del cliente, como WhatsApp */
 async function getHistory(conversationId: string, userMessage: string) {
   const recent = await prisma.message.findMany({
     where: { conversationId },
@@ -70,45 +82,6 @@ async function getHistory(conversationId: string, userMessage: string) {
     .reverse()
     .map((m) => ({ role: m.role.toLowerCase() as 'user' | 'assistant', content: m.content }));
 }
-
-// ─── POST /  (standard JSON response) ───────────────────────────────────────
-router.post('/', checkMessageLimit, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { message, conversationId } = chatSchema.parse(req.body);
-    const { bot, conversation } = await resolveConversation(
-      req.params.botId,
-      req.user!.userId,
-      conversationId,
-    );
-
-    const history = await getHistory(conversation.id, message);
-
-    // Agente Tipo B con loop de tools nativo (mismo motor que WhatsApp)
-    const chunks = await getRelevantChunks(bot.id, message);
-    const systemPrompt = buildTenantSystemBlocks(
-      bot.name, bot.personality, bot.language, chunks.join('\n\n'),
-    );
-    const agentContext: TenantAgentContext = {
-      botId: bot.id,
-      botName: bot.name,
-      clientId: `chat web (${req.user!.email})`,
-      channel: 'web',
-    };
-    const { content, tokensUsed } = await runTenantAgentLoop(
-      systemPrompt, history, message, agentContext,
-    );
-
-    const assistantMsg = await prisma.message.create({
-      data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
-    });
-
-    await incrementMessageUsage(req.user!.userId);
-
-    res.json({ data: { conversationId: conversation.id, message: assistantMsg }, error: null, meta: null });
-  } catch (err) {
-    next(err);
-  }
-});
 
 // ─── POST /stream  (Server-Sent Events) ─────────────────────────────────────
 router.post('/stream', checkMessageLimit, async (req: Request, res: Response, next: NextFunction) => {
@@ -138,16 +111,21 @@ router.post('/stream', checkMessageLimit, async (req: Request, res: Response, ne
     }
 
     try {
-      const { content, tokensUsed } = await ragStream(
-        bot.id,
-        bot.name,
-        bot.personality,
-        bot.language,
+      const { content, tokensUsed, pendingImage } = await runTenantTurn({
+        bot,
         history,
         message,
-        (text) => sendEvent({ type: 'delta', text }),
-        abortController.signal,
-      );
+        // El dueño probando no es un cliente: se identifica como tal en las
+        // notificaciones que dispare el bot (derivar_a_humano manda un email)
+        clientId: `Chat de prueba (${req.user!.email})`,
+        channel: 'web',
+        stream: {
+          onDelta: (text) => sendEvent({ type: 'delta', text }),
+          onDiscard: () => sendEvent({ type: 'discard' }),
+          onToolUse: (name) => sendEvent({ type: 'tool', name }),
+          signal: abortController.signal,
+        },
+      });
 
       if (!abortController.signal.aborted) {
         const assistantMsg = await prisma.message.create({
@@ -160,9 +138,18 @@ router.post('/stream', checkMessageLimit, async (req: Request, res: Response, ne
           },
         });
         await incrementMessageUsage(req.user!.userId);
-        sendEvent({ type: 'done', conversationId: conversation.id, messageId: assistantMsg.id, tokensUsed });
+        sendEvent({
+          type: 'done',
+          conversationId: conversation.id,
+          messageId: assistantMsg.id,
+          tokensUsed,
+          // El panel no puede mandar la imagen por WhatsApp, pero avisa que en
+          // el canal real el cliente la habría recibido adjunta
+          imagen: pendingImage ? { fileName: pendingImage.fileName } : null,
+        });
       }
     } catch (streamErr) {
+      console.error('[chat] Error generando la respuesta de prueba:', streamErr);
       sendEvent({ type: 'error', message: 'Error al generar la respuesta' });
     }
 

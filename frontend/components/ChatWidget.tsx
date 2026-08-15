@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Bot, Loader2, RotateCcw, Send, User } from 'lucide-react';
+import { Bot, Image as ImageIcon, Loader2, RotateCcw, Send, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -46,11 +46,31 @@ interface UIMessage {
   role: 'USER' | 'ASSISTANT';
   content: string;
   streaming?: boolean;
+  /** Nombre del archivo de Drive que el bot adjuntó en esta respuesta */
+  attachment?: string;
 }
+
+/** Lo que el bot está haciendo, para mostrarlo mientras usa una herramienta */
+const TOOL_LABEL: Record<string, string> = {
+  buscar_en_documentos: 'Buscando en los documentos...',
+  buscar_archivos_drive: 'Buscando la foto en Drive...',
+  derivar_a_humano: 'Avisando a un encargado...',
+};
 
 type SseEvent =
   | { type: 'delta'; text: string }
-  | { type: 'done'; conversationId: string; messageId: string; tokensUsed: number }
+  // El bot escribió algo y después decidió usar una herramienta: eso no es la
+  // respuesta final y en WhatsApp el cliente nunca lo ve, así que se descarta
+  | { type: 'discard' }
+  | { type: 'tool'; name: string }
+  | {
+      type: 'done';
+      conversationId: string;
+      messageId: string;
+      tokensUsed: number;
+      /** El bot adjuntó una imagen de Drive; acá solo se avisa */
+      imagen?: { fileName: string } | null;
+    }
   | { type: 'error'; message: string };
 
 export default function ChatWidget({ botId, botName, isPublic = false }: Props) {
@@ -64,6 +84,8 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>();
+  /** Herramienta que el bot está usando en este momento, si es que usa alguna */
+  const [toolLabel, setToolLabel] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -75,6 +97,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
     abortRef.current?.abort();
     setMessages([greeting]);
     setConversationId(undefined);
+    setToolLabel(null);
   }
 
   async function sendMessage() {
@@ -83,6 +106,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
 
     setInput('');
     setSending(true);
+    setToolLabel(null);
     setMessages((m) => [
       ...m,
       { role: 'USER', content: text },
@@ -139,15 +163,27 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
 
           if (event.type === 'delta') {
             accText += event.text;
+            // Ya está escribiendo la respuesta: se saca el cartel de la herramienta
+            if (accText) setToolLabel(null);
             setMessages((m) => [
               ...m.slice(0, -1),
               { role: 'ASSISTANT', content: accText, streaming: true },
             ]);
+          } else if (event.type === 'discard') {
+            // Vuelve a la burbuja de "pensando": lo emitido era razonamiento
+            // previo a una herramienta, no lo que va a recibir el cliente
+            accText = '';
+            setMessages((m) => [
+              ...m.slice(0, -1),
+              { role: 'ASSISTANT', content: '', streaming: true },
+            ]);
+          } else if (event.type === 'tool') {
+            setToolLabel(TOOL_LABEL[event.name] ?? 'Trabajando en tu consulta...');
           } else if (event.type === 'done') {
             setConversationId(event.conversationId);
             setMessages((m) => [
               ...m.slice(0, -1),
-              { role: 'ASSISTANT', content: accText },
+              { role: 'ASSISTANT', content: accText, attachment: event.imagen?.fileName },
             ]);
           } else if (event.type === 'error') {
             throw new Error(event.message);
@@ -160,6 +196,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
       toast.error(err instanceof Error ? err.message : 'Error al enviar el mensaje');
     } finally {
       setSending(false);
+      setToolLabel(null);
     }
   }
 
@@ -205,12 +242,27 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
             >
               {msg.streaming && msg.content === '' ? (
                 <div className="py-0.5">
-                  <ThinkingBubble messages={TENANT_THINKING} light />
+                  {/* Con herramienta se dice qué está haciendo; si no, el
+                      texto genérico de siempre */}
+                  {toolLabel ? (
+                    <ThinkingBubble messages={[toolLabel]} light />
+                  ) : (
+                    <ThinkingBubble messages={TENANT_THINKING} light />
+                  )}
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap leading-relaxed">
                   {msg.role === 'ASSISTANT' ? sanitizeMarkdown(msg.content) : msg.content}
                   {msg.streaming && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-current align-middle" />}
+                </p>
+              )}
+
+              {/* En WhatsApp el cliente recibe la imagen adjunta; acá no hay
+                  canal para mandarla, así que al menos se avisa que existe */}
+              {msg.attachment && (
+                <p className="mt-2 flex items-center gap-1.5 border-t border-current/10 pt-2 text-xs opacity-70">
+                  <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                  En WhatsApp se envía adjunta la imagen {msg.attachment}
                 </p>
               )}
             </div>
