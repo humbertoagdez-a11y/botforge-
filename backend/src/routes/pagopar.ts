@@ -55,23 +55,103 @@ router.post('/checkout', requireAuth, requireVerifiedEmail, async (req: Request,
 
 // ─── POST /webhook ────────────────────────────────────────────────────────────
 // Público: Pagopar no manda credenciales nuestras, la autenticidad se prueba
-// con el token sha1. Se responde el MISMO JSON recibido, que es lo que Pagopar
-// espera para dar la notificación por entregada.
+// con el token sha1. Se responde con las MISMAS notificaciones recibidas, que
+// es lo que Pagopar valida para dar la entrega por buena.
 
+/**
+ * Campos que usa el handler. La notificación trae bastantes más
+ * (numero_comprobante_interno, forma_pago_identificador, monto, etc.) y todos
+ * se devuelven tal cual: el índice de firma abierto es a propósito, para no
+ * perder ninguno al hacer el eco.
+ */
 interface NotificacionPagopar {
   pagado?: boolean;
   hash_pedido?: string;
   token?: string;
   forma_pago?: string;
   fecha_pago?: string | null;
+  [campo: string]: unknown;
+}
+
+/**
+ * Saca las notificaciones del cuerpo, venga como venga.
+ *
+ * Pagopar no manda siempre application/json. Segun la integracion postea
+ * form-urlencoded con el JSON adentro del campo `resultado`, o el JSON pelado
+ * sin Content-Type. El cuerpo llega como texto crudo (ver index.ts) y acá se
+ * normaliza a un array de objetos, que es lo único con lo que trabaja el resto
+ * del handler.
+ *
+ * Devuelve [] si no se pudo interpretar: eso termina en 403, que es lo correcto
+ * porque sin hash_pedido no hay forma de validar la firma.
+ */
+function extraerNotificaciones(raw: unknown): NotificacionPagopar[] {
+  const comoArray = (valor: unknown): NotificacionPagopar[] => {
+    if (Array.isArray(valor)) return valor as NotificacionPagopar[];
+    // Una notificación suelta, sin envolver en array
+    if (valor && typeof valor === 'object') return [valor as NotificacionPagopar];
+    return [];
+  };
+
+  const desdeObjeto = (obj: Record<string, unknown>): NotificacionPagopar[] => {
+    const r = obj.resultado;
+    // form-urlencoded deja `resultado` como el JSON sin parsear
+    if (typeof r === 'string') {
+      try {
+        return comoArray(JSON.parse(r));
+      } catch {
+        return [];
+      }
+    }
+    if (r !== undefined) return comoArray(r);
+    // Sin envoltorio: la notificación es el objeto mismo
+    return obj.hash_pedido ? [obj as NotificacionPagopar] : [];
+  };
+
+  if (raw && typeof raw === 'object' && !Buffer.isBuffer(raw)) {
+    return desdeObjeto(raw as Record<string, unknown>);
+  }
+
+  const texto = Buffer.isBuffer(raw) ? raw.toString('utf8') : typeof raw === 'string' ? raw : '';
+  if (!texto.trim()) return [];
+
+  // JSON pelado
+  try {
+    const parsed: unknown = JSON.parse(texto);
+    if (parsed && typeof parsed === 'object') {
+      return desdeObjeto(parsed as Record<string, unknown>);
+    }
+  } catch {
+    // No era JSON: se intenta como form-urlencoded
+  }
+
+  try {
+    const form = new URLSearchParams(texto);
+    const campo = form.get('resultado');
+    if (campo) return comoArray(JSON.parse(campo));
+  } catch {
+    // Tampoco era urlencoded válido
+  }
+
+  return [];
 }
 
 router.post('/webhook', async (req: Request, res: Response) => {
-  const body = req.body as { resultado?: NotificacionPagopar[] };
-  const notif = Array.isArray(body?.resultado) ? body.resultado[0] : undefined;
+  const notificaciones = extraerNotificaciones(req.body);
+  const notif = notificaciones[0];
 
-  const hashPedido = notif?.hash_pedido ?? '';
-  const token = notif?.token ?? '';
+  const hashPedido = typeof notif?.hash_pedido === 'string' ? notif.hash_pedido : '';
+  const token = typeof notif?.token === 'string' ? notif.token : '';
+
+  if (notificaciones.length === 0) {
+    // Sin cuerpo interpretable no se puede ni validar la firma. Se loguea el
+    // tipo (nunca el contenido: trae datos del comprador) para poder ver desde
+    // los logs si Pagopar cambió cómo postea.
+    console.warn(
+      `[pagopar] Notificación ilegible — content-type: ${req.headers['content-type'] ?? 'ninguno'}, ` +
+        `body: ${typeof req.body}`,
+    );
+  }
 
   // Validar SIEMPRE antes de tocar la base
   if (!validarNotificacion(hashPedido, token)) {
@@ -111,9 +191,15 @@ router.post('/webhook', async (req: Request, res: Response) => {
     console.error('[pagopar] Error procesando la notificación:', err);
   }
 
-  // Devolver el mismo JSON con 200, aunque algo haya fallado de nuestro lado:
-  // si no, Pagopar reintenta indefinidamente
-  res.status(200).json(body);
+  // Eco de las MISMAS notificaciones que llegaron, con 200 aunque algo haya
+  // fallado de nuestro lado: si no, Pagopar reintenta indefinidamente.
+  //
+  // Va el array de objetos ya normalizado, no el body crudo: cuando Pagopar
+  // postea form-urlencoded, `resultado` viaja como un string con el JSON
+  // adentro, y devolver eso tal cual hacía que Pagopar leyera un string donde
+  // espera objetos — de ahí que no encontrara forma_pago ni
+  // numero_comprobante_interno en la respuesta.
+  res.status(200).json({ resultado: notificaciones });
 });
 
 // ─── GET /consultar/:hashPedido ───────────────────────────────────────────────

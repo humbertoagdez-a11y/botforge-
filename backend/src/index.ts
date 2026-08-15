@@ -91,6 +91,15 @@ app.use(
 );
 app.use(globalLimiter);
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+// El webhook de Pagopar se lee como TEXTO crudo, antes de los parsers globales.
+// Pagopar no manda siempre application/json: segun la integracion postea
+// form-urlencoded (resultado=<json>) o directamente sin Content-Type. Con los
+// parsers de arriba eso terminaba en req.body = {} o con resultado como string,
+// el handler no encontraba la notificacion y respondia 403 sin aplicar el pago.
+// Leyendolo crudo, el handler decide como parsearlo y siempre ve lo mismo.
+app.use('/api/v1/pagopar/webhook', express.text({ type: '*/*', limit: '1mb' }));
+
 // 10mb: las imagenes del asistente llegan como base64 en el body (~6.7mb max)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
