@@ -73,6 +73,9 @@ const envSchema = z.object({
   // Railway y compararla a ojo con el git log.
   RAILWAY_GIT_COMMIT_SHA: z.string().optional().default(''),
   RAILWAY_GIT_COMMIT_MESSAGE: z.string().optional().default(''),
+  // Monitoreo de errores. OPCIONAL a proposito: sin DSN el sistema funciona
+  // exactamente igual, solo que los errores quedan unicamente en los logs.
+  SENTRY_DSN: z.string().optional().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);

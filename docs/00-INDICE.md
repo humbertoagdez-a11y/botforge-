@@ -9,6 +9,7 @@ Punto de entrada. Leé esto primero y andá al documento que necesites.
 | [03-DECISIONES-CLAVE.md](03-DECISIONES-CLAVE.md) | Por qué el código es como es. Cada decisión con el problema que evitaba | **El más importante.** Antes de "mejorar" algo que parece raro |
 | [04-PLANES-Y-LIMITES.md](04-PLANES-Y-LIMITES.md) | Qué incluye cada plan y dónde se aplica cada límite | Al tocar precios, cupos o cualquier feature con gate por plan |
 | [05-PENDIENTES-Y-RIESGOS.md](05-PENDIENTES-Y-RIESGOS.md) | Lo que se sabe que falta, con esfuerzo estimado | Al planificar qué hacer después |
+| [06-MONITOREO.md](06-MONITOREO.md) | Sentry: cómo activarlo, qué reporta y qué nunca envía | Al activar las alertas o al investigar un error de producción |
 
 ## Reglas que no se rompen
 

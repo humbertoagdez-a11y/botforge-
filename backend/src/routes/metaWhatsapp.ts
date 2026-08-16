@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
+import { reportarError } from '../lib/monitoring';
 import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
 import {
   downloadMedia,
@@ -206,7 +207,7 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
       await sendPendingImage(clientNumber, result.pendingImage);
     } catch (mediaErr) {
       // El texto ya salió: que falle la imagen no puede tumbar la respuesta
-      console.error('[meta] Error enviando la imagen adjunta:', mediaErr);
+      reportarError('meta-envio-imagen', mediaErr, { origen: result.pendingImage.source });
     }
   }
 }
@@ -233,7 +234,7 @@ async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
         try {
           await processMessage(msg, phoneNumberId);
         } catch (err) {
-          console.error('[meta] Error procesando mensaje:', err);
+          reportarError('meta-mensaje', err, { tipo: msg.type ?? 'desconocido' });
           if (msg.from) {
             try {
               await sendTextMessage(
@@ -241,7 +242,7 @@ async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
                 'Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.',
               );
             } catch (sendErr) {
-              console.error('[meta] Tampoco se pudo avisar del error:', sendErr);
+              reportarError('meta-envio-texto', sendErr);
             }
           }
         }
@@ -270,7 +271,7 @@ router.post('/webhook', (req: Request, res: Response, next: NextFunction) => {
   }
 
   void processWebhookBody(body).catch((err) => {
-    console.error('[meta] Error procesando el webhook:', err);
+    reportarError('meta-webhook', err);
   });
 });
 

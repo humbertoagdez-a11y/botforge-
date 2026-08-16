@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { reportarError } from '../lib/monitoring';
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import {
@@ -334,7 +335,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
       );
     }
   } catch (err) {
-    console.error('[pagopar] Error procesando la notificación:', err);
+    // Un fallo acá significa un pago cobrado que no activó el plan: es de los
+    // errores más caros del sistema y tiene que avisar, no solo loguear.
+    reportarError('pagopar-webhook', err, { hashPedido: hashPedido.slice(0, 12) });
   }
 
   // Eco de las MISMAS notificaciones que llegaron, con 200 aunque algo haya

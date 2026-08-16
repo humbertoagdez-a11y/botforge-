@@ -5,6 +5,8 @@ import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { generateDailySummaries } from '../services/dailySummary';
 import { downgradeExpiredPlans, notifyExpiringSoon } from '../services/planExpiration';
+import { reportarError } from '../lib/monitoring';
+import { sentryHabilitado } from '../instrument';
 
 const router = Router();
 router.use(requireAuth);
@@ -43,6 +45,50 @@ router.post('/trigger-plan-expiration', async (req: Request, res: Response, next
     const notified = await notifyExpiringSoon();
     const downgraded = await downgradeExpiredPlans();
     res.json({ data: { downgraded, notified }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/dev/probar-monitoreo — dispara un error a propósito.
+ *
+ * Sirve para confirmar de punta a punta que Sentry está bien conectado: se
+ * llama una vez después de cargar SENTRY_DSN en Railway y tiene que aparecer
+ * el error en el panel en menos de un minuto.
+ *
+ * Vive acá y no como endpoint suelto porque este router ya exige sesión y, en
+ * producción, que seas el dueño de la plataforma. No expone nada: solo tira una
+ * excepción con un mensaje fijo.
+ */
+router.post('/probar-monitoreo', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await assertCanRunDevTasks(req.user!.userId);
+
+    if (!sentryHabilitado) {
+      throw new AppError(
+        503,
+        'SENTRY_DSN no está configurado en este entorno, así que no hay a dónde reportar. Cargalo en Railway y reintentá.',
+      );
+    }
+
+    const marca = new Date().toISOString();
+    reportarError(
+      'prueba-de-monitoreo',
+      new Error(`Error de prueba disparado a mano — ${marca}`),
+      { origen: 'endpoint-dev' },
+    );
+
+    res.json({
+      data: {
+        reportado: true,
+        marca,
+        mensaje:
+          'Listo. Buscá en Sentry un issue llamado "Error de prueba disparado a mano". Si no aparece en un minuto, revisá que el DSN esté bien cargado.',
+      },
+      error: null,
+      meta: null,
+    });
   } catch (err) {
     next(err);
   }

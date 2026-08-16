@@ -10,7 +10,7 @@ por relación valor/esfuerzo.
 
 | # | Qué | Por qué importa | Esfuerzo |
 |---|---|---|---|
-| 1 | **Sentry o similar** | Hoy los errores solo viven en `console.error` de Railway. Sin agregación no hay forma de saber si algo falla intermitentemente ni de enterarse antes que el cliente | Chico |
+| 1 | **Sentry en el frontend** | El backend ya está integrado (ver `06-MONITOREO.md`). Falta el lado del cliente: errores de React y fetch fallidos. Se postergó porque el cupo gratuito es compartido y los errores de navegador podrían quemarlo, dejando sin alertas al backend | Mediano |
 | 2 | **Arreglar `/apple-icon`** | Falla en cada build desde el 2026-07-20 (`@vercel/og`, `TypeError: Invalid URL`). No bloquea el deploy, pero ensucia el output y esconde fallos nuevos | Chico |
 | 3 | **Índice en `messages(conversationId, createdAt)`** | El informe semanal y el historial filtran por eso constantemente. Con volumen se va a notar | Chico |
 | 4 | **Zona horaria de `fechaPago` de Pagopar** | Pagopar manda la fecha sin zona (`"2026-08-16 22:50:00"`) y se parsea como hora local del servidor. En Railway (UTC) queda ~4h corrida respecto de Paraguay. Solo afecta conciliación, no el cobro ni la activación | Chico |

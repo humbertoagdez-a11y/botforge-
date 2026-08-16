@@ -12,6 +12,7 @@ import { sendEmail } from './email';
 import { searchFileByName, downloadFileAsBase64, getValidAccessToken } from './googleDrive';
 import { isCloudinaryConfigured } from '../config/cloudinary';
 import { logCacheUsage } from '../lib/cacheUsage';
+import { reportarError, reportarAviso } from '../lib/monitoring';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -315,7 +316,7 @@ export async function executeTenantTool(
           message: `Encontré "${match.name}". La imagen se envía junto con tu respuesta, no incluyas ningún link.`,
         };
       } catch (err) {
-        console.error('[drive] Error buscando archivo:', err);
+        reportarError('drive-buscar-archivo', err, { botId: context.botId });
         return { found: false, message: 'Hubo un error accediendo a Drive. Intentá de nuevo.' };
       }
     }
@@ -381,7 +382,7 @@ export async function executeTenantTool(
         );
         return { derivado: true, message: 'El encargado ya fue notificado por email. Avisale al cliente que en breve lo contacta una persona.' };
       } catch (err) {
-        console.error('[tenantAgent] Error notificando derivación:', err);
+        reportarError('tenant-derivacion', err, { botId: context.botId });
         return { derivado: false, message: 'No se pudo notificar al encargado; decile al cliente que igual un encargado va a revisar el chat.' };
       }
     }
@@ -398,12 +399,20 @@ async function runFallback(
   messages: Anthropic.MessageParam[],
 ): Promise<{ content: string; tokensUsed: number }> {
   console.warn(`[tenantAgent] ${PRIMARY_MODEL} devolvió refusal, reintentando con ${FALLBACK_MODEL}`);
-  const response = await anthropic.messages.create({
-    model: FALLBACK_MODEL,
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages,
-  });
+  let response: Anthropic.Message;
+  try {
+    response = await anthropic.messages.create({
+      model: FALLBACK_MODEL,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages,
+    });
+  } catch (err) {
+    // El fallback es el último recurso: si también falla, el cliente se queda
+    // sin respuesta. Se reporta y se relanza para que el canal lo maneje.
+    reportarError('anthropic-fallback', err, { modelo: FALLBACK_MODEL });
+    throw err;
+  }
   const textBlock = response.content.find((b) => b.type === 'text');
   return {
     content: textBlock?.type === 'text' ? textBlock.text : '',
@@ -566,6 +575,14 @@ export async function runTenantAgentLoop(
     break;
   }
 
+  // Se gastaron las MAX_TURNS rondas sin que el modelo produjera texto. El
+  // cliente recibe una disculpa genérica, así que sin esto el problema es
+  // invisible: el dueño solo ve que su bot "a veces no contesta".
+  reportarAviso('tenant-sin-respuesta', 'El agente agotó las rondas sin producir texto', {
+    botId: context.botId,
+    canal: context.channel,
+    rondas: MAX_TURNS,
+  });
   const agotado = 'Disculpá, no pude procesar tu consulta. ¿Podés escribirla de nuevo?';
   if (stream) stream.onDelta(agotado);
   return { content: agotado, tokensUsed };

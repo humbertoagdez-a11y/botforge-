@@ -1,3 +1,7 @@
+// PRIMERO DE TODO: Sentry parchea http, express y prisma al inicializarse, y
+// no puede instrumentar lo que ya se cargó. instrument.ts importa config/env
+// por su cuenta, así que las variables ya están validadas al llegar acá.
+import './instrument';
 import './config/env';
 import './jobs/processDocument';
 import express from 'express';
@@ -12,6 +16,8 @@ import fs from 'fs';
 import { env } from './config/env';
 import { globalLimiter } from './middleware/rateLimit';
 import { errorHandler } from './middleware/errorHandler';
+import { reportarError } from './lib/monitoring';
+import { Sentry, sentryHabilitado } from './instrument';
 
 import authRouter from './routes/auth';
 import botsRouter from './routes/bots';
@@ -169,6 +175,11 @@ if (env.NODE_ENV !== 'production') {
   app.use('/api/v1/test', testRouter);
 }
 
+// Captura las excepciones que llegan al final de la cadena de Express. Va
+// antes de errorHandler para verlas, pero no responde: sigue respondiendo el
+// nuestro, con el formato { data, error, meta } de siempre.
+if (sentryHabilitado) Sentry.setupExpressErrorHandler(app);
+
 app.use(errorHandler);
 
 // Resumen diario por email: todos los días a las 21:00 hora Paraguay.
@@ -227,14 +238,16 @@ cron.schedule(
 // un email, un contador— tira abajo todas las requests en vuelo. Se loguea y se
 // sigue: el fallo puntual ya esta contenido en su propio flujo.
 process.on('unhandledRejection', (motivo) => {
-  console.error('[proceso] Promesa rechazada sin manejar:', motivo);
+  reportarError('proceso', motivo, { tipo: 'unhandledRejection' });
 });
 
 // Una excepcion sincronica sin capturar SI deja el proceso en estado indefinido:
 // se loguea y se sale para que Railway levante una instancia limpia.
 process.on('uncaughtException', (err) => {
-  console.error('[proceso] Excepción no capturada, reiniciando:', err);
-  process.exit(1);
+  reportarError('proceso', err, { tipo: 'uncaughtException' });
+  // Se le da un instante a Sentry para despachar antes de morir; si no hay DSN
+  // el flush resuelve al toque
+  void Sentry.close(2000).then(() => process.exit(1));
 });
 
 /** Que integraciones quedaron activas segun las variables presentes */
