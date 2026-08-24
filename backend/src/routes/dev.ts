@@ -94,4 +94,29 @@ router.post('/probar-monitoreo', async (req: Request, res: Response, next: NextF
   }
 });
 
+/**
+ * GET /api/v1/dev/my-outbound-ip — con qué IP pública sale este proceso a
+ * internet ahora mismo.
+ *
+ * Temporal: se agregó para confirmar empíricamente la IP saliente de Railway
+ * antes de cargarla como "IP habilitada" en el panel de Pagopar. Se puede
+ * borrar una vez confirmada, o dejar — no expone nada sensible, solo pega a
+ * un servicio público que devuelve la IP del que llama.
+ */
+router.get('/my-outbound-ip', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await assertCanRunDevTasks(req.user!.userId);
+
+    const r = await fetch('https://api.ipify.org?format=json');
+    if (!r.ok) {
+      throw new AppError(502, 'No se pudo consultar el servicio externo de IP (api.ipify.org)');
+    }
+    const { ip } = (await r.json()) as { ip: string };
+
+    res.json({ data: { ip }, error: null, meta: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
