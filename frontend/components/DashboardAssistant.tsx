@@ -214,6 +214,11 @@ export default function DashboardAssistant(props: Props) {
   } | null>(null);
   const [imageModal, setImageModal] = useState<string | null>(null);
   const [quota, setQuota] = useState<AssistantQuota | null>(null);
+  /** Mensajes cuyo toggle (deshacer/re-aplicar) está en curso. Evita el mismo
+      doble submit que en "eliminar bot": el toggle de instructivo_preview
+      borra un documento, y un segundo click durante el primer borrado
+      encuentra el documento ya borrado y responde 404. */
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
   const messagesRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -603,9 +608,17 @@ export default function DashboardAssistant(props: Props) {
 
   /** Toggle de un componente Generative UI: deshacer o re-aplicar el cambio */
   async function handleToggleUI(messageId: string, component: UIComponent) {
+    // Guarda sincrónica antes de cualquier await: un segundo click sobre el
+    // mismo mensaje mientras el primero está en curso no dispara otra request.
+    if (togglingIds.has(messageId)) return;
+    setTogglingIds((s) => new Set(s).add(messageId));
+
     const goingOff = component.isActive;
     const payload = goingOff ? component.undoPayload : component.applyPayload;
-    if (!payload) return;
+    if (!payload) {
+      setTogglingIds((s) => { const n = new Set(s); n.delete(messageId); return n; });
+      return;
+    }
 
     try {
       const botIdTarget = String(payload.botId ?? '');
@@ -636,6 +649,10 @@ export default function DashboardAssistant(props: Props) {
       toast.success(goingOff ? 'Cambio deshecho' : 'Cambio re-aplicado');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'No se pudo aplicar el cambio');
+    } finally {
+      // Cubre también el "return" temprano de instructivo_preview cuando no
+      // corresponde deshacer: sin esto el mensaje quedaría bloqueado para siempre
+      setTogglingIds((s) => { const n = new Set(s); n.delete(messageId); return n; });
     }
   }
 
@@ -793,6 +810,7 @@ export default function DashboardAssistant(props: Props) {
                   <GenerativeUICard
                     component={m.uiComponent}
                     onToggle={() => void handleToggleUI(m.id, m.uiComponent!)}
+                    busy={togglingIds.has(m.id)}
                   />
                 </div>
               );

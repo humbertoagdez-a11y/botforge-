@@ -274,6 +274,11 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  /** Evita el doble submit: sin esto, dos clicks en "Eliminar" mandan dos
+      DELETE — el primero borra el bot de verdad, el segundo llega tarde y
+      encuentra un 404 ("Bot no encontrado"). Si esa segunda respuesta resuelve
+      después, el toast.error se dispara sobre una operación que ya tuvo éxito. */
+  const [isDeleting, setIsDeleting] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
@@ -321,14 +326,19 @@ export default function DashboardPage() {
   }, []);
 
   async function confirmDelete(id: string) {
+    // Guarda sincrónica: si ya hay un delete en curso, un segundo click no
+    // dispara una segunda request.
+    if (isDeleting) return;
+    setIsDeleting(true);
     try {
       await api.bots.delete(id);
       setBots((b) => b.filter((x) => x.id !== id));
       toast.success('Bot eliminado');
-    } catch {
-      toast.error('No se pudo eliminar el bot');
-    } finally {
       setDeletingId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo eliminar el bot');
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -437,7 +447,7 @@ export default function DashboardPage() {
         </>
       )}
 
-      <Dialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
+      <Dialog open={!!deletingId} onOpenChange={(open) => !open && !isDeleting && setDeletingId(null)}>
         <DialogContent className="theme-dashboard max-w-sm">
           <DialogHeader>
             <DialogTitle>¿Eliminar bot?</DialogTitle>
@@ -446,8 +456,15 @@ export default function DashboardPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setDeletingId(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => deletingId && confirmDelete(deletingId)}>
+            <Button variant="outline" onClick={() => setDeletingId(null)} disabled={isDeleting}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={() => deletingId && confirmDelete(deletingId)}
+            >
+              {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
               Eliminar
             </Button>
           </div>

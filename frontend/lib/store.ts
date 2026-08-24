@@ -7,6 +7,12 @@ import type { User } from './api';
 interface AuthState {
   token: string | null;
   user: User | null;
+  /** false hasta que zustand termina de leer 'botforge-auth' de localStorage.
+      Ver el comentario junto a onRehydrateStorage más abajo: sin esto, un
+      guard que redirige a /auth/login cuando `!token` puede disparar sobre
+      el estado inicial (token=null) ANTES de que la sesión persistida se
+      cargue, echando a un usuario que sí tenía sesión válida. */
+  hasHydrated: boolean;
   setAuth: (token: string, user: User) => void;
   clearAuth: () => void;
 }
@@ -75,6 +81,7 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       token: null,
       user: null,
+      hasHydrated: false,
       setAuth: (token, user) => {
         if (typeof window !== 'undefined') localStorage.setItem('bf_token', token);
         set({ token, user });
@@ -86,10 +93,24 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'botforge-auth',
-      // Re-sincroniza 'bf_token' (que lee api.ts) al rehidratar la sesion
+      /**
+       * Corre cuando termina de leer localStorage — SIEMPRE, tenga o no
+       * sesión guardada. Antes de esto, `token` vale `null` (el estado
+       * inicial), indistinguible de "no hay sesión". El guard de
+       * (dashboard)/layout.tsx hacía `if (!token) router.replace('/auth/login')`
+       * en un useEffect que corre ANTES de que termine esta rehidratación:
+       * en una recarga completa de una ruta profunda del dashboard, el
+       * usuario con sesión válida era expulsado al login. Reproducido con
+       * Playwright: /dashboard/stats y /dashboard/perfil rebotaban 5 de 5
+       * veces en una recarga con sesión guardada y válida.
+       *
+       * Con `hasHydrated`, el guard espera a que este flag sea true antes
+       * de decidir si hay o no sesión.
+       */
       onRehydrateStorage: () => (state) => {
         if (typeof window === 'undefined') return;
         if (state?.token) localStorage.setItem('bf_token', state.token);
+        useAuthStore.setState({ hasHydrated: true });
       },
     },
   ),

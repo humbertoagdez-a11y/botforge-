@@ -40,14 +40,17 @@ function sectionTitle(pathname: string): string {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { token } = useAuthStore();
+  const { token, hasHydrated } = useAuthStore();
   // El drawer vive en el store para que OnboardingGuide, que se renderiza en
   // la page, pueda abrirlo al llegar al paso del Asistente
   const { sidebarOpen, openSidebar, closeSidebar } = useSidebarStore();
 
+  // hasHydrated evita expulsar a un usuario con sesión válida: `token` vale
+  // null durante el instante entre el primer render y que zustand termine de
+  // leer localStorage, y ese null era indistinguible de "no hay sesión".
   useEffect(() => {
-    if (!token) router.replace('/auth/login');
-  }, [token, router]);
+    if (hasHydrated && !token) router.replace('/auth/login');
+  }, [token, hasHydrated, router]);
 
   // Cerrar el drawer al navegar
   useEffect(() => {

@@ -19,6 +19,8 @@ export interface UIComponent {
 interface Props {
   component: UIComponent;
   onToggle: () => void;
+  /** true mientras el toggle está en curso, para bloquear un segundo click */
+  busy?: boolean;
 }
 
 // Ícono según el tipo de acción ejecutada
@@ -33,7 +35,7 @@ function DynamicIcon({ kind }: { kind: UIComponent['kind'] }) {
   return <Icon className="h-4 w-4 text-cyan-400" />;
 }
 
-export default function GenerativeUICard({ component, onToggle }: Props) {
+export default function GenerativeUICard({ component, onToggle, busy }: Props) {
   return (
     <div className="w-full max-w-[340px] overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0A0A1A]">
       {/* Header estilo terminal */}
@@ -94,7 +96,7 @@ export default function GenerativeUICard({ component, onToggle }: Props) {
             role="switch"
             aria-checked={component.isActive}
             aria-label={component.isActive ? component.undoLabel : component.actionLabel}
-            disabled={component.disabled}
+            disabled={component.disabled || busy}
             onClick={onToggle}
             className={`relative h-5 w-10 shrink-0 rounded-full transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-40 ${
               component.isActive ? 'bg-cyan-500' : 'bg-white/20'

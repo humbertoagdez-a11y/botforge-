@@ -55,7 +55,11 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
     <Dialog open={!!conversationId} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="theme-dashboard flex flex-col max-md:inset-0 max-md:left-0 max-md:top-0 max-md:h-full max-md:max-h-full max-md:w-full max-md:max-w-full max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-none md:max-h-[85vh] md:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          {/* flex-wrap + pr-8: en pantallas angostas el nombre del bot puede
+              ocupar dos líneas y empujar la insignia de canal justo debajo
+              del botón de cerrar (que es absolute, top-3 right-3, h-9 w-9) —
+              sin espacio reservado se superponen. */}
+          <DialogTitle className="flex flex-wrap items-center gap-2 pr-8">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
               <Bot className="h-4 w-4 text-primary" />
             </div>
