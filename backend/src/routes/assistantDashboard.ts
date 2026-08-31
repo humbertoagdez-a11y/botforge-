@@ -22,6 +22,7 @@ import {
   buildPlatformSystemPrompt,
 } from '../services/platformAgent';
 import { logCacheUsage } from '../lib/cacheUsage';
+import { contentSinRazonamiento, sinBloquesDeRazonamiento } from '../lib/anthropicBlocks';
 import { esNoRespuesta } from '../lib/frasesBot';
 import { agregarConocimiento } from '../services/knowledge';
 import { CATEGORY_LABEL, createTicket, listUserTickets } from '../services/supportTickets';
@@ -41,6 +42,12 @@ const MAX_TOOL_ROUNDS = 5;
 // ─── TOOL REGISTRY (Agente Tipo A — Plataforma) ───────────────────────────────
 
 const PLATFORM_TOOLS: Anthropic.Tool[] = [
+  {
+    name: 'list_bots',
+    description:
+      'Lista TODOS los bots de la cuenta del usuario con su id, nombre, estado, idioma, documentos y WhatsApp. Es la UNICA herramienta que dice que bots existen: usala antes de afirmar cuantos bots tiene el usuario o que no tiene ninguno, y para conseguir el botId que necesitan las demas herramientas.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
   {
     name: 'get_bot_details',
     description: 'Obtiene información completa del bot actual incluyendo documentos, estado de WhatsApp y últimas conversaciones',
@@ -343,6 +350,7 @@ function confirmMessage(tool: string, input: Record<string, unknown>): string {
 // ─── VALIDADORES DE INPUT POR TOOL ────────────────────────────────────────────
 
 const toolInputSchemas = {
+  list_bots: z.object({}),
   get_bot_details: z.object({ botId: z.string().min(1) }),
   update_bot_config: z.object({
     botId: z.string().min(1),
@@ -485,6 +493,44 @@ async function executeToolCall(
   }
 
   switch (name) {
+    // Pertenencia por construccion: el where filtra por userId, no hay id que
+    // pueda elegir el modelo. Es la unica tool que enumera bots, y por eso la
+    // que le permite conseguir un botId sin pedirselo al usuario.
+    case 'list_bots': {
+      const bots = await prisma.bot.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          language: true,
+          whatsappNumber: true,
+          createdAt: true,
+          _count: { select: { documents: true, conversations: true } },
+        },
+      });
+      return {
+        result: {
+          total: bots.length,
+          bots: bots.map((b) => ({
+            botId: b.id,
+            nombre: b.name,
+            estado: b.isActive ? 'activo' : 'pausado',
+            idioma: b.language,
+            documentos: b._count.documents,
+            conversaciones: b._count.conversations,
+            whatsapp: b.whatsappNumber ?? 'no conectado',
+            creado: b.createdAt,
+          })),
+          nota:
+            bots.length === 0
+              ? 'La cuenta no tiene ningun bot creado todavia.'
+              : 'Estos son todos los bots de la cuenta. Usá el botId de esta lista para las demás herramientas.',
+        },
+      };
+    }
+
     case 'get_bot_details': {
       const { botId } = parsed.data as z.infer<typeof toolInputSchemas.get_bot_details>;
       const bot = await getOwnedBot(botId, userId);
@@ -1154,6 +1200,26 @@ async function executeToolCall(
 
 // ─── CONTEXTO DEL BOT ─────────────────────────────────────────────────────────
 
+/**
+ * Inventario de bots de la cuenta. Va en el bloque dinamico del prompt (nunca
+ * en el cacheado) y se arma en cada mensaje, asi que refleja los bots que
+ * existen en ese instante: un bot creado hace cinco segundos ya aparece.
+ */
+async function buildBotsOverview(userId: string): Promise<string> {
+  const bots = await prisma.bot.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, name: true, isActive: true, _count: { select: { documents: true } } },
+  });
+  if (bots.length === 0) {
+    return 'BOTS DE LA CUENTA:\nNinguno todavia. Si el usuario quiere uno, se crea con create_new_bot.';
+  }
+  const lineas = bots.map(
+    (b) => `- '${b.name}' - botId ${b.id} - ${b.isActive ? 'activo' : 'pausado'} - ${b._count.documents} documento(s)`,
+  );
+  return `BOTS DE LA CUENTA (${bots.length}):\n${lineas.join('\n')}`;
+}
+
 async function buildBotContext(botId: string, userId: string): Promise<string> {
   const bot = await prisma.bot.findUnique({
     where: { id: botId },
@@ -1179,7 +1245,7 @@ async function buildBotContext(botId: string, userId: string): Promise<string> {
   const langLabel = bot.language === 'es' ? 'español' : bot.language === 'pt' ? 'portugués' : 'inglés';
   const readyDocs = bot.documents.filter((d) => d.status === 'READY').length;
 
-  let context = `CONTEXTO DEL BOT ACTUAL (botId: ${bot.id}):
+  let context = `BOT ABIERTO EN PANTALLA (botId: ${bot.id}):
 Bot '${bot.name}' (${personalityBrief}).
 Estado: ${bot.isActive ? 'activo' : 'pausado'}. Idioma: ${langLabel}.
 Documentos: ${bot.documents.length} (${readyDocs} listos)${bot.documents.length > 0 ? ` — ${bot.documents.map((d) => `${d.name} [${d.status}]`).join(', ')}` : ''}.
@@ -1248,7 +1314,12 @@ function buildAnthropicMessages(
 ): Anthropic.MessageParam[] {
   return messages.map((m, i): Anthropic.MessageParam => {
     if (typeof m.content !== 'string') {
-      return { role: m.role, content: m.content as unknown as Anthropic.MessageParam['content'] };
+      // Puede venir con bloques thinking de una sesion anterior: se limpian,
+      // porque el SDK 0.36 los devuelve mutilados y la API los rechaza.
+      return {
+        role: m.role,
+        content: contentSinRazonamiento(m.content as unknown as Anthropic.MessageParam['content']),
+      };
     }
     if (image && i === messages.length - 1 && m.role === 'user') {
       return {
@@ -1271,6 +1342,9 @@ router.post(
   dashboardLimiter,
   async (req: Request, res: Response, next: NextFunction) => {
     let streaming = false;
+    // Se asigna apenas hay contexto suficiente; el catch tambien lo usa, por eso
+    // vive afuera del try.
+    let persistTurn: (() => Promise<void>) | null = null;
     try {
       const { messages, botId, image, confirmedToolUseIds } = chatSchema.parse(req.body);
       const userId = req.user!.userId;
@@ -1289,9 +1363,17 @@ router.post(
         );
       }
 
-      const botContext = botId
-        ? await buildBotContext(botId, userId)
-        : 'CONTEXTO DEL BOT ACTUAL:\nEl usuario no tiene ningún bot seleccionado. Si necesita operar sobre un bot, podés listar sus bots con get_conversations/get_account_stats o pedirle que abra el asistente desde la página del bot.';
+      // El inventario de bots va SIEMPRE, haya o no un bot abierto en pantalla.
+      // Antes, sin botId, el contexto decia "el usuario no tiene ningun bot
+      // seleccionado" y remitia a get_conversations: un bot recien creado no
+      // tiene conversaciones, esa tool devolvia vacio y el asistente concluia
+      // que la cuenta no tenia bots.
+      const botContext = [
+        await buildBotsOverview(userId),
+        botId
+          ? await buildBotContext(botId, userId)
+          : 'BOT ABIERTO EN PANTALLA:\nNinguno: el usuario abrio el asistente desde una pantalla que no es la de un bot. Eso NO dice nada sobre cuantos bots tiene; los que tiene son los de la lista de arriba.',
+      ].join('\n\n');
 
       const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
       const userName = user?.name ?? 'Usuario';
@@ -1320,22 +1402,60 @@ router.post(
       res.flushHeaders();
       streaming = true;
 
+      // clienteSeFue solo apaga la escritura al socket. NO corta el turno: si
+      // el usuario minimiza el panel (el frontend aborta el fetch), la
+      // respuesta se termina de generar igual y se guarda, que es lo unico que
+      // el usuario va a ver cuando vuelva a abrir el chat.
+      let clienteSeFue = false;
+      req.on('close', () => { clienteSeFue = true; });
+
       const send = (payload: unknown) => {
-        if (!res.writableEnded) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        if (clienteSeFue || res.writableEnded || res.destroyed) return;
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
       };
       const finish = () => {
         send({ type: 'done' });
-        res.end();
+        if (!res.writableEnded) res.end();
       };
-
-      let aborted = false;
-      req.on('close', () => { aborted = true; });
 
       // Acumula todo el texto visible del asistente para persistirlo al final
       let assistantFullText = '';
       const sendText = (text: string) => {
         assistantFullText += text;
         send({ type: 'text', text });
+      };
+
+      /**
+       * Guarda el turno en el historial. Corre SIEMPRE y una sola vez: al
+       * terminar bien, al cortar para pedir confirmacion, y tambien si el turno
+       * se cae a mitad. Antes solo corria al final y salteaba el guardado si el
+       * request se habia cerrado, asi que minimizar el panel (el frontend
+       * aborta el fetch) o un error de la API borraban de la historia lo que el
+       * usuario ya habia leido en pantalla.
+       *
+       * El mensaje del usuario es el ultimo entrante de tipo user con texto; en
+       * las reanudaciones tras confirmacion el ultimo es un turno assistant, y
+       * por eso no se re-guarda.
+       */
+      let turnoPersistido = false;
+      persistTurn = async () => {
+        if (turnoPersistido) return;
+        turnoPersistido = true;
+        const lastIncoming = messages[messages.length - 1];
+        const newUserText =
+          lastIncoming.role === 'user' && typeof lastIncoming.content === 'string'
+            ? lastIncoming.content
+            : null;
+        const toPersist: { userId: string; role: string; content: string }[] = [];
+        if (newUserText) toPersist.push({ userId, role: 'user', content: newUserText });
+        if (assistantFullText.trim()) toPersist.push({ userId, role: 'assistant', content: assistantFullText });
+        if (toPersist.length === 0) return;
+        try {
+          await prisma.platformAssistantMessage.createMany({ data: toPersist });
+        } catch (persistErr) {
+          // Nunca romper la respuesta ya entregada por un fallo de persistencia
+          console.error('[assistant-dashboard] no se pudo guardar el historial:', persistErr);
+        }
       };
 
       // Ejecuta los tool_use de un turno assistant y devuelve los tool_results
@@ -1370,7 +1490,7 @@ router.post(
       };
 
       let rounds = 0;
-      while (rounds < MAX_TOOL_ROUNDS && !aborted) {
+      while (rounds < MAX_TOOL_ROUNDS) {
         rounds++;
 
         // Caso de reanudación tras confirmación: la conversación termina en un
@@ -1393,6 +1513,7 @@ router.post(
               input: unconfirmed.input,
               message: confirmMessage(unconfirmed.name, unconfirmed.input as Record<string, unknown>),
             });
+            await persistTurn();
             finish();
             return;
           }
@@ -1409,7 +1530,6 @@ router.post(
           messages: anthropicMessages,
         });
 
-        req.on('close', () => stream.abort());
         stream.on('text', (text) => sendText(text));
 
         const finalMessage = await stream.finalMessage();
@@ -1440,7 +1560,7 @@ router.post(
         // Se mandan los content blocks para que el frontend pueda reanudar.
         const unconfirmed = toolUses.find((t) => DESTRUCTIVE_TOOLS.has(t.name) && !confirmed.has(t.id));
         if (unconfirmed) {
-          send({ type: 'assistant_blocks', blocks: finalMessage.content });
+          send({ type: 'assistant_blocks', blocks: sinBloquesDeRazonamiento(finalMessage.content) });
           send({
             type: 'confirm_required',
             toolUseId: unconfirmed.id,
@@ -1448,42 +1568,27 @@ router.post(
             input: unconfirmed.input,
             message: confirmMessage(unconfirmed.name, unconfirmed.input as Record<string, unknown>),
           });
+          await persistTurn();
           finish();
           return;
         }
 
         const results = await runTools(toolUses);
-        anthropicMessages.push({ role: 'assistant', content: finalMessage.content });
+        anthropicMessages.push({
+          role: 'assistant',
+          content: sinBloquesDeRazonamiento(finalMessage.content),
+        });
         anthropicMessages.push({ role: 'user', content: results });
       }
 
-      // Persistir el turno completo (solo si no se abortó a mitad). El mensaje
-      // del usuario es el último entrante de tipo user con texto; en las
-      // reanudaciones tras confirmación el último es un turno assistant, así que
-      // no se re-guarda el user. La respuesta va acumulada en assistantFullText.
-      if (!aborted) {
-        const lastIncoming = messages[messages.length - 1];
-        const newUserText =
-          lastIncoming.role === 'user' && typeof lastIncoming.content === 'string'
-            ? lastIncoming.content
-            : null;
-        const toPersist: { userId: string; role: string; content: string }[] = [];
-        if (newUserText) toPersist.push({ userId, role: 'user', content: newUserText });
-        if (assistantFullText.trim()) toPersist.push({ userId, role: 'assistant', content: assistantFullText });
-        if (toPersist.length > 0) {
-          try {
-            await prisma.platformAssistantMessage.createMany({ data: toPersist });
-          } catch (persistErr) {
-            // Nunca romper la respuesta ya entregada por un fallo de persistencia
-            console.error('[assistant-dashboard] no se pudo guardar el historial:', persistErr);
-          }
-        }
-      }
-
+      await persistTurn();
       finish();
     } catch (err) {
+      // Se guarda lo que el usuario ya vio antes de salir por cualquier via:
+      // un turno que se cae no puede llevarse el historial con el.
+      await persistTurn?.();
       if (err instanceof Anthropic.APIUserAbortError) {
-        res.end();
+        if (!res.writableEnded) res.end();
         return;
       }
       if (streaming) {

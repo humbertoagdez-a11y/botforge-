@@ -13,6 +13,7 @@ import { searchFileByName, downloadFileAsBase64, getValidAccessToken } from './g
 import { isCloudinaryConfigured } from '../config/cloudinary';
 import { logCacheUsage } from '../lib/cacheUsage';
 import { reportarError, reportarAviso } from '../lib/monitoring';
+import { sinBloquesDeRazonamiento } from '../lib/anthropicBlocks';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -562,7 +563,9 @@ export async function runTenantAgentLoop(
 
       currentMessages = [
         ...currentMessages,
-        { role: 'assistant', content: response.content },
+        // Sin los bloques de razonamiento: finalMessage() los devuelve
+        // mutilados y la API rechaza la ronda siguiente. Ver anthropicBlocks.ts
+        { role: 'assistant', content: sinBloquesDeRazonamiento(response.content) },
         { role: 'user', content: toolResults },
       ];
       continue;

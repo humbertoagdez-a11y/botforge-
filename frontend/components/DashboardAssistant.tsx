@@ -36,6 +36,7 @@ const PLATFORM_THINKING = [
 ];
 
 const TOOL_LABELS: Record<string, string> = {
+  list_bots: 'Buscando tus bots...',
   get_bot_details: 'Leyendo configuración del bot...',
   update_bot_config: 'Actualizando configuración...',
   update_bot_personality: 'Actualizando personalidad...',
@@ -223,11 +224,22 @@ export default function DashboardAssistant(props: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** Espejo de isLoading para leerlo dentro del efecto de apertura sin
+      meterlo en sus dependencias (haria que se recargue el historial en
+      cada token que llega). */
+  const isLoadingRef = useRef(false);
+
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
   // Al abrir: carga el historial persistido (si hay); si no, bienvenida.
   // Al cerrar: limpieza total del estado local.
   useEffect(() => {
     if (!isOpen) {
+      // Con una respuesta en curso NO se aborta ni se limpia: abortar el fetch
+      // era lo que hacia desaparecer el ultimo mensaje al minimizar. Se deja
+      // terminar el turno (el backend lo persiste igual) y el estado local
+      // queda intacto por si el usuario reabre antes de que termine.
+      if (isLoadingRef.current) return;
       abortRef.current?.abort();
       setMessages([]);
       setInput('');
@@ -237,6 +249,11 @@ export default function DashboardAssistant(props: Props) {
       setQuota(null);
       return;
     }
+
+    // Reabrir a mitad de una respuesta: se conserva lo que ya hay en pantalla
+    // en vez de pisarlo con la bienvenida y un historial que todavia no
+    // incluye el turno en curso.
+    if (isLoadingRef.current) return;
 
     let cancelled = false;
     setMessages([buildWelcome(botName)]);
