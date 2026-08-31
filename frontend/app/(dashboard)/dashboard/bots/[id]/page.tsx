@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, Bot, FileText, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { ArrowLeft, Bot, FileText, IdCard, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
 // Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,7 @@ import InstructivoWizard from '@/components/InstructivoWizard';
 import ChatWidget from '@/components/ChatWidget';
 import BotImages from '@/components/BotImages';
 import WhatsAppOnboarding from '@/components/WhatsAppOnboarding';
+import WhatsAppProfile from '@/components/WhatsAppProfile';
 import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
 import { useAssistantStore, useAuthStore } from '@/lib/store';
 import { Z } from '@/lib/z-index';
@@ -330,6 +331,10 @@ export default function BotDetailPage() {
             <Smartphone className="h-3.5 w-3.5" />
             WhatsApp
           </TabsTrigger>
+          <TabsTrigger value="whatsapp-profile" className="gap-1.5">
+            <IdCard className="h-3.5 w-3.5" />
+            Perfil de WhatsApp
+          </TabsTrigger>
         </TabsList>
 
         {/* Documents tab */}
@@ -487,6 +492,12 @@ export default function BotDetailPage() {
             onDocUploaded={(doc) => setDocs((d) => [doc, ...d])}
             onDocDeleted={(docId) => setDocs((d) => d.filter((x) => x.id !== docId))}
           />
+        </TabsContent>
+
+        {/* Perfil de WhatsApp: como ven los clientes el numero. Va aparte de la
+            tab de WhatsApp, que se ocupa de CONECTAR el numero. */}
+        <TabsContent value="whatsapp-profile" className="mt-4">
+          <WhatsAppProfile bot={bot} onIrAConectar={() => setActiveTab('whatsapp')} />
         </TabsContent>
       </Tabs>
 

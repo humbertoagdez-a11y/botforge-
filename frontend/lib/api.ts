@@ -486,6 +486,26 @@ async function requestWithMeta<T, M>(path: string): Promise<{ data: T; meta: M }
   return { data: json.data, meta: json.meta };
 }
 
+/** Los 7 campos del perfil de negocio de WhatsApp. Todos pueden faltar. */
+export interface WhatsAppProfile {
+  about?: string;
+  address?: string;
+  description?: string;
+  email?: string;
+  profile_picture_url?: string;
+  websites?: string[];
+  vertical?: string;
+}
+
+export type WhatsAppProfileUpdate = Partial<{
+  about: string;
+  address: string;
+  description: string;
+  email: string;
+  websites: string[];
+  vertical: string;
+}>;
+
 export const api = {
   auth: {
     login: (email: string, password: string) =>
@@ -586,6 +606,23 @@ export const api = {
     },
     delete: (botId: string, imageId: string) =>
       request<{ deleted: boolean }>(`/api/v1/bots/${botId}/images/${imageId}`, { method: 'DELETE' }),
+  },
+
+  whatsappProfile: {
+    get: (botId: string) => request<WhatsAppProfile>(`/api/v1/bots/${botId}/whatsapp-profile`),
+    update: (botId: string, data: WhatsAppProfileUpdate) =>
+      request<WhatsAppProfile>(`/api/v1/bots/${botId}/whatsapp-profile`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    uploadPicture: (botId: string, file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return request<WhatsAppProfile>(`/api/v1/bots/${botId}/whatsapp-profile/picture`, {
+        method: 'POST',
+        body: form,
+      });
+    },
   },
 
   // El chat del bot no pasa por request(): es SSE y lo maneja ChatWidget

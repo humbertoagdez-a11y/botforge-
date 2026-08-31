@@ -32,6 +32,11 @@ const envSchema = z.object({
   // las instrucciones de conexion, el que corresponde a META_PHONE_NUMBER_ID.
   // No confundir con META_PHONE_NUMBER_ID, que es el id interno de Meta.
   META_WHATSAPP_DISPLAY_NUMBER: z.string().optional().default('+595991820602'),
+  // App ID de Meta. Solo hace falta para la Resumable Upload API, que es el
+  // unico camino para cambiar la foto del perfil de negocio: el resto del
+  // perfil se edita sin el. Sin esta variable la feature de foto avisa y el
+  // resto sigue funcionando igual.
+  META_APP_ID: z.string().optional().default(''),
   // Pagopar: pasarela activa. La private key solo se usa para firmar tokens
   // sha1, nunca viaja en una URL ni se loguea.
   PAGOPAR_PUBLIC_KEY: z.string().optional().default(''),
