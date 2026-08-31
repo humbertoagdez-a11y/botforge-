@@ -32,6 +32,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
             <Link href="/terminos" className="hover:text-gray-300">Términos</Link>
             <Link href="/privacidad" className="hover:text-gray-300">Privacidad</Link>
             <Link href="/cookies" className="hover:text-gray-300">Cookies</Link>
+            <Link href="/eliminar-datos" className="hover:text-gray-300">Eliminar datos</Link>
             <a href="mailto:humbertoagdez@gmail.com" className="hover:text-gray-300">Contacto</a>
           </div>
         </div>

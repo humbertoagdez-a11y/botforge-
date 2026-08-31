@@ -858,6 +858,10 @@ function Footer() {
             <Link href="/cookies" className="transition-colors hover:text-gray-300">
               Cookies
             </Link>
+            <span className="text-gray-700">|</span>
+            <Link href="/eliminar-datos" className="transition-colors hover:text-gray-300">
+              Eliminar datos
+            </Link>
           </nav>
         </div>
         <div className="mt-8 border-t border-white/5 pt-6 text-center">

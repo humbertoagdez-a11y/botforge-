@@ -186,6 +186,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           <Link href="/terminos" className="hover:text-muted-foreground">Términos</Link>
           <Link href="/privacidad" className="hover:text-muted-foreground">Privacidad</Link>
           <Link href="/cookies" className="hover:text-muted-foreground">Cookies</Link>
+          <Link href="/eliminar-datos" className="hover:text-muted-foreground">Eliminar datos</Link>
         </nav>
       </div>
     </aside>
