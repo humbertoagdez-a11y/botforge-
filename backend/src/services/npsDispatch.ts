@@ -45,6 +45,9 @@ export async function dispatchNpsSurveys(): Promise<number> {
         id: true,
         botId: true,
         channelId: true,
+        // El numero del bot: la encuesta tiene que salir del mismo numero por
+        // el que el cliente venia hablando, no del numero de la plataforma
+        bot: { select: { metaPhoneNumberId: true } },
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 50,
@@ -65,7 +68,10 @@ export async function dispatchNpsSurveys(): Promise<number> {
         // shouldAskNps revalida plan, npsEnabled y el cooldown de 30 días
         if (!(await shouldAskNps(conv.botId, clientId))) continue;
 
-        await sendTextMessage(clientId, npsQuestion());
+        // El filtro del where ya garantiza metaPhoneNumberId != null; el
+        // chequeo queda porque TypeScript no puede saberlo desde el tipo.
+        if (!conv.bot.metaPhoneNumberId) continue;
+        await sendTextMessage(conv.bot.metaPhoneNumberId, clientId, npsQuestion());
         // Se marca DESPUÉS de enviar: si el envío falla, se reintenta en la
         // próxima corrida en vez de quemar el cooldown de 30 días
         await markAsked(conv.botId, clientId);

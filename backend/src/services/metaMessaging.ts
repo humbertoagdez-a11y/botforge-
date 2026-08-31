@@ -22,6 +22,22 @@ function assertConfigured(): void {
   }
 }
 
+/**
+ * De que numero sale cada mensaje.
+ *
+ * Va como PRIMER parametro y es obligatorio a proposito: antes estas funciones
+ * leian env.META_PHONE_NUMBER_ID por su cuenta, asi que era imposible notar
+ * desde el llamador que todos los mensajes salian del mismo numero. Ahora, si
+ * aparece un segundo numero de negocio, el compilador obliga a decidir cual
+ * usar en cada envio en vez de heredar el global en silencio.
+ *
+ * Cada bot guarda el suyo en Bot.metaPhoneNumberId; el webhook ademas recibe en
+ * el payload el numero que recibio el mensaje, que es el que corresponde para
+ * responder. env.META_PHONE_NUMBER_ID queda SOLO como el numero propio de
+ * BotForge, para el flujo de verificacion de conexiones nuevas.
+ */
+export type PhoneNumberId = string;
+
 function authHeader(): { Authorization: string } {
   return { Authorization: `Bearer ${env.META_WHATSAPP_TOKEN}` };
 }
@@ -46,10 +62,13 @@ async function describeError(res: Response): Promise<string> {
   }
 }
 
-async function postMessage(payload: Record<string, unknown>): Promise<void> {
+async function postMessage(
+  phoneNumberId: PhoneNumberId,
+  payload: Record<string, unknown>,
+): Promise<void> {
   assertConfigured();
 
-  const res = await fetch(`${GRAPH_BASE}/${env.META_PHONE_NUMBER_ID}/messages`, {
+  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: { ...authHeader(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
@@ -60,8 +79,12 @@ async function postMessage(payload: Record<string, unknown>): Promise<void> {
   }
 }
 
-export async function sendTextMessage(to: string, body: string): Promise<void> {
-  await postMessage({
+export async function sendTextMessage(
+  phoneNumberId: PhoneNumberId,
+  to: string,
+  body: string,
+): Promise<void> {
+  await postMessage(phoneNumberId, {
     to: toMetaNumber(to),
     type: 'text',
     text: { body },
@@ -83,14 +106,17 @@ export async function sendTextMessage(to: string, body: string): Promise<void> {
  * Loguea SIEMPRE, exito o fallo. Sin el log de exito no habria forma de
  * distinguir en Railway entre "anduvo" y "nunca se llamo".
  */
-export async function markAsReadAndTyping(messageId: string): Promise<void> {
+export async function markAsReadAndTyping(
+  phoneNumberId: PhoneNumberId,
+  messageId: string,
+): Promise<void> {
   if (!isMetaConfigured()) {
     console.warn('[whatsapp] typing indicator omitido: Meta Cloud API no está configurada');
     return;
   }
 
   try {
-    const res = await fetch(`${GRAPH_BASE}/${env.META_PHONE_NUMBER_ID}/messages`, {
+    const res = await fetch(`${GRAPH_BASE}/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: { ...authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -113,8 +139,13 @@ export async function markAsReadAndTyping(messageId: string): Promise<void> {
 }
 
 /** Envia una imagen ya hospedada en una URL publica accesible por Meta. */
-export async function sendImageByUrl(to: string, imageUrl: string, caption: string): Promise<void> {
-  await postMessage({
+export async function sendImageByUrl(
+  phoneNumberId: PhoneNumberId,
+  to: string,
+  imageUrl: string,
+  caption: string,
+): Promise<void> {
+  await postMessage(phoneNumberId, {
     to: toMetaNumber(to),
     type: 'image',
     image: { link: imageUrl, caption },
@@ -128,6 +159,7 @@ export async function sendImageByUrl(to: string, imageUrl: string, caption: stri
  * whatsapp_temp para poder limpiarlos en lote desde Cloudinary.
  */
 export async function sendImageMessage(
+  phoneNumberId: PhoneNumberId,
   to: string,
   imageBase64: string,
   mimeType: string,
@@ -146,7 +178,7 @@ export async function sendImageMessage(
     },
   );
 
-  await sendImageByUrl(to, uploadRes.secure_url, caption);
+  await sendImageByUrl(phoneNumberId, to, uploadRes.secure_url, caption);
 }
 
 /**
@@ -185,10 +217,14 @@ export async function downloadMedia(
  * primitivas de arriba: las imagenes del panel ya viven en Cloudinary y van
  * por URL; las de Drive llegan como binario y hay que hospedarlas primero.
  */
-export async function sendPendingImage(to: string, img: PendingImage): Promise<void> {
+export async function sendPendingImage(
+  phoneNumberId: PhoneNumberId,
+  to: string,
+  img: PendingImage,
+): Promise<void> {
   if (img.source === 'url') {
-    await sendImageByUrl(to, img.url, img.caption);
+    await sendImageByUrl(phoneNumberId, to, img.url, img.caption);
     return;
   }
-  await sendImageMessage(to, img.imageBase64, img.mimeType, img.caption);
+  await sendImageMessage(phoneNumberId, to, img.imageBase64, img.mimeType, img.caption);
 }

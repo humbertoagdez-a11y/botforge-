@@ -157,12 +157,12 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   // RAG, loop del agente): el cliente ve el "visto" y el "escribiendo...".
   // Se espera a proposito para que el indicador aparezca antes de arrancar;
   // la funcion nunca lanza, asi que no puede frenar el procesamiento.
-  if (msg.id) await markAsReadAndTyping(msg.id);
+  if (msg.id) await markAsReadAndTyping(phoneNumberId, msg.id);
 
   const { text, imageContext, unsupported } = await extractContent(msg);
 
   if (unsupported) {
-    await sendTextMessage(clientNumber, 'Por ahora puedo leer texto, audios e imágenes. ¿Me lo escribís?');
+    await sendTextMessage(phoneNumberId, clientNumber, 'Por ahora puedo leer texto, audios e imágenes. ¿Me lo escribís?');
     return;
   }
 
@@ -172,7 +172,9 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
       channel: 'meta',
       phoneNumberId,
     });
-    await sendTextMessage(clientNumber, reply);
+    // El codigo llega al numero de BotForge, y desde ese mismo numero se
+    // responde: es el unico caso donde corresponde el numero de la plataforma.
+    await sendTextMessage(phoneNumberId, clientNumber, reply);
     return;
   }
 
@@ -182,13 +184,13 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   console.log('[meta] bot encontrado:', bot?.id, 'phone_number_id:', phoneNumberId);
 
   if (!bot) {
-    await sendTextMessage(clientNumber, 'Este número no tiene un bot activo configurado.');
+    await sendTextMessage(phoneNumberId, clientNumber, 'Este número no tiene un bot activo configurado.');
     return;
   }
 
   // Sin texto ni imagen legible no hay nada que mandarle al agente
   if (!text && !imageContext) {
-    await sendTextMessage(clientNumber, 'No pude entender ese mensaje. ¿Me lo escribís?');
+    await sendTextMessage(bot.metaPhoneNumberId ?? phoneNumberId, clientNumber, 'No pude entender ese mensaje. ¿Me lo escribís?');
     return;
   }
 
@@ -200,11 +202,14 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
     imageContext: imageContext || undefined,
   });
 
-  if (result.text) await sendTextMessage(clientNumber, result.text);
+  // El numero del bot, no el global: es de donde el cliente espera la respuesta
+  const numeroDelBot = bot.metaPhoneNumberId ?? phoneNumberId;
+
+  if (result.text) await sendTextMessage(numeroDelBot, clientNumber, result.text);
 
   if (result.pendingImage) {
     try {
-      await sendPendingImage(clientNumber, result.pendingImage);
+      await sendPendingImage(numeroDelBot, clientNumber, result.pendingImage);
     } catch (mediaErr) {
       // El texto ya salió: que falle la imagen no puede tumbar la respuesta
       reportarError('meta-envio-imagen', mediaErr, { origen: result.pendingImage.source });
@@ -238,6 +243,7 @@ async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
           if (msg.from) {
             try {
               await sendTextMessage(
+                phoneNumberId,
                 `+${msg.from.replace(/^\+/, '')}`,
                 'Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.',
               );
