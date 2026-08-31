@@ -47,8 +47,23 @@ export async function POST(req: NextRequest) {
   }
 
   if (!upstream.ok || !upstream.body) {
+    // Se reenvia el error TAL CUAL lo manda el backend. Antes se reemplazaba
+    // por un texto generico, y eso convirtio un 400 de validacion perfectamente
+    // legible ("El primer mensaje debe ser del usuario") en un fallo mudo que
+    // no habia forma de diagnosticar desde el navegador.
+    const crudo = await upstream.text().catch(() => '');
+    let cuerpo: unknown = null;
+    try {
+      cuerpo = crudo ? JSON.parse(crudo) : null;
+    } catch {
+      cuerpo = null;
+    }
     return NextResponse.json(
-      { data: null, error: { message: 'El asistente no está disponible en este momento' }, meta: null },
+      cuerpo ?? {
+        data: null,
+        error: { message: 'El asistente no está disponible en este momento' },
+        meta: null,
+      },
       { status: upstream.status || 502 },
     );
   }

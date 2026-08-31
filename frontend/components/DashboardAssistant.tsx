@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import {
   AlertTriangle,
@@ -200,8 +201,27 @@ export default function DashboardAssistant(props: Props) {
   // Modo dual: controlado por props (paginas existentes) o por store (global)
   const controlled = props.open !== undefined;
   const isOpen = controlled ? !!props.open : store.assistantOpen;
-  const botId = controlled ? (props.botId ?? null) : store.assistantBotId;
-  const botName = controlled ? (props.botName ?? null) : store.assistantBotName;
+
+  /**
+   * Contexto por URL. La instancia global se abre desde el trigger flotante y
+   * desde el sidebar, que llaman a openAssistant() SIN botId; el unico boton
+   * que lo pasa es "Gestionar con IA" de la pagina del bot. Resultado: parado
+   * en la pagina de un bot, el asistente no sabia en cual estaba y terminaba
+   * preguntando "¿a que bot te referis?" con la respuesta a la vista en la URL.
+   * El botId del store sigue mandando (es una eleccion explicita del usuario);
+   * la URL solo se usa cuando no hay ninguno.
+   */
+  const pathname = usePathname();
+  const botIdDeLaUrl = useMemo(() => {
+    const m = pathname?.match(/^\/dashboard\/bots\/([0-9a-fA-F-]{36})(?:\/|$)/);
+    return m ? m[1] : null;
+  }, [pathname]);
+  const [nombreDeLaUrl, setNombreDeLaUrl] = useState<string | null>(null);
+
+  const botId = controlled ? (props.botId ?? null) : (store.assistantBotId ?? botIdDeLaUrl);
+  const botName = controlled
+    ? (props.botName ?? null)
+    : (store.assistantBotName ?? nombreDeLaUrl);
   const close = controlled ? (props.onClose ?? (() => undefined)) : store.closeAssistant;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -230,6 +250,50 @@ export default function DashboardAssistant(props: Props) {
   const isLoadingRef = useRef(false);
 
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+
+  // Nombre del bot deducido de la URL: solo alimenta la cabecera del panel.
+  // El backend ya resuelve el bot por botId, asi que si esto falla no se rompe
+  // nada, apenas se muestra "Listo para ayudarte" en vez del nombre.
+  useEffect(() => {
+    if (controlled || !isOpen || store.assistantBotId || !botIdDeLaUrl) {
+      setNombreDeLaUrl(null);
+      return;
+    }
+    let cancelado = false;
+    api.bots
+      .get(botIdDeLaUrl)
+      .then((b) => { if (!cancelado) setNombreDeLaUrl(b.name); })
+      .catch(() => { /* la cabecera queda con el texto generico */ });
+    return () => { cancelado = true; };
+  }, [controlled, isOpen, store.assistantBotId, botIdDeLaUrl]);
+
+  /**
+   * Cambio de contexto con el panel abierto: si el usuario navega de una
+   * pagina a la de otro bot, el historial sigue siendo el mismo pero "el bot"
+   * ya no es el mismo. Se deja constancia en el chat para que la conversacion
+   * no cambie de significado en silencio.
+   */
+  const botIdPrevio = useRef<string | null>(null);
+  const botNameRef = useRef<string | null>(null);
+  useEffect(() => { botNameRef.current = botName; }, [botName]);
+  useEffect(() => {
+    if (!isOpen) { botIdPrevio.current = null; return; }
+    const previo = botIdPrevio.current;
+    botIdPrevio.current = botId;
+    if (previo === null || previo === botId) return;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: newId('local'),
+        role: 'assistant',
+        isLocal: true,
+        ts: Date.now(),
+        content: botId
+          ? `Cambiaste de pantalla: ahora estoy trabajando sobre ${botNameRef.current ?? 'el bot de esta página'}.`
+          : 'Saliste de la página del bot. Decime sobre cuál querés que trabaje y seguimos.',
+      },
+    ]);
+  }, [botId, isOpen]);
 
   // Al abrir: carga el historial persistido (si hay); si no, bienvenida.
   // Al cerrar: limpieza total del estado local.
@@ -355,7 +419,7 @@ export default function DashboardAssistant(props: Props) {
 
   /** Historial para el backend — CRÍTICO: excluye todo mensaje isLocal */
   function buildHistory(msgs: ChatMessage[]): { role: 'user' | 'assistant'; content: string }[] {
-    return msgs
+    const limpios = msgs
       .filter((m) => !m.isLocal && !m.streaming && !m.confirm && !m.blocks)
       .map((m) => ({
         role: m.role,
@@ -364,6 +428,11 @@ export default function DashboardAssistant(props: Props) {
           : m.content,
       }))
       .filter((m) => m.content.trim().length > 0);
+    // El backend rechaza con 400 toda conversacion que no arranque con el
+    // usuario. El historial ya viene saneado del server, pero esto cubre
+    // cualquier estado local raro sin que el usuario vea un error mudo.
+    while (limpios.length > 0 && limpios[0].role !== 'user') limpios.shift();
+    return limpios;
   }
 
   /** Nucleo: envia el request y procesa el stream de eventos SSE */

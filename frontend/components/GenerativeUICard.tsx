@@ -102,8 +102,11 @@ export default function GenerativeUICard({ component, onToggle, busy }: Props) {
               component.isActive ? 'bg-cyan-500' : 'bg-white/20'
             }`}
           >
+            {/* Mismo left-0 que el switch de Configuracion: sin el, el circulo
+                se posicionaba desde el centro del riel y encendido quedaba 18px
+                fuera del boton. Ver el comentario en bots/[id]/page.tsx. */}
             <span
-              className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
+              className={`absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
                 component.isActive ? 'translate-x-[22px]' : 'translate-x-0.5'
               }`}
               style={{ willChange: 'transform' }}

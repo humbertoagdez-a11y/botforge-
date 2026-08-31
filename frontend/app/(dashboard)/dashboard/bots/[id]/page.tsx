@@ -160,8 +160,15 @@ function NpsCard({
               activo ? 'bg-primary' : 'bg-white/15'
             }`}
           >
+            {/* left-0 NO es decorativo: sin el, el span absolute se posiciona en
+                su static position, y como el <button> hereda text-align:center
+                del user agent, ese punto es el centro del riel. Resultado real
+                medido: apagado el circulo quedaba pegado al borde derecho (a
+                24px de un riel de 44px) y encendido se salia 20px enteros
+                fuera del switch. Anclado a la izquierda, translate-x-0.5 y
+                translate-x-[22px] dan por fin izquierda y derecha. */}
             <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
                 activo ? 'translate-x-[22px]' : 'translate-x-0.5'
               }`}
             />

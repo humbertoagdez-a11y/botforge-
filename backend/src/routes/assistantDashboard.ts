@@ -618,46 +618,77 @@ async function executeToolCall(
       await fs.mkdir(env.UPLOADS_DIR, { recursive: true });
       await fs.writeFile(filePath, input.content, 'utf-8');
 
-      let doc = await prisma.document.create({
-        data: {
-          id: docId,
-          botId: bot.id,
-          name: finalName,
-          mimeType: 'text/plain',
-          filePath,
-          fileSize: Buffer.byteLength(input.content, 'utf-8'),
-          status: 'PENDING',
-        },
-      });
-
-      const url = await uploadRawToCloudinary(filePath, doc.id);
+      // Cloudinary ANTES de tocar la base: si falla no deja rastro que limpiar.
+      // En produccion el disco de Railway es efimero, asi que sin url el worker
+      // puede no encontrar el archivo; se avisa pero no se aborta, igual que en
+      // el resto de la plataforma.
+      const url = await uploadRawToCloudinary(filePath, docId);
       if (url) {
-        doc = await prisma.document.update({ where: { id: doc.id }, data: { url } });
         try { await fs.unlink(filePath); } catch { /* limpieza best-effort */ }
       }
-
-      await documentQueue.add({ documentId: doc.id });
 
       // Además del documento (que alimenta RAG con catálogo/precios/detalles),
       // grabar un resumen de identidad en Bot.personality. Eso SIEMPRE está en
       // el system prompt, así el bot sabe su nombre/tono/rubro aunque RAG no
       // traiga el chunk correcto ante un mensaje genérico como "Hola".
       const DEFAULT_PERSONALITY = 'Eres un asistente útil y amigable.';
-      let personalityUpdated = false;
-      let replacedCustom = false;
-      if (input.personalitySummary) {
-        replacedCustom = bot.personality.trim() !== DEFAULT_PERSONALITY;
-        if (replacedCustom) {
-          // Aviso recuperable en logs: la personality anterior queda registrada
-          console.log(
-            `[assistant-dashboard] bot ${bot.id}: reemplazo personality personalizada por el resumen del instructivo. Previa: "${bot.personality.slice(0, 100)}${bot.personality.length > 100 ? '...' : ''}"`,
-          );
-        }
-        await prisma.bot.update({
-          where: { id: bot.id },
-          data: { personality: input.personalitySummary },
+      const replacedCustom =
+        !!input.personalitySummary && bot.personality.trim() !== DEFAULT_PERSONALITY;
+      if (replacedCustom) {
+        // Aviso recuperable en logs: la personality anterior queda registrada
+        console.log(
+          `[assistant-dashboard] bot ${bot.id}: reemplazo personality personalizada por el resumen del instructivo. Previa: "${bot.personality.slice(0, 100)}${bot.personality.length > 100 ? '...' : ''}"`,
+        );
+      }
+
+      // Documento e identidad del bot se escriben JUNTOS o no se escribe
+      // ninguno. Antes eran dos writes sueltos con una subida a Cloudinary y un
+      // encolado en Redis en el medio: si algo de eso fallaba, el bot quedaba
+      // con un documento fantasma en PENDING y la personality todavia en el
+      // texto de plantilla, que es exactamente el estado a medias reportado.
+      const doc = await prisma.$transaction(async (tx) => {
+        const creado = await tx.document.create({
+          data: {
+            id: docId,
+            botId: bot.id,
+            name: finalName,
+            mimeType: 'text/plain',
+            filePath,
+            fileSize: Buffer.byteLength(input.content, 'utf-8'),
+            status: 'PENDING',
+            ...(url ? { url } : {}),
+          },
         });
-        personalityUpdated = true;
+        if (input.personalitySummary) {
+          await tx.bot.update({
+            where: { id: bot.id },
+            data: { personality: input.personalitySummary },
+          });
+        }
+        return creado;
+      });
+      const personalityUpdated = !!input.personalitySummary;
+
+      // El encolado es lo unico que queda fuera de la transaccion (Bull vive en
+      // Redis, no en Postgres). Si falla, el documento quedaria en PENDING para
+      // siempre sin nadie que lo procese: se marca ERROR para que se vea en la
+      // UI y el usuario pueda reintentar, en vez de esperar de por vida.
+      try {
+        // Con Redis caido, Bull reintenta la conexion en silencio y el request
+        // se queda colgado varios minutos: el usuario no ve ni exito ni error.
+        // Mejor cortar y contarle que paso.
+        await Promise.race([
+          documentQueue.add({ documentId: doc.id }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('timeout encolando el documento')), 10_000),
+          ),
+        ]);
+      } catch (queueErr) {
+        console.error(`[assistant-dashboard] no se pudo encolar el documento ${doc.id}:`, queueErr);
+        await prisma.document.update({ where: { id: doc.id }, data: { status: 'ERROR' } });
+        throw new Error(
+          'El instructivo se guardó pero no se pudo poner en cola para procesarlo. Quedó marcado como fallido: pedile al usuario que lo vuelva a subir en unos minutos.',
+        );
       }
 
       return {
@@ -1446,9 +1477,18 @@ router.post(
           lastIncoming.role === 'user' && typeof lastIncoming.content === 'string'
             ? lastIncoming.content
             : null;
-        const toPersist: { userId: string; role: string; content: string }[] = [];
-        if (newUserText) toPersist.push({ userId, role: 'user', content: newUserText });
-        if (assistantFullText.trim()) toPersist.push({ userId, role: 'assistant', content: assistantFullText });
+        // createdAt explicito y distinto por fila. Con createMany las dos filas
+        // del mismo turno quedaban con el MISMO instante, y como /history ordena
+        // por createdAt, el empate lo resolvia la base: devolvia la respuesta
+        // antes que la pregunta. Eso daba vuelta el chat entero y, peor, hacia
+        // que el historial empezara con un mensaje del asistente, que el schema
+        // del endpoint rechaza con 400.
+        const ahora = Date.now();
+        const toPersist: { userId: string; role: string; content: string; createdAt: Date }[] = [];
+        if (newUserText) toPersist.push({ userId, role: 'user', content: newUserText, createdAt: new Date(ahora) });
+        if (assistantFullText.trim()) {
+          toPersist.push({ userId, role: 'assistant', content: assistantFullText, createdAt: new Date(ahora + 1) });
+        }
         if (toPersist.length === 0) return;
         try {
           await prisma.platformAssistantMessage.createMany({ data: toPersist });
@@ -1624,12 +1664,21 @@ router.get('/history', requireAuth, async (req: Request, res: Response, next: Ne
   try {
     const rows = await prisma.platformAssistantMessage.findMany({
       where: { userId: req.user!.userId },
-      orderBy: { createdAt: 'desc' },
+      // El desempate por role NO es cosmetico: las filas viejas (anteriores al
+      // fix de persistTurn) comparten createdAt dentro del mismo turno, y sin
+      // esto la base elegia el orden. 'assistant' < 'user', asi que en desc el
+      // assistant sale primero y al invertir queda user y despues assistant.
+      orderBy: [{ createdAt: 'desc' }, { role: 'asc' }],
       take: 50,
       select: { role: true, content: true, createdAt: true },
     });
     // findMany trae los 50 más recientes desc; los devolvemos ascendente
-    res.json({ data: { messages: rows.reverse() }, error: null, meta: null });
+    rows.reverse();
+    // El historial tiene que arrancar SIEMPRE con un mensaje del usuario: el
+    // endpoint del chat rechaza con 400 cualquier conversacion que empiece con
+    // el asistente, y la ventana de 50 puede cortar un turno al medio.
+    while (rows.length > 0 && rows[0].role !== 'user') rows.shift();
+    res.json({ data: { messages: rows }, error: null, meta: null });
   } catch (err) {
     next(err);
   }
