@@ -75,6 +75,78 @@ interface NotificacionPagopar {
 }
 
 /**
+ * El `resultado` TAL CUAL vino en la notificación, sin pasar por la
+ * normalización interna.
+ *
+ * Pagopar pidió expresamente que la respuesta sea el eco del contenido que
+ * ellos notifican, sin rearmarlo: "de ese modo no arma de nuevo el Json...
+ * además se asegura de que en caso de que añadamos algún dato adicional en
+ * este Json, su sitio estará respondiendo siempre correctamente y con el
+ * formato actualizado".
+ *
+ * Lo único que se hace acá es deshacer el envoltorio (cuando `resultado` viaja
+ * como string con el JSON adentro, en form-urlencoded): los objetos de adentro
+ * se devuelven por referencia, sin leer ni copiar un solo campo. Así cualquier
+ * campo que Pagopar agregue mañana viaja de vuelta solo.
+ *
+ * Devuelve null si no se pudo aislar el `resultado`; ahí el handler cae al
+ * array normalizado, que es lo mejor disponible.
+ */
+function extraerResultadoCrudo(raw: unknown): unknown[] | null {
+  const desdeObjeto = (obj: Record<string, unknown>): unknown[] | null => {
+    const r = obj.resultado;
+
+    if (Array.isArray(r)) return r;
+
+    if (typeof r === 'string') {
+      // Envoltorio de form-urlencoded: el JSON viaja como texto. Se parsea solo
+      // el envoltorio, nunca los objetos de adentro. Si no parsea era el texto
+      // de estado ("Pedido encontrado") y no un envoltorio.
+      try {
+        const parsed: unknown = JSON.parse(r);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object') return [parsed];
+      } catch {
+        // No era un envoltorio
+      }
+    } else if (r && typeof r === 'object') {
+      return [r];
+    }
+
+    // Sin envoltorio: la notificación es el objeto mismo
+    return obj.hash_pedido ? [obj] : null;
+  };
+
+  if (raw && typeof raw === 'object' && !Buffer.isBuffer(raw)) {
+    return desdeObjeto(raw as Record<string, unknown>);
+  }
+
+  const texto = Buffer.isBuffer(raw) ? raw.toString('utf8') : typeof raw === 'string' ? raw : '';
+  if (!texto.trim()) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(texto);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object') return desdeObjeto(parsed as Record<string, unknown>);
+  } catch {
+    // No era JSON: puede ser form-urlencoded
+  }
+
+  try {
+    const campo = new URLSearchParams(texto).get('resultado');
+    if (campo) {
+      const parsed: unknown = JSON.parse(campo);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') return [parsed];
+    }
+  } catch {
+    // `resultado` no traía JSON; queda la forma anidada, que sí hay que rearmar
+  }
+
+  return null;
+}
+
+/**
  * Saca las notificaciones del cuerpo, venga como venga.
  *
  * Pagopar no manda siempre application/json. Segun la integracion postea
@@ -280,6 +352,7 @@ async function activarPlan(
 
 router.post('/webhook', async (req: Request, res: Response) => {
   const notificaciones = extraerNotificaciones(req.body);
+  const resultadoCrudo = extraerResultadoCrudo(req.body);
   const notif = notificaciones[0];
 
   const hashPedido = typeof notif?.hash_pedido === 'string' ? notif.hash_pedido : '';
@@ -340,15 +413,25 @@ router.post('/webhook', async (req: Request, res: Response) => {
     reportarError('pagopar-webhook', err, { hashPedido: hashPedido.slice(0, 12) });
   }
 
-  // Eco de las MISMAS notificaciones que llegaron, con 200 aunque algo haya
-  // fallado de nuestro lado: si no, Pagopar reintenta indefinidamente.
+  // Eco del `resultado` que llegó, TAL CUAL, con 200 aunque algo haya fallado
+  // de nuestro lado: si no, Pagopar reintenta indefinidamente.
   //
-  // Va el array de objetos ya normalizado, no el body crudo: cuando Pagopar
-  // postea form-urlencoded, `resultado` viaja como un string con el JSON
-  // adentro, y devolver eso tal cual hacía que Pagopar leyera un string donde
-  // espera objetos — de ahí que no encontrara forma_pago ni
-  // numero_comprobante_interno en la respuesta.
-  res.status(200).json({ resultado: notificaciones });
+  // Se reenvía `resultadoCrudo`, que son los objetos originales de la
+  // notificación sin tocar un solo campo, y no `notificaciones`, que pasa por
+  // la normalización interna. La normalización existe para poder leer la
+  // notificación venga como venga, pero rearma los objetos campo por campo
+  // cuando el cuerpo llega como form anidado, y ahí se pierde todo lo que no
+  // sea un campo plano — los sub-objetos y cualquier campo nuevo.
+  //
+  // Es lo que pidió Pagopar para cerrar el paso 2 del circuito: reenviar su
+  // JSON sin rearmarlo, así la respuesta sigue siendo correcta aunque ellos
+  // agreguen campos más adelante.
+  //
+  // Sigue siendo un array de objetos y no el string crudo del body: cuando
+  // Pagopar postea form-urlencoded, `resultado` viaja como un string con el
+  // JSON adentro, y devolver eso tal cual hacía que leyeran un string donde
+  // esperan objetos. Se deshace el envoltorio, nunca el contenido.
+  res.status(200).json({ resultado: resultadoCrudo ?? notificaciones });
 });
 
 // ─── GET /consultar/:hashPedido ───────────────────────────────────────────────
