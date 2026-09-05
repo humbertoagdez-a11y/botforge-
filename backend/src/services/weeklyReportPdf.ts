@@ -12,7 +12,7 @@
  */
 import PDFDocument from 'pdfkit';
 import {
-  C, CONTENT_W, M, PAGE,
+  ALTO_MINIMO_LISTA, ALTO_NOTA_VACIA, C, CONTENT_W, M, PAGE,
   conSigno, drawBarList, drawExecutiveSummary, drawHeader, drawKpiRow, drawLineChart,
   emptyNote, ensure, fechaCorta, nombreArchivoPdf, paragraph, rangoLargo,
   sectionTitle, stampFooters,
@@ -113,7 +113,7 @@ export function renderWeeklyReportPdf(params: {
     // Con una sola semana no hay evolución que mostrar, y un gráfico de un
     // punto suelto se lee como un error del producto
     if (historial.length >= 2) {
-      sectionTitle(doc, 'Evolución', `Últimas ${historial.length} semanas`);
+      sectionTitle(doc, 'Evolución', `Últimas ${historial.length} semanas`, 132);
       const hayNps = historial.some((h) => h.nps !== null);
       const labels = historial.map((h) => fechaCorta(new Date(h.weekStart)));
       const y = ensure(doc, 132);
@@ -139,7 +139,12 @@ export function renderWeeklyReportPdf(params: {
     }
 
     // ── Lo más consultado ───────────────────────────────────────────────────
-    sectionTitle(doc, 'Lo más consultado', 'Las preguntas que más se repitieron esta semana');
+    sectionTitle(
+      doc,
+      'Lo más consultado',
+      'Las preguntas que más se repitieron esta semana',
+      content.topQuestions.length === 0 ? ALTO_NOTA_VACIA : ALTO_MINIMO_LISTA,
+    );
     if (content.topQuestions.length === 0) {
       emptyNote(doc, 'No hubo consultas repetidas esta semana.');
     } else {
@@ -149,7 +154,12 @@ export function renderWeeklyReportPdf(params: {
     }
 
     // ── Sin responder: la parte accionable ──────────────────────────────────
-    sectionTitle(doc, 'Lo que tu bot no supo responder');
+    sectionTitle(
+      doc,
+      'Lo que tu bot no supo responder',
+      undefined,
+      content.unansweredQuestions.length === 0 ? ALTO_NOTA_VACIA : ALTO_MINIMO_LISTA,
+    );
     if (content.unansweredQuestions.length === 0) {
       emptyNote(doc, 'Tu bot respondió todo lo que le preguntaron. No quedó nada pendiente.');
     } else {
@@ -178,7 +188,12 @@ export function renderWeeklyReportPdf(params: {
     }
 
     // ── Horarios ────────────────────────────────────────────────────────────
-    sectionTitle(doc, 'Horarios de mayor actividad', 'Mensajes de clientes por hora, horario de Paraguay');
+    sectionTitle(
+      doc,
+      'Horarios de mayor actividad',
+      'Mensajes de clientes por hora, horario de Paraguay',
+      content.peakHours.length === 0 ? ALTO_NOTA_VACIA : ALTO_MINIMO_LISTA,
+    );
     if (content.peakHours.length === 0) {
       emptyNote(doc, 'No hubo actividad esta semana.');
     } else {

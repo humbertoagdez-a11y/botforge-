@@ -140,6 +140,11 @@ export function drawHeader(
 
 // ─── Estructura ───────────────────────────────────────────────────────────────
 
+/** Alto de un emptyNote: 34 de caja + 14 de aire. Va entero con su titulo. */
+export const ALTO_NOTA_VACIA = 48;
+/** Dos filas de drawBarList: lo minimo para que un titulo no quede huerfano. */
+export const ALTO_MINIMO_LISTA = 46;
+
 /** Salta de página si no entran `h` puntos antes del pie. Devuelve la Y usable. */
 export function ensure(doc: Doc, h: number): number {
   if (doc.y + h > PAGE.h - FOOTER_H) {
@@ -149,8 +154,21 @@ export function ensure(doc: Doc, h: number): number {
   return doc.y;
 }
 
-export function sectionTitle(doc: Doc, texto: string, hint?: string): void {
-  ensure(doc, 60);
+/**
+ * Titulo de seccion.
+ *
+ * `altoContenido` es el alto de lo primero que viene despues, y sirve para que
+ * el titulo NO se quede solo al pie de una pagina. Sin esto cada bloque
+ * llamaba a ensure() por su cuenta: el titulo entraba en los ultimos puntos de
+ * la hoja, el contenido ya no, y saltaba de pagina. El resultado era un titulo
+ * huerfano abajo y una hoja nueva con dos lineas y el 80% en blanco.
+ *
+ * Se pasa el minimo que tiene que viajar junto al titulo, no el alto total de
+ * la seccion: reservar la seccion entera provocaria el problema inverso, cortar
+ * la pagina antes de tiempo y dejar el hueco al final de la anterior.
+ */
+export function sectionTitle(doc: Doc, texto: string, hint?: string, altoContenido = 0): void {
+  ensure(doc, 60 + altoContenido);
   const y = doc.y;
   // Marca de color a la izquierda: separa secciones sin gastar una línea entera
   doc.rect(M, y + 2, 3, 14).fill(C.brand);

@@ -498,7 +498,10 @@ function Soporte() {
                   Si algo no anda o necesitás una integración que no existe, contale al Asistente:
                   arma el ticket con los datos de tu cuenta ya incluidos.
                 </p>
-                <div className="mt-1 flex gap-2">
+                {/* flex-wrap: en 390px los dos botones no entran en una fila
+                    y el segundo quedaba pegado al borde derecho. Pasan a una
+                    segunda linea en vez de desbordar. */}
+                <div className="mt-1 flex flex-wrap justify-center gap-2">
                   <Button onClick={() => openAssistant()} className="gap-1.5">
                     <MessageSquare className="h-4 w-4" /> Hablar con el Asistente
                   </Button>

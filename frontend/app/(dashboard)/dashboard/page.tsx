@@ -219,6 +219,11 @@ function ActivitySection({ events }: { events: ActivityEvent[] }) {
   );
 }
 
+/** Día y mes, sin año: en "Últimas conversaciones" el año solo roba ancho. */
+function fechaCortaConversacion(iso: string): string {
+  return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
+}
+
 function RecentConversations({ stats }: { stats: AccountStats }) {
   if (stats.recentConversations.length === 0) return null;
 
@@ -244,8 +249,11 @@ function RecentConversations({ stats }: { stats: AccountStats }) {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{conv.bot.name}</span>
-                  <Badge variant="outline" className="text-[10px]">
+                  {/* truncate y no wrap: un nombre de bot largo ocupaba varias
+                      lineas y empujaba la etiqueta del canal encima de la fecha.
+                      El shrink-0 del Badge lo mantiene entero y en su lugar. */}
+                  <span className="truncate text-sm font-medium">{conv.bot.name}</span>
+                  <Badge variant="outline" className="shrink-0 text-[10px]">
                     {CHANNEL_LABEL[conv.channel] ?? conv.channel}
                   </Badge>
                 </div>
@@ -256,8 +264,12 @@ function RecentConversations({ stats }: { stats: AccountStats }) {
                   </p>
                 )}
               </div>
+              {/* Sin año: la fecha completa se comia 112px de los ~326 de la
+                  fila y no dejaba lugar para el nombre, que terminaba
+                  truncado en una o dos letras. Son las conversaciones
+                  recientes, el año no aporta. */}
               <span className="shrink-0 text-xs text-muted-foreground">
-                {formatDate(conv.updatedAt)}
+                {fechaCortaConversacion(conv.updatedAt)}
               </span>
             </Link>
           );
