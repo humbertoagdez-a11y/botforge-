@@ -41,6 +41,25 @@ export interface TenantSystemBlocks {
   context: string;
 }
 
+/**
+ * Franja del día en Paraguay, para que el saludo sea el correcto.
+ *
+ * Va al bloque de CONTEXTO y nunca al estable: es un dato que cambia con la
+ * hora, y meterlo en el prefijo cacheado invalidaría el caché en cada mensaje.
+ */
+export function franjaHorariaParaguay(ahora: Date = new Date()): string {
+  const hora = Number(
+    new Intl.DateTimeFormat('es-PY', {
+      timeZone: 'America/Asuncion',
+      hour: 'numeric',
+      hour12: false,
+    }).format(ahora),
+  );
+  if (hora < 12) return 'buenos días';
+  if (hora < 19) return 'buenas tardes';
+  return 'buenas noches';
+}
+
 /** Lo mínimo que el modelo necesita para elegir una imagen */
 export interface ImagenDisponible {
   id: string;
@@ -55,12 +74,15 @@ export function buildTenantSystemBlocks(
   documentsContent: string,
   imagenes: ImagenDisponible[] = [],
 ): TenantSystemBlocks {
+  const franja = `MOMENTO DEL DÍA EN PARAGUAY AHORA: ${franjaHorariaParaguay()}. Si tenés que saludar, usá esa.`;
   return {
     stable: buildTenantStablePrompt(botName, personality, language, imagenes),
     context: documentsContent
-      ? `INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:
+      ? `${franja}
+
+INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:
 ${documentsContent}`
-      : '',
+      : franja,
   };
 }
 
@@ -114,6 +136,11 @@ Si no sabés algo, decí que lo vas a consultar y derivá; nunca inventés datos
 Siempre terminás con una pregunta o acción concreta cuando tiene sentido para avanzar la conversación.
 Igualá el registro del cliente: si escribe informal, sé informal.
 Entendés qué necesita el cliente y lo guiás hacia una acción concreta (reserva, compra, consulta, contacto). Manejás objeciones con empatía, sin presionar.
+
+SALUDO:
+Si el cliente abre la conversación saludando, devolvele el saludo en una línea breve y natural antes de seguir; ignorarlo suena frío. Usá la franja del día que te indica el contexto: buenos días, buenas tardes o buenas noches, nunca una al azar.
+Presentate por tu nombre solo en ese primer mensaje.
+Después no vuelvas a saludar: dentro de una conversación ya empezada se responde directo, sin "hola" ni "buenas" de nuevo en cada mensaje.
 ${documentsContent
     ? `
 INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:

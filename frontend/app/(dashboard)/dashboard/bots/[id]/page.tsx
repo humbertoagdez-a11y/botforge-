@@ -29,6 +29,8 @@ import { api, type Bot as BotType, type BotDocument } from '@/lib/api';
 import { useAssistantStore, useAuthStore } from '@/lib/store';
 import { Z } from '@/lib/z-index';
 
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
 interface WhatsAppPanelProps {
   bot: BotType;
   onUpdate: (b: BotType) => void;
@@ -38,7 +40,37 @@ interface WhatsAppPanelProps {
 }
 
 function BotStatusIndicator({ bot, docs }: { bot: BotType; docs: BotDocument[] }) {
+  const { token } = useAuthStore();
   const processing = docs.some((d) => d.status === 'PENDING' || d.status === 'PROCESSING');
+
+  /**
+   * null mientras no se sabe. Se consulta connection-status en vez de mirar
+   * bot.whatsappNumber: ese campo es del flujo viejo de Twilio y viene vacío en
+   * los bots conectados por Meta, que es el canal activo. El encabezado decía
+   * "WhatsApp no conectado" mientras la pestaña de WhatsApp, en la misma
+   * pantalla, mostraba el número conectado.
+   *
+   * Es el mismo endpoint que ya usan WhatsAppOnboarding y WhatsAppProfile: una
+   * sola fuente de verdad para el estado del canal, sea Meta o Twilio.
+   */
+  const [conectado, setConectado] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${API}/api/v1/whatsapp/bots/${bot.id}/connection-status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = (await res.json()) as { data?: { status?: string } };
+        if (!cancelado) setConectado(json.data?.status === 'ACTIVE');
+      } catch {
+        // Sin respuesta no se afirma nada: queda el estado neutro de abajo
+        if (!cancelado) setConectado(null);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [bot.id, token]);
 
   let dotClass: string;
   let label: string;
@@ -49,18 +81,22 @@ function BotStatusIndicator({ bot, docs }: { bot: BotType; docs: BotDocument[] }
   } else if (processing) {
     dotClass = 'bg-blue-500 animate-pulse';
     label = 'Procesando documentos...';
-  } else if (bot.whatsappNumber) {
+  } else if (conectado === true) {
     dotClass = 'bg-green-500';
     label = 'Respondiendo mensajes en WhatsApp';
-  } else {
+  } else if (conectado === false) {
     dotClass = 'bg-yellow-500';
     label = 'Activo — WhatsApp no conectado';
+  } else {
+    // Todavía no llegó la respuesta: no se afirma ni una cosa ni la otra
+    dotClass = 'bg-muted-foreground/50';
+    label = 'Activo';
   }
 
   return (
     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
       <span className="relative flex h-2 w-2">
-        {bot.isActive && bot.whatsappNumber && !processing && (
+        {bot.isActive && conectado === true && !processing && (
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
         )}
         <span className={`relative inline-flex h-2 w-2 rounded-full ${dotClass}`} />
