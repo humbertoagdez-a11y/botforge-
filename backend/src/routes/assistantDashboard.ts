@@ -506,6 +506,7 @@ async function executeToolCall(
           isActive: true,
           language: true,
           whatsappNumber: true,
+          metaPhoneNumberId: true,
           createdAt: true,
           _count: { select: { documents: true, conversations: true } },
         },
@@ -520,7 +521,9 @@ async function executeToolCall(
             idioma: b.language,
             documentos: b._count.documents,
             conversaciones: b._count.conversations,
-            whatsapp: b.whatsappNumber ?? 'no conectado',
+            // Igual que en stats.ts: sin el metaPhoneNumberId el asistente le
+            // decia al dueño que su bot no tenia WhatsApp conectado.
+            whatsapp: b.whatsappNumber ?? b.metaPhoneNumberId ?? 'no conectado',
             creado: b.createdAt,
           })),
           nota:

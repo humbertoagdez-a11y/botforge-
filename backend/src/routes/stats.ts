@@ -40,7 +40,15 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       }),
       prisma.bot.count({ where: { userId } }),
       prisma.bot.count({ where: { userId, isActive: true } }),
-      prisma.bot.count({ where: { userId, whatsappNumber: { not: null } } }),
+      // Un bot esta conectado si tiene numero por CUALQUIERA de los dos canales.
+      // Mirando solo whatsappNumber (el de Twilio, apagado) los bots conectados
+      // por Meta contaban como "sin conectar" y el dashboard mostraba 0.
+      prisma.bot.count({
+        where: {
+          userId,
+          OR: [{ whatsappNumber: { not: null } }, { metaPhoneNumberId: { not: null } }],
+        },
+      }),
       prisma.document.count({ where: { bot: { userId } } }),
       prisma.document.count({ where: { bot: { userId }, status: 'READY' } }),
       prisma.conversation.count({ where: { bot: { userId } } }),
