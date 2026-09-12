@@ -147,6 +147,107 @@ function extraerResultadoCrudo(raw: unknown): unknown[] | null {
 }
 
 /**
+ * Recorta el valor JSON que empieza en `desde`, respetando anidamiento y
+ * cadenas. Devuelve el texto exacto, sin normalizar nada.
+ */
+function recortarValorJson(texto: string, desde: number): string | null {
+  const abre = texto[desde];
+  if (abre !== '[' && abre !== '{') return null;
+  const cierra = abre === '[' ? ']' : '}';
+
+  let profundidad = 0;
+  let enCadena = false;
+  let escapado = false;
+
+  for (let i = desde; i < texto.length; i++) {
+    const c = texto[i];
+    if (enCadena) {
+      if (escapado) escapado = false;
+      else if (c === '\\') escapado = true;
+      else if (c === '"') enCadena = false;
+      continue;
+    }
+    if (c === '"') enCadena = true;
+    else if (c === abre) profundidad++;
+    else if (c === cierra && --profundidad === 0) return texto.slice(desde, i + 1);
+  }
+  return null;
+}
+
+/**
+ * El TEXTO exacto del `resultado` tal cual vino en el cuerpo, sin parsearlo ni
+ * volver a serializarlo.
+ *
+ * Devolver el array reserializado no alcanza: un round-trip por JSON.parse +
+ * JSON.stringify normaliza cosas que en el texto crudo son distintas — los
+ * escapes unicode (é pasa a é), los espacios, y el formato de los números
+ * (350000.00 pasa a 350000). El validador de Pagopar compara la respuesta
+ * contra lo que envió, así que cualquiera de esas normalizaciones la hace
+ * fallar aunque el JSON sea equivalente.
+ *
+ * Reenviando el texto crudo la respuesta es idéntica byte a byte a lo que ellos
+ * mandaron, sin depender de cómo lo serialicen.
+ *
+ * Devuelve null si no se pudo aislar; ahí el handler cae a serializar el array,
+ * que es lo mejor disponible.
+ */
+function extraerResultadoTextoCrudo(raw: unknown): string | null {
+  const texto = Buffer.isBuffer(raw) ? raw.toString('utf8') : typeof raw === 'string' ? raw : '';
+  if (!texto.trim()) return null;
+
+  const candidatos: string[] = [];
+
+  // JSON: {"resultado": [...]}. Se recorta el valor sin tocar su contenido.
+  const iClave = texto.indexOf('"resultado"');
+  if (iClave !== -1) {
+    const iDosPuntos = texto.indexOf(':', iClave + '"resultado"'.length);
+    if (iDosPuntos !== -1) {
+      let i = iDosPuntos + 1;
+      while (i < texto.length && /\s/.test(texto[i]!)) i++;
+      const recorte = recortarValorJson(texto, i);
+      if (recorte) candidatos.push(recorte);
+    }
+  }
+
+  // El cuerpo ya es el array pelado
+  const podado = texto.trim();
+  if (podado.startsWith('[')) candidatos.push(podado);
+
+  // `resultado` como cadena con el JSON adentro: se parsea SOLO el envoltorio,
+  // el texto de adentro viaja intacto.
+  try {
+    const envoltorio: unknown = JSON.parse(texto);
+    if (envoltorio && typeof envoltorio === 'object' && !Array.isArray(envoltorio)) {
+      const r = (envoltorio as Record<string, unknown>).resultado;
+      if (typeof r === 'string' && r.trim()) candidatos.push(r.trim());
+    }
+  } catch {
+    // No era JSON: puede ser form-urlencoded
+  }
+
+  // form-urlencoded: resultado=<json>
+  try {
+    const campo = new URLSearchParams(texto).get('resultado');
+    if (campo?.trim()) candidatos.push(campo.trim());
+  } catch {
+    // No era form-urlencoded
+  }
+
+  for (const candidato of candidatos) {
+    try {
+      const parsed: unknown = JSON.parse(candidato);
+      if (Array.isArray(parsed)) return candidato;
+      // Notificación suelta sin array: se envuelve sin tocar el contenido
+      if (parsed && typeof parsed === 'object') return `[${candidato}]`;
+    } catch {
+      // Candidato inválido, se prueba el siguiente
+    }
+  }
+
+  return null;
+}
+
+/**
  * Saca las notificaciones del cuerpo, venga como venga.
  *
  * Pagopar no manda siempre application/json. Segun la integracion postea
@@ -427,11 +528,18 @@ router.post('/webhook', async (req: Request, res: Response) => {
   // JSON sin rearmarlo, así la respuesta sigue siendo correcta aunque ellos
   // agreguen campos más adelante.
   //
-  // Sigue siendo un array de objetos y no el string crudo del body: cuando
-  // Pagopar postea form-urlencoded, `resultado` viaja como un string con el
-  // JSON adentro, y devolver eso tal cual hacía que leyeran un string donde
-  // esperan objetos. Se deshace el envoltorio, nunca el contenido.
-  res.status(200).json({ resultado: resultadoCrudo ?? notificaciones });
+  // Va el ARRAY PELADO, no envuelto en { resultado: ... }. La documentación de
+  // Pagopar muestra la respuesta esperada como `[ { ... } ]` y pide "devolver
+  // directamente el contenido de resultado del JSON enviado por Pagopar".
+  // Envolverlo era lo que mantenía el paso 2 del circuito sin cerrar.
+  //
+  // Y va como TEXTO CRUDO, no reserializado: así la respuesta es idéntica byte
+  // a byte a lo que ellos mandaron, sin que un round-trip por JSON les cambie
+  // los escapes unicode, los espacios ni el formato de los números.
+  const cuerpoRespuesta =
+    extraerResultadoTextoCrudo(req.body) ?? JSON.stringify(resultadoCrudo ?? notificaciones);
+
+  res.status(200).type('application/json; charset=utf-8').send(cuerpoRespuesta);
 });
 
 // ─── GET /consultar/:hashPedido ───────────────────────────────────────────────
