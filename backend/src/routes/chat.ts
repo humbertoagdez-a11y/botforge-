@@ -14,6 +14,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../lib/prisma';
+import { resolverConversacion } from '../services/conversacion';
 import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { assertTestChatLimit, incrementTestChatUsage } from '../middleware/planLimits';
@@ -45,23 +46,12 @@ async function resolveConversation(
     throw new AppError(400, 'El bot no tiene documentos procesados. Subí al menos uno primero.');
   }
 
-  let conversation = conversationId
-    ? await prisma.conversation.findUnique({ where: { id: conversationId } })
-    : null;
-
-  // Una conversación ajena nunca se continúa aunque llegue un id válido
-  if (conversation && conversation.botId !== bot.id) conversation = null;
-
-  if (!conversation) {
-    conversation = await prisma.conversation.create({
-      data: {
-        id: uuidv4(),
-        botId: bot.id,
-        channelId: `web-${userId}-${uuidv4()}`,
-        channel: 'web',
-      },
-    });
-  }
+  const conversation = await resolverConversacion({
+    botId: bot.id,
+    canal: 'web',
+    nuevoChannelId: () => `web-${userId}-${uuidv4()}`,
+    conversationId,
+  });
 
   return { bot, conversation };
 }

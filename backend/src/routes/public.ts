@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { runTenantTurn } from '../services/tenantAgent';
 import { AppError } from '../middleware/errorHandler';
 import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
+import { resolverConversacion } from '../services/conversacion';
 
 const router = Router();
 
@@ -26,20 +27,12 @@ router.post('/bots/:botId/chat/stream', async (req: Request, res: Response, next
     // Limite mensual del plan del dueño del bot (antes de abrir el stream)
     await assertMessageLimit(bot.userId);
 
-    let conversation = conversationId
-      ? await prisma.conversation.findUnique({ where: { id: conversationId } })
-      : null;
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          id: uuidv4(),
-          botId: bot.id,
-          channelId: `widget-${uuidv4()}`,
-          channel: 'widget',
-        },
-      });
-    }
+    const conversation = await resolverConversacion({
+      botId: bot.id,
+      canal: 'widget',
+      nuevoChannelId: () => `widget-${uuidv4()}`,
+      conversationId,
+    });
 
     const recent = await prisma.message.findMany({
       where: { conversationId: conversation.id },
