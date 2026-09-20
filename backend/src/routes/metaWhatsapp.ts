@@ -12,7 +12,9 @@ import {
   sendTextMessage,
 } from '../services/metaMessaging';
 import {
+  confirmarEntrega,
   handleVerificationCode,
+  marcarNoEntregado,
   processInboundMessage,
   VERIFICATION_CODE_RE,
 } from '../services/inboundMessage';
@@ -206,7 +208,18 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   // El numero del bot, no el global: es de donde el cliente espera la respuesta
   const numeroDelBot = bot.metaPhoneNumberId ?? phoneNumberId;
 
-  if (result.text) await sendTextMessage(numeroDelBot, clientNumber, result.text);
+  if (result.text) {
+    try {
+      await sendTextMessage(numeroDelBot, clientNumber, result.text);
+      // Salio de verdad: recien ahora se cobra el cupo
+      if (result.messageId) await confirmarEntrega(bot.userId);
+    } catch (err) {
+      // Ya se reintento dentro de sendTextMessage. No se cobra el cupo y queda
+      // marcado, para que el dueño no vea una respuesta fantasma en el panel.
+      if (result.messageId) await marcarNoEntregado(result.messageId);
+      throw err;
+    }
+  }
 
   if (result.pendingImage) {
     try {

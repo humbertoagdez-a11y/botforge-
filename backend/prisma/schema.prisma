@@ -490,6 +490,11 @@ model Message {
   role           MessageRole
   content        String
   tokensUsed     Int         @default(0)
+  /// false solo si el envio al cliente fallo despues de reintentar. Sirve para
+  /// que el panel no muestre como enviada una respuesta que nunca llego.
+  /// Default true: los mensajes web y del widget se entregan en la respuesta
+  /// HTTP misma, y los historicos se dan por entregados.
+  entregado      Boolean     @default(true)
   createdAt      DateTime    @default(now())
 
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

@@ -10,6 +10,8 @@ import { checkWhatsAppAccess } from '../middleware/planLimits';
 import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
 import {
   handleVerificationCode,
+  confirmarEntrega,
+  marcarNoEntregado,
   processInboundMessage,
   VERIFICATION_CODE_RE,
 } from '../services/inboundMessage';
@@ -308,7 +310,15 @@ router.post(
       // Respuesta por API directa (control total sobre multimedia); TwiML queda
       // solo como fallback si Twilio no esta configurado (dev sin credenciales)
       if (isTwilioConfigured()) {
-        if (result.text) await sendTextMessage(from, result.text);
+        if (result.text) {
+          try {
+            await sendTextMessage(from, result.text);
+            if (result.messageId) await confirmarEntrega(bot.userId);
+          } catch (err) {
+            if (result.messageId) await marcarNoEntregado(result.messageId);
+            throw err;
+          }
+        }
         if (result.pendingImage) {
           try {
             await sendPendingImage(from, result.pendingImage);

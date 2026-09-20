@@ -102,7 +102,14 @@ export interface ConversationDetail {
   createdAt: string;
   updatedAt: string;
   bot: { name: string };
-  messages: { id: string; role: 'USER' | 'ASSISTANT'; content: string; createdAt: string }[];
+  messages: {
+    id: string;
+    role: 'USER' | 'ASSISTANT';
+    content: string;
+    /** false si el envio al cliente fallo despues de reintentar */
+    entregado: boolean;
+    createdAt: string;
+  }[];
 }
 
 export interface AccountStats {

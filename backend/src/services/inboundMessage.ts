@@ -156,6 +156,12 @@ export interface InboundResult {
   pendingImage?: PendingImage;
   /** true si es un aviso del sistema (no paso por el agente) */
   isNotice: boolean;
+  /**
+   * Id del mensaje ASSISTANT ya persistido, cuando lo hubo. El canal lo usa
+   * para confirmar la entrega o marcarla como fallida: el cupo se cobra recien
+   * cuando Meta confirma que el mensaje salio.
+   */
+  messageId?: string;
 }
 
 /**
@@ -280,11 +286,33 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
     channel: 'whatsapp',
   });
 
-  await prisma.message.create({
+  const mensaje = await prisma.message.create({
     data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
   });
 
-  await incrementMessageUsage(bot.userId);
+  // El cupo NO se incrementa aca: el mensaje todavia no salio. Lo cobra el
+  // canal con confirmarEntrega(), recien cuando Meta confirma el envio. Antes
+  // se cobraba en este punto, asi que un fallo de Meta dejaba al cliente sin
+  // respuesta y al dueño con el mensaje descontado igual.
+  return { text: content, pendingImage, isNotice: false, messageId: mensaje.id };
+}
 
-  return { text: content, pendingImage, isNotice: false };
+/**
+ * La respuesta salio: recien ahora cuenta contra el cupo del mes.
+ */
+export async function confirmarEntrega(userId: string): Promise<void> {
+  await incrementMessageUsage(userId);
+}
+
+/**
+ * El envio fallo despues de reintentar. No se cobra el cupo y el mensaje queda
+ * marcado, para que el panel no muestre como enviada una respuesta que el
+ * cliente nunca recibio.
+ */
+export async function marcarNoEntregado(messageId: string): Promise<void> {
+  try {
+    await prisma.message.update({ where: { id: messageId }, data: { entregado: false } });
+  } catch (err) {
+    console.error('[inbound] no se pudo marcar el mensaje como no entregado:', err);
+  }
 }

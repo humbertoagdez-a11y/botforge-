@@ -166,7 +166,7 @@ router.get('/conversations/:id', async (req: Request, res: Response, next: NextF
         bot: { select: { name: true, userId: true } },
         messages: {
           orderBy: { createdAt: 'asc' },
-          select: { id: true, role: true, content: true, createdAt: true },
+          select: { id: true, role: true, content: true, entregado: true, createdAt: true },
         },
       },
     });

@@ -62,21 +62,77 @@ async function describeError(res: Response): Promise<string> {
   }
 }
 
+/** Reintentos ante fallos pasajeros de Meta, sin contar el primer intento */
+const REINTENTOS = 3;
+const ESPERA_BASE_MS = 500;
+const ESPERA_MAX_MS = 8000;
+
+const dormir = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 429 (rate limit) y 5xx son pasajeros: reintentar tiene sentido. Un 4xx
+ * distinto es un problema del pedido o del token y no mejora reintentando.
+ */
+function esPasajero(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/**
+ * Cuanto esperar antes del proximo intento. Se respeta Retry-After si Meta lo
+ * manda —en segundos o como fecha—; si no, backoff exponencial.
+ */
+function esperaAntesDeReintentar(res: Response, intento: number): number {
+  const header = res.headers.get('retry-after');
+  if (header) {
+    const segundos = Number(header);
+    if (Number.isFinite(segundos) && segundos >= 0) {
+      return Math.min(segundos * 1000, ESPERA_MAX_MS);
+    }
+    const fecha = Date.parse(header);
+    if (!Number.isNaN(fecha)) {
+      return Math.min(Math.max(fecha - Date.now(), 0), ESPERA_MAX_MS);
+    }
+  }
+  return Math.min(ESPERA_BASE_MS * 2 ** intento, ESPERA_MAX_MS);
+}
+
 async function postMessage(
   phoneNumberId: PhoneNumberId,
   payload: Record<string, unknown>,
 ): Promise<void> {
   assertConfigured();
 
-  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
-  });
+  let ultimoError = '';
 
-  if (!res.ok) {
-    throw new Error(`Meta rechazó el envío — ${await describeError(res)}`);
+  for (let intento = 0; intento <= REINTENTOS; intento++) {
+    let res: Response;
+    try {
+      res = await fetch(`${GRAPH_BASE}/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
+      });
+    } catch (err) {
+      // Fallo de red: tambien es pasajero
+      ultimoError = err instanceof Error ? err.message : String(err);
+      if (intento === REINTENTOS) break;
+      await dormir(Math.min(ESPERA_BASE_MS * 2 ** intento, ESPERA_MAX_MS));
+      continue;
+    }
+
+    if (res.ok) return;
+
+    ultimoError = await describeError(res);
+    if (!esPasajero(res.status) || intento === REINTENTOS) break;
+
+    const espera = esperaAntesDeReintentar(res, intento);
+    console.warn(
+      `[meta] envio fallido (${res.status}), reintento ${intento + 1}/${REINTENTOS} en ${espera}ms`,
+    );
+    await dormir(espera);
   }
+
+  throw new Error(`Meta rechazó el envío — ${ultimoError}`);
 }
 
 export async function sendTextMessage(

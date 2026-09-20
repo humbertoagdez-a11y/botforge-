@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Bot, ChevronLeft, ChevronRight, Globe, Loader2, MessageSquare, Smartphone } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, MessageSquare, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -81,16 +81,28 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
             ) : (
               detail.messages.map((msg) => {
                 const isClient = msg.role === 'USER';
+                // El backend lo marca cuando el envio a WhatsApp fallo aun
+                // despues de reintentar: sin esto el panel mostraba como
+                // enviada una respuesta que el cliente nunca recibio
+                const noEntregado = !isClient && msg.entregado === false;
                 return (
                   <div key={msg.id} className={`flex ${isClient ? 'justify-end' : 'justify-start'}`}>
                     <div
                       className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                         isClient
                           ? 'rounded-br-md bg-primary text-primary-foreground'
-                          : 'rounded-bl-md bg-muted'
+                          : noEntregado
+                            ? 'rounded-bl-md border border-amber-500/40 bg-amber-500/10'
+                            : 'rounded-bl-md bg-muted'
                       }`}
                     >
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                      {noEntregado && (
+                        <p className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-400">
+                          <AlertTriangle className="h-3 w-3 shrink-0" />
+                          No se pudo entregar — el cliente no recibió esta respuesta
+                        </p>
+                      )}
                       <p
                         className={`mt-1 text-right text-[10px] ${
                           isClient ? 'text-primary-foreground/60' : 'text-muted-foreground'
