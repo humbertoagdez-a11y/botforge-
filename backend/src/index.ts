@@ -14,7 +14,7 @@ import path from 'path';
 import fs from 'fs';
 
 import { env } from './config/env';
-import { globalLimiter } from './middleware/rateLimit';
+import { globalLimiter, webhookLimiter } from './middleware/rateLimit';
 import { errorHandler } from './middleware/errorHandler';
 import { reportarError } from './lib/monitoring';
 import { Sentry, sentryHabilitado } from './instrument';
@@ -96,7 +96,18 @@ app.use(
     credentials: true,
   }),
 );
-app.use(globalLimiter);
+// Los webhooks NO pasan por el limite global: lo comparten entre todas las
+// notificaciones de Meta y Pagopar, que llegan desde pocas IPs, y al agotarlo
+// ellos reciben 429 y terminan descartando mensajes de clientes reales.
+// Llevan su propio limite, mucho mas alto, porque ahi lo que protege de
+// verdad es la firma, no la IP.
+const RUTAS_WEBHOOK = ['/api/v1/whatsapp/webhook', '/api/v1/pagopar/webhook'];
+
+app.use(RUTAS_WEBHOOK, webhookLimiter);
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (RUTAS_WEBHOOK.some((ruta) => req.path.startsWith(ruta))) return next();
+  return globalLimiter(req, res, next);
+});
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // El webhook de Pagopar se lee como TEXTO crudo, antes de los parsers globales.

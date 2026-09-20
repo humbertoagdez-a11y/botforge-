@@ -13,6 +13,31 @@ export const globalLimiter = rateLimit({
 });
 
 /**
+ * Limite para los webhooks entrantes (Meta y Pagopar).
+ *
+ * El limite global es de 100 cada 15 minutos por IP, pensado para un humano
+ * navegando. Meta y Pagopar entregan desde un rango acotado de IPs, asi que
+ * todas sus notificaciones comparten ese mismo cupo: con varios bots activos
+ * se agota, ellos empiezan a recibir 429 y, tras reintentar un rato, DESCARTAN
+ * el mensaje. El cliente escribe y nadie le responde.
+ *
+ * Este techo es mucho mas alto porque ahi la proteccion real contra abuso no
+ * es el limite por IP sino la firma: HMAC-SHA256 en Meta y sha1 en Pagopar.
+ * Igual se deja un tope, para que un flood no llegue a la base de datos.
+ */
+export const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    data: null,
+    error: { code: 'RATE_LIMIT', message: 'Demasiadas notificaciones' },
+    meta: null,
+  },
+});
+
+/**
  * Limita POR EMAIL en vez de por IP, para que nadie pueda llenarle la casilla
  * a otro desde IPs distintas. El limiter global por IP sigue aplicando encima.
  */
