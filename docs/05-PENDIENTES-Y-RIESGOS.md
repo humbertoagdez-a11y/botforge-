@@ -45,6 +45,40 @@ política de privacidad divulga un tratamiento de datos, no promete un beneficio
 y puede haber usuarios con una carpeta conectada. Revisar si se desmonta la
 integración del todo.
 
+**Next.js 14.2.35 tiene un aviso crítico sin aplicar.** `npm audit` marca
+DoS por el Image Optimizer y deserialización de peticiones HTTP, y aplica
+porque el frontend es self-hosted en Railway. El fix es `next@16`, un salto
+mayor que merece su propia sesión con pruebas completas: cambia el App Router,
+los defaults de caché y el build. Atenuante: `next.config.mjs` está vacío, sin
+`remotePatterns`, lo que limita una de las variantes. Pendiente desde el
+2026-09-20.
+
+**`xlsx` (SheetJS) no tiene parche y procesa archivos que suben los usuarios.**
+Prototype pollution y ReDoS, `fixAvailable: false` desde hace meses porque el
+proyecto dejó de publicar en npm y sólo distribuye desde su propio CDN. Es la
+vulnerabilidad de mayor exposición real del backend: entra por
+`documents.ts`, con archivos de terceros. Las opciones evaluadas el
+2026-09-20:
+
+- **Migrar a `exceljs`**: mantenido, sin avisos abiertos. Costo real: sólo se
+  usa para extraer texto de las hojas, así que es reescribir una función de
+  lectura, no una integración entera. Estimado: media sesión, más una prueba
+  con cada tipo de archivo que ya subieron los usuarios.
+- **Instalar `xlsx` desde el CDN de SheetJS** (`https://cdn.sheetjs.com/`), que
+  sí recibe parches. Es un cambio de una línea en `package.json`, pero saca la
+  dependencia del registro de npm y complica auditar y reproducir el build.
+- **Dejarlo y aislar**: validar tamaño y extensión antes de parsear. No cierra
+  el agujero, sólo lo angosta.
+
+La recomendación es `exceljs`, pero sin decidirlo todavía.
+
+**Ocho avisos de `npm audit` cuelgan de `@xenova/transformers`.** Incluye uno
+crítico en `protobufjs`. No se pueden resolver: el "fix" que propone npm es
+bajar a `@xenova/transformers@1.4.2`, que es una versión anterior y rompería
+los embeddings del RAG (`all-MiniLM-L6-v2`, dimensión 384). La librería se usa
+de verdad, en `services/embeddings.ts`. Queda esperando que el upstream
+actualice sus dependencias.
+
 ## Verificación de Meta para múltiples clientes de WhatsApp
 
 > Estado al 2026-08-31. **Ninguno de estos pasos se completa desde el código.**
