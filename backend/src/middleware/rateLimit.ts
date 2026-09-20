@@ -1,8 +1,16 @@
 import rateLimit from 'express-rate-limit';
 
+/**
+ * Techo general por IP. Hasta ahora nunca se aplico —faltaba trust proxy— asi
+ * que 100 cada 15 minutos jamas se puso a prueba contra el uso real. Al
+ * activarlo se sube a 600: el panel consulta seguido (la pantalla de pago
+ * sondea cada 3s, el asistente, las estadisticas) y 100 dejaria afuera a un
+ * usuario legitimo. El freno fino contra fuerza bruta es authLimiter, que
+ * sigue en 10.
+ */
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

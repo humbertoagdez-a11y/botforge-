@@ -101,6 +101,13 @@ app.use(
 // ellos reciben 429 y terminan descartando mensajes de clientes reales.
 // Llevan su propio limite, mucho mas alto, porque ahi lo que protege de
 // verdad es la firma, no la IP.
+// Railway termina TLS en su proxy y reenvia con X-Forwarded-For. Sin esto
+// Express usa la IP del socket —la del proxy, distinta en cada peticion— y
+// express-rate-limit nunca logra agrupar las peticiones de un mismo cliente:
+// ningun limite se aplicaba, ni el global ni el de login. Con 1 se confia en
+// un unico salto de proxy, que es exactamente la topologia de Railway.
+app.set('trust proxy', 1);
+
 const RUTAS_WEBHOOK = ['/api/v1/whatsapp/webhook', '/api/v1/pagopar/webhook'];
 
 app.use(RUTAS_WEBHOOK, webhookLimiter);
