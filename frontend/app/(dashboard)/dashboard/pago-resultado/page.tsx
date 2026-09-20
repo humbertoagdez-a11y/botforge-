@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { api, type PagoparEstado } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
+import { pixelTrack } from '@/lib/metaPixel';
 
 /** Clave donde pricing deja el hash antes de mandar al checkout */
 const HASH_KEY = 'bf_pagopar_hash';
@@ -32,6 +33,10 @@ function PagoResultado() {
   const [estado, setEstado] = useState<Estado>('cargando');
   const [detalle, setDetalle] = useState<PagoparEstado | null>(null);
   const intentosRef = useRef(0);
+  // consultar() se re-ejecuta cuando cambia el token (refrescarUsuario lo
+  // actualiza), asi que sin este guard Purchase se mandaria mas de una vez
+  // por el mismo pago y Meta contaria ingresos duplicados.
+  const purchaseEnviadoRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hash = leerHash(searchParams.get('hash'));
@@ -58,6 +63,16 @@ function PagoResultado() {
 
       if (data.pagado) {
         setEstado('pagado');
+        if (!purchaseEnviadoRef.current) {
+          purchaseEnviadoRef.current = true;
+          pixelTrack('Purchase', {
+            content_name: data.plan,
+            content_ids: [data.plan],
+            content_type: 'product',
+            value: data.montoTotal,
+            currency: 'PYG',
+          });
+        }
         try {
           sessionStorage.removeItem(HASH_KEY);
         } catch {

@@ -17,13 +17,15 @@ const SECCIONES: LegalSection[] = [
     content: (
       <>
         <p>
-          <T>BotForge no usa cookies publicitarias ni de rastreo de terceros.</T> No hay píxeles de
-          redes sociales, no hay Google Analytics, y no vendemos ni compartimos tu navegación con
-          nadie.
+          <T>Solo usamos cookies publicitarias si vos las aceptás.</T> Si elegís
+          &laquo;Solo necesarias&raquo; en el aviso de cookies, no se carga ningún script de
+          publicidad: ni el Pixel de Meta ni ningún otro. No hay Google Analytics, y no vendemos ni
+          compartimos tu navegación con nadie.
         </p>
         <p>
-          Lo único que guardamos en tu navegador es lo necesario para que puedas iniciar sesión y
-          que la aplicación funcione. Abajo está el detalle de cada cosa.
+          Si aceptás todas, cargamos el Pixel de Meta para medir cuánta gente llega desde nuestros
+          anuncios y termina registrándose o contratando un plan. Nunca se carga dentro del panel:
+          tu uso diario de BotForge no se trackea. Abajo está el detalle de cada cosa.
         </p>
       </>
     ),
@@ -115,8 +117,20 @@ const SECCIONES: LegalSection[] = [
     content: (
       <>
         <p>
-          El sitio de BotForge no carga scripts de terceros que instalen cookies. Ahora bien, hay
-          dos momentos en que salís de nuestro sitio y ahí aplican las políticas de esos servicios:
+          El único script de terceros que puede instalar cookies es el Pixel de Meta, y solo si
+          aceptaste todas las cookies:
+        </p>
+        <L>
+          <Li>
+            <T>Meta (Facebook / Instagram)</T> — instala la cookie <T>_fbp</T> para reconocer si
+            llegaste desde uno de nuestros anuncios. Se carga únicamente en las páginas públicas y
+            en el momento en que completás un registro o un pago; nunca mientras usás el panel.
+            Podés evitarlo eligiendo &laquo;Solo necesarias&raquo;.
+          </Li>
+        </L>
+        <p>
+          Además hay dos momentos en que salís de nuestro sitio y ahí aplican las políticas de esos
+          servicios:
         </p>
         <L>
           <Li>

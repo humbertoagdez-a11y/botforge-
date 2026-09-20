@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { api } from '@/lib/api';
+import { pixelTrack } from '@/lib/metaPixel';
 import { useAuthStore } from '@/lib/store';
 import { AUTH_CARD, AUTH_INPUT, AUTH_LABEL, AUTH_LINK, AUTH_MUTED, AUTH_SUBMIT } from '@/lib/auth-styles';
 
@@ -43,6 +44,9 @@ export default function RegisterPage() {
     try {
       // El registro ya no devuelve sesión: primero hay que verificar el email
       const { email } = await api.auth.register(data.name, data.email, data.password);
+      // Conversion: la cuenta quedo creada. Va antes del redirect porque la
+      // pantalla de verificacion ya es otra ruta.
+      pixelTrack('Lead', { content_name: 'Registro' });
       try {
         sessionStorage.setItem('bf_verify_email', email);
       } catch {

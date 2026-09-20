@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { api, type ApiError } from '@/lib/api';
+import { pixelTrack } from '@/lib/metaPixel';
 import { useAuthStore } from '@/lib/store';
 
 type PlanPago = 'STARTER' | 'PRO' | 'AGENCY';
@@ -138,6 +139,17 @@ export default function PricingPage() {
     try {
       const { checkoutUrl, hashPedido } = await api.pagopar.checkout(planId);
       if (!checkoutUrl) throw new Error('Error al crear la orden de pago');
+      // Conversion: la orden existe y el usuario se va al checkout de Pagopar.
+      // Se manda aca y no en el onClick porque antes del checkout puede
+      // faltar la cedula, y ahi no hay intencion de pago concretada.
+      const elegido = PLANS.find((p) => p.id === planId);
+      pixelTrack('InitiateCheckout', {
+        content_name: elegido?.name ?? planId,
+        content_ids: [planId],
+        content_type: 'product',
+        value: elegido?.priceGs ?? 0,
+        currency: 'PYG',
+      });
       // Guardado para poder consultar el estado al volver del checkout, que es
       // de dónde vuelve el usuario sin ningún parámetro nuestro
       try {
