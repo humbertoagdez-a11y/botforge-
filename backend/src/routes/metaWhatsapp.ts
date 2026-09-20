@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
@@ -260,13 +261,59 @@ async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
 // ─── POST /webhook ────────────────────────────────────────────────────────────
 // Responde 200 antes de procesar: Meta reintenta si tardamos, y un reintento
 // duplica el mensaje del cliente. El trabajo real corre despues, en background.
+/**
+ * Verifica que la notificacion venga de Meta.
+ *
+ * Meta firma cada POST con HMAC-SHA256(app_secret, cuerpo crudo) y lo manda en
+ * X-Hub-Signature-256. Se compara con timingSafeEqual, nunca con ===: comparar
+ * strings corta en el primer byte distinto y filtra, por tiempo de respuesta,
+ * cuanto prefijo se acerto.
+ *
+ * Devuelve 'sin-secreto' cuando META_APP_SECRET no esta configurado. En ese
+ * caso NO se rechaza nada: apagar el webhook de golpe dejaria a todos los bots
+ * sin responder. Queda avisado en el log hasta que se cargue el secreto.
+ */
+type ResultadoFirma = 'valida' | 'invalida' | 'sin-secreto';
+
+function verificarFirmaMeta(req: Request): ResultadoFirma {
+  if (!env.META_APP_SECRET) return 'sin-secreto';
+
+  const header = req.get('x-hub-signature-256');
+  if (!header?.startsWith('sha256=')) return 'invalida';
+
+  const recibida = Buffer.from(header.slice('sha256='.length), 'hex');
+  // Sin cuerpo crudo no hay nada que verificar: se rechaza en vez de confiar
+  if (!req.rawBody) return 'invalida';
+
+  const esperada = createHmac('sha256', env.META_APP_SECRET).update(req.rawBody).digest();
+
+  // timingSafeEqual exige mismo largo; distinto largo ya es firma invalida
+  if (recibida.length !== esperada.length) return 'invalida';
+  return timingSafeEqual(recibida, esperada) ? 'valida' : 'invalida';
+}
+
 router.post('/webhook', (req: Request, res: Response, next: NextFunction) => {
   const body = req.body as MetaWebhookBody;
 
-  // No es un payload de Meta: se lo dejamos al webhook de Twilio
+  // No es un payload de Meta: se lo dejamos al webhook de Twilio. Va ANTES de
+  // verificar la firma a proposito: Twilio firma distinto y no tiene por que
+  // pasar por este control.
   if (body?.object !== 'whatsapp_business_account') {
     next();
     return;
+  }
+
+  const firma = verificarFirmaMeta(req);
+  if (firma === 'invalida') {
+    console.warn('[meta] Notificacion rechazada: firma X-Hub-Signature-256 invalida o ausente');
+    res.status(403).send('Forbidden');
+    return;
+  }
+  if (firma === 'sin-secreto') {
+    console.warn(
+      '[meta] OJO: META_APP_SECRET no esta configurado, el webhook acepta cualquier POST. ' +
+        'Cargar la variable en Railway para activar la verificacion de firma.',
+    );
   }
 
   res.status(200).json({});

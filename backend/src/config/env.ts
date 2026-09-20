@@ -37,6 +37,13 @@ const envSchema = z.object({
   // perfil se edita sin el. Sin esta variable la feature de foto avisa y el
   // resto sigue funcionando igual.
   META_APP_ID: z.string().optional().default(''),
+  // Secreto de la app de Meta. Es lo unico con lo que se puede verificar que
+  // una notificacion del webhook viene de verdad de Meta: la firma llega en
+  // X-Hub-Signature-256 y es HMAC-SHA256(app_secret, cuerpo crudo).
+  // Mientras este vacio la verificacion queda inactiva y el webhook sigue
+  // aceptando todo, que es como funciono hasta ahora: apagarla de golpe sin
+  // el secreto cargado dejaria a todos los bots sin responder.
+  META_APP_SECRET: z.string().optional().default(''),
   // Pagopar: pasarela activa. La private key solo se usa para firmar tokens
   // sha1, nunca viaja en una URL ni se loguea.
   PAGOPAR_PUBLIC_KEY: z.string().optional().default(''),

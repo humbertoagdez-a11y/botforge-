@@ -13,6 +13,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: JwtPayload;
+      /** Cuerpo tal cual llego, para verificar firmas HMAC (webhook de Meta) */
+      rawBody?: Buffer;
     }
   }
 }

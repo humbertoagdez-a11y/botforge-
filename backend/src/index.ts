@@ -108,7 +108,19 @@ app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use('/api/v1/pagopar/webhook', express.text({ type: '*/*', limit: '1mb' }));
 
 // 10mb: las imagenes del asistente llegan como base64 en el body (~6.7mb max)
-app.use(express.json({ limit: '10mb' }));
+// El cuerpo crudo se guarda al pasar por el parser, sin alterar como se
+// parsea: hace falta para verificar la firma del webhook de Meta, que es un
+// HMAC sobre los bytes exactos que llegaron. Se hace con el hook `verify` y no
+// montando express.raw() en la ruta porque esa URL la comparten el webhook de
+// Meta y el de Twilio, y cambiarle el parser romperia el de Twilio.
+app.use(
+  express.json({
+    limit: '10mb',
+    verify: (req, _res, buf) => {
+      (req as express.Request).rawBody = Buffer.from(buf);
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
