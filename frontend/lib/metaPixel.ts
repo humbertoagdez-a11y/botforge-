@@ -85,9 +85,37 @@ export function pixelPageView(): void {
   window.fbq!('track', 'PageView');
 }
 
-/** Evento de conversion. Si no hay consentimiento no hace nada. */
-export function pixelTrack(evento: EventoPixel, datos?: Record<string, unknown>): void {
+/**
+ * Evento de conversion. Si no hay consentimiento no hace nada.
+ *
+ * `eventID` es la clave de deduplicacion de Meta: dos eventos con el mismo id
+ * se cuentan una sola vez. Es lo que evita que recargar la pantalla de pago
+ * infle los ingresos reportados.
+ */
+export function pixelTrack(
+  evento: EventoPixel,
+  datos?: Record<string, unknown>,
+  eventID?: string,
+): void {
   if (!asegurarPixel()) return;
-  if (datos) window.fbq!('track', evento, datos);
-  else window.fbq!('track', evento);
+  const opciones = eventID ? { eventID } : undefined;
+  if (datos) window.fbq!('track', evento, datos, opciones);
+  else window.fbq!('track', evento, undefined, opciones);
+}
+
+/**
+ * Marca en localStorage que un evento unico ya se mando, y devuelve false si
+ * ya estaba marcado. Segunda capa sobre el eventID: evita incluso emitir el
+ * pedido a Meta. Si localStorage esta bloqueado devuelve true y queda solo la
+ * deduplicacion del lado de Meta, que igual alcanza.
+ */
+export function marcarEventoUnico(clave: string): boolean {
+  try {
+    const k = `bf_pixel_${clave}`;
+    if (localStorage.getItem(k)) return false;
+    localStorage.setItem(k, new Date().toISOString());
+    return true;
+  } catch {
+    return true;
+  }
 }

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { api, type PagoparEstado } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
-import { pixelTrack } from '@/lib/metaPixel';
+import { marcarEventoUnico, pixelTrack } from '@/lib/metaPixel';
 
 /** Clave donde pricing deja el hash antes de mandar al checkout */
 const HASH_KEY = 'bf_pagopar_hash';
@@ -63,15 +63,24 @@ function PagoResultado() {
 
       if (data.pagado) {
         setEstado('pagado');
-        if (!purchaseEnviadoRef.current) {
+        // Tres capas contra el doble conteo, porque cada una tapa un agujero
+        // distinto: el ref cubre la re-ejecucion del efecto en este montaje;
+        // la marca en localStorage cubre el remount (F5, volver atras, reabrir
+        // la pestaña) mientras el hash siga en la URL; y el eventID cubre el
+        // resto, porque Meta deduplica por el aunque el evento llegue igual.
+        if (!purchaseEnviadoRef.current && marcarEventoUnico(`purchase_${hash}`)) {
           purchaseEnviadoRef.current = true;
-          pixelTrack('Purchase', {
-            content_name: data.plan,
-            content_ids: [data.plan],
-            content_type: 'product',
-            value: data.montoTotal,
-            currency: 'PYG',
-          });
+          pixelTrack(
+            'Purchase',
+            {
+              content_name: data.plan,
+              content_ids: [data.plan],
+              content_type: 'product',
+              value: data.montoTotal,
+              currency: 'PYG',
+            },
+            `purchase_${hash}`,
+          );
         }
         try {
           sessionStorage.removeItem(HASH_KEY);
