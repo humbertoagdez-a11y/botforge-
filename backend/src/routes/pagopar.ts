@@ -420,8 +420,6 @@ async function activarPlan(
   /** Datos del cobro que informa Pagopar. Se guardan para conciliar después. */
   cobro: { formaPago?: string | null; numeroComprobante?: string | null } = {},
 ): Promise<boolean> {
-  const validaHasta = new Date(Date.now() + PLAN_DURACION_MS);
-
   const marcado = await prisma.pagoparOrder.updateMany({
     where: { id: order.id, pagado: false },
     data: {
@@ -438,6 +436,22 @@ async function activarPlan(
     console.log(`[pagopar] pedido ${order.idPedidoComercio} ya estaba pagado (${origen})`);
     return false;
   }
+
+  // El vencimiento se APILA sobre lo que le quedaba, no lo pisa: quien renueva
+  // antes de tiempo perdia los dias que ya habia pagado.
+  //
+  // Solo se apila si renueva el MISMO plan. Al cambiar de plan se arranca de
+  // cero: sumarle a un Basico los dias que le quedaban de Profesional, o al
+  // reves, seria regalar o cobrar de mas segun el caso.
+  const usuario = await prisma.user.findUnique({
+    where: { id: order.userId },
+    select: { plan: true, planExpiresAt: true },
+  });
+
+  const vigenteHasta = usuario?.planExpiresAt?.getTime() ?? 0;
+  const mismoPlan = usuario?.plan === order.plan;
+  const base = mismoPlan && vigenteHasta > Date.now() ? vigenteHasta : Date.now();
+  const validaHasta = new Date(base + PLAN_DURACION_MS);
 
   await prisma.user.update({
     where: { id: order.userId },
