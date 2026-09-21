@@ -168,10 +168,9 @@ export async function iniciarTransaccion(
   const monto = Math.round(montoTotal);
   const montoStr = monto.toFixed(0);
 
-  const order = await prisma.pagoparOrder.create({
-    data: { id: uuidv4(), userId, plan, montoTotal: monto, idPedidoComercio },
-  });
-
+  // La fila se crea DESPUES de que Pagopar confirme, mas abajo. Crearla antes
+  // dejaba un pedido huerfano sin hashPedido cada vez que iniciar-transaccion
+  // fallaba, y ensuciaba la conciliacion.
   const fechaMaximaPago = new Date(Date.now() + PAGO_TTL_MS).toISOString();
   const descripcion = `Suscripción mensual ${PLAN_NOMBRES[plan]}`;
 
@@ -252,9 +251,8 @@ export async function iniciarTransaccion(
     throw new AppError(502, 'No se pudo iniciar el pago. Intentá de nuevo.');
   }
 
-  await prisma.pagoparOrder.update({
-    where: { id: order.id },
-    data: { hashPedido },
+  await prisma.pagoparOrder.create({
+    data: { id: uuidv4(), userId, plan, montoTotal: monto, idPedidoComercio, hashPedido },
   });
 
   return {

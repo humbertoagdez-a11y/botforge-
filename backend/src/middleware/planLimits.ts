@@ -334,16 +334,6 @@ export function checkDocLimit(req: Request, _res: Response, next: NextFunction):
   })();
 }
 
-export function checkMessageLimit(req: Request, _res: Response, next: NextFunction): void {
-  void (async () => {
-    try {
-      await assertMessageLimit(req.user!.userId);
-      next();
-    } catch (err) {
-      next(err);
-    }
-  })();
-}
 
 export function checkWhatsAppAccess(req: Request, _res: Response, next: NextFunction): void {
   void (async () => {

@@ -155,7 +155,9 @@ app.get('/health', (_req, res) => {
       startedAt: STARTED_AT,
       // Railway las inyecta en el build; vacías en local
       commit: env.RAILWAY_GIT_COMMIT_SHA ? env.RAILWAY_GIT_COMMIT_SHA.slice(0, 7) : 'local',
-      commitMessage: env.RAILWAY_GIT_COMMIT_MESSAGE || null,
+      // Solo el titulo: el cuerpo del commit describe bugs y decisiones
+      // internas, y /health es publico
+      commitMessage: env.RAILWAY_GIT_COMMIT_MESSAGE?.split('\n')[0] || null,
     },
     error: null,
     meta: null,
