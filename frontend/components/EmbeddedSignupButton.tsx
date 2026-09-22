@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Facebook, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Facebook, Info, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -246,6 +246,28 @@ export default function EmbeddedSignupButton({ botId, onConectado }: Props) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Contexto ANTES del riesgo: el popup es de Meta y no se puede
+            personalizar, asi que lo unico que se puede hacer es anticipar la
+            jerga que van a ver ahi adentro. Cian y no ambar a proposito: el
+            ambar queda reservado para la consecuencia irreversible de abajo. */}
+        <div className="flex items-start gap-2.5 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-3 py-2.5">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
+          <div className="text-xs leading-relaxed text-cyan-100/90">
+            <p className="font-semibold text-cyan-200">Qué vas a ver en la pantalla de Facebook:</p>
+            <p className="mt-1">
+              Meta te va a pedir elegir o crear un{' '}
+              <span className="font-semibold">portfolio comercial</span> y una{' '}
+              <span className="font-semibold">cuenta de WhatsApp Business</span>. Son nombres que
+              usa Meta para tu negocio; es normal que aparezcan, sobre todo si es la primera vez
+              que conectás este número.
+            </p>
+            <p className="mt-1">
+              Si todavía no tenés ninguna de las dos, elegí la opción de crear una nueva y seguí
+              los pasos. No hace falta que prepares nada antes.
+            </p>
+          </div>
+        </div>
+
         {/* Mismo aviso que el flujo manual, con el mismo peso visual y ANTES
             del boton: la consecuencia es identica e irreversible, y por aca se
             llega mas rapido. */}
