@@ -22,6 +22,38 @@ const updateBotSchema = createBotSchema.partial().extend({
   npsEnabled: z.boolean().optional(),
 });
 
+/**
+ * Campos del bot que se le devuelven al navegador.
+ *
+ * Es una lista blanca EXPLICITA, no un findUnique pelado, y el motivo son dos
+ * campos: metaBusinessToken y metaRegistrationPin. El token de negocio del
+ * cliente no expira nunca y permite enviar WhatsApp en su nombre; el PIN es su
+ * verificacion en dos pasos. El frontend no usa ninguno de los dos, asi que no
+ * tienen por que salir del servidor.
+ *
+ * Si mañana se agrega un campo al modelo hay que sumarlo aca a mano. Es
+ * deliberado: obliga a decidir si ese campo puede viajar, en vez de que se
+ * filtre solo.
+ */
+const CAMPOS_PUBLICOS = {
+  id: true,
+  userId: true,
+  name: true,
+  personality: true,
+  language: true,
+  whatsappNumber: true,
+  metaPhoneNumberId: true,
+  metaWabaId: true,
+  metaBusinessId: true,
+  metaDisplayNumber: true,
+  metaConectadoEn: true,
+  metaEstado: true,
+  npsEnabled: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 async function getOwnedBot(botId: string, userId: string) {
   const bot = await prisma.bot.findUnique({ where: { id: botId } });
   if (!bot) throw new AppError(404, 'Bot no encontrado');
@@ -34,7 +66,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const bots = await prisma.bot.findMany({
       where: { userId: req.user!.userId },
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        ...CAMPOS_PUBLICOS,
         _count: { select: { documents: true, conversations: true } },
       },
     });
@@ -49,6 +82,7 @@ router.post('/', checkBotLimit, async (req: Request, res: Response, next: NextFu
     const body = createBotSchema.parse(req.body);
     const bot = await prisma.bot.create({
       data: { id: uuidv4(), userId: req.user!.userId, ...body },
+      select: CAMPOS_PUBLICOS,
     });
     res.status(201).json({ data: bot, error: null, meta: null });
   } catch (err) {
@@ -58,7 +92,14 @@ router.post('/', checkBotLimit, async (req: Request, res: Response, next: NextFu
 
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const bot = await getOwnedBot(req.params.id, req.user!.userId);
+    await getOwnedBot(req.params.id, req.user!.userId);
+    // Se relee con la lista blanca: getOwnedBot trae la fila entera porque la
+    // usan otras rutas para leer campos internos, y eso no puede salir al
+    // navegador.
+    const bot = await prisma.bot.findUnique({
+      where: { id: req.params.id },
+      select: CAMPOS_PUBLICOS,
+    });
     res.json({ data: bot, error: null, meta: null });
   } catch (err) {
     next(err);
@@ -86,7 +127,11 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
       }
     }
 
-    const updated = await prisma.bot.update({ where: { id: req.params.id }, data: body });
+    const updated = await prisma.bot.update({
+      where: { id: req.params.id },
+      data: body,
+      select: CAMPOS_PUBLICOS,
+    });
     res.json({ data: updated, error: null, meta: null });
   } catch (err) {
     next(err);
