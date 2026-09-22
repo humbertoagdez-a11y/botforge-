@@ -120,11 +120,18 @@ export async function uploadProfilePicture(
   fileBuffer: Buffer,
   mimeType: string,
 ): Promise<string> {
-  // Usa el token global a proposito: la sesion de subida se abre contra
-  // /{app-id}/uploads, que es un recurso de la APP de BotForge y no del numero
-  // de ningun cliente. Queda pendiente de confirmar en la Sesion 2 si un
-  // business token de cliente puede escribir en ese nodo; si no puede, este es
-  // justamente el lugar donde NO hay que cambiarlo.
+  // Usa el token global A PROPOSITO, y asi queda.
+  //
+  // La sesion de subida se abre contra /{app-id}/uploads, que es un recurso de
+  // la APP de BotForge, no del numero de ningun cliente. La doc de la Resumable
+  // Upload API solo exige "un token de acceso de usuario" y no aclara si acepta
+  // un business token de cliente; consultada el 2026-09-22, sigue sin decirlo.
+  //
+  // Ante la duda, el token global es el unico que con certeza tiene acceso al
+  // nodo de la app. Lo que queda por confirmar empiricamente en la Sesion 3,
+  // con un business token real en mano, es si el handle que devuelve esta
+  // subida se puede aplicar al perfil de una WABA ajena. Si no se pudiera,
+  // habria que cambiar la estrategia de foto, no este token.
   if (!env.META_APP_ID) {
     throw new Error('Falta configurar META_APP_ID para poder cambiar la foto de perfil');
   }

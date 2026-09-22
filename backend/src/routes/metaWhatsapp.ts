@@ -4,7 +4,7 @@ import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { reportarError } from '../lib/monitoring';
 import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
-import { credencialDeBot, credencialGlobal, tokenGlobal } from '../services/metaAuth';
+import { credencialDeBot, credencialGlobal } from '../services/metaAuth';
 import {
   downloadMedia,
   isMetaConfigured,
@@ -107,11 +107,14 @@ function alreadyProcessed(messageId: string): boolean {
  * Devuelve el texto del cliente y, si mando una imagen, su descripcion segun
  * Vision. `unsupported` marca los tipos que no sabemos procesar.
  */
-// Sesion 2: el media pertenece a la WABA que recibio el mensaje, asi que con
-// un token por cliente habra que resolver el bot ANTES de llamar aca y pasarle
-// su token. Hoy el global es el unico y es el correcto.
+/**
+ * El media pertenece a la WABA que recibio el mensaje, asi que se baja con el
+ * token de ESE bot. Por eso el bot se resuelve antes de llamar aca: con un
+ * token por cliente, el global no tiene acceso al media de una WABA ajena.
+ */
 async function extractContent(
   msg: MetaMessage,
+  token: string,
 ): Promise<{ text: string; imageContext: string; unsupported: boolean }> {
   switch (msg.type) {
     case 'text':
@@ -121,7 +124,7 @@ async function extractContent(
       const mediaId = msg.audio?.id;
       if (!mediaId) return { text: '', imageContext: '', unsupported: true };
       try {
-        const { buffer, mimeType } = await downloadMedia(mediaId, tokenGlobal());
+        const { buffer, mimeType } = await downloadMedia(mediaId, token);
         const transcript = await transcribeAudio(buffer, msg.audio?.mime_type ?? mimeType);
         return { text: transcript.trim(), imageContext: '', unsupported: false };
       } catch (err) {
@@ -135,7 +138,7 @@ async function extractContent(
       const caption = (msg.image?.caption ?? '').trim();
       if (!mediaId) return { text: caption, imageContext: '', unsupported: false };
       try {
-        const { buffer } = await downloadMedia(mediaId, tokenGlobal());
+        const { buffer } = await downloadMedia(mediaId, token);
         const imageContext = await analyzeImage(buffer);
         return { text: caption, imageContext, unsupported: false };
       } catch (err) {
@@ -160,16 +163,27 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   const clientNumber = `+${fromDigits.replace(/^\+/, '')}`;
   const channelId = `whatsapp:${clientNumber}`;
 
+  // El bot se resuelve ANTES que nada: solo hace falta el phone_number_id, y su
+  // token es el que corresponde para el typing indicator y para bajar el media.
+  // Puede ser null (numero sin bot, o codigo de verificacion entrando por el
+  // numero de BotForge); ahi se usa la credencial global, como siempre.
+  const bot = await prisma.bot.findFirst({
+    where: { metaPhoneNumberId: phoneNumberId, isActive: true },
+  });
+  console.log('[meta] bot encontrado:', bot?.id, 'phone_number_id:', phoneNumberId);
+
+  const credEntrante = bot ? credencialDeBot(bot) : credencialGlobal(phoneNumberId);
+
   // Feedback inmediato antes del trabajo pesado (bajar media, transcribir,
   // RAG, loop del agente): el cliente ve el "visto" y el "escribiendo...".
   // Se espera a proposito para que el indicador aparezca antes de arrancar;
   // la funcion nunca lanza, asi que no puede frenar el procesamiento.
-  if (msg.id) await markAsReadAndTyping(credencialGlobal(phoneNumberId), msg.id);
+  if (msg.id) await markAsReadAndTyping(credEntrante, msg.id);
 
-  const { text, imageContext, unsupported } = await extractContent(msg);
+  const { text, imageContext, unsupported } = await extractContent(msg, credEntrante.token);
 
   if (unsupported) {
-    await sendTextMessage(credencialGlobal(phoneNumberId), clientNumber, 'Por ahora puedo leer texto, audios e imágenes. ¿Me lo escribís?');
+    await sendTextMessage(credEntrante, clientNumber, 'Por ahora puedo leer texto, audios e imágenes. ¿Me lo escribís?');
     return;
   }
 
@@ -185,13 +199,8 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
     return;
   }
 
-  const bot = await prisma.bot.findFirst({
-    where: { metaPhoneNumberId: phoneNumberId, isActive: true },
-  });
-  console.log('[meta] bot encontrado:', bot?.id, 'phone_number_id:', phoneNumberId);
-
   if (!bot) {
-    await sendTextMessage(credencialGlobal(phoneNumberId), clientNumber, 'Este número no tiene un bot activo configurado.');
+    await sendTextMessage(credEntrante, clientNumber, 'Este número no tiene un bot activo configurado.');
     return;
   }
 

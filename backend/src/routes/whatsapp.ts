@@ -7,6 +7,7 @@ import { env } from '../config/env';
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkWhatsAppAccess } from '../middleware/planLimits';
+import { completarOnboarding } from '../services/metaOnboarding';
 import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
 import {
   handleVerificationCode,
@@ -337,6 +338,50 @@ router.post(
     }
 
     res.type('text/xml').send(twiml.toString());
+  },
+);
+
+// ─── POST /bots/:botId/embedded-signup ────────────────────────────────────────
+// Cierra el onboarding que el cliente empezo en el popup de Facebook Login for
+// Business. El frontend manda lo que devolvio el SDK y aca se hace todo el
+// trabajo servidor a servidor.
+//
+// El `code` dura muy poco, asi que el handler no hace nada pesado antes de
+// pasarselo al servicio: valida, resuelve el bot y va derecho a Meta.
+const embeddedSignupSchema = z.object({
+  code: z.string().min(1),
+  phoneNumberId: z.string().min(1),
+  wabaId: z.string().min(1),
+  businessId: z.string().optional(),
+});
+
+router.post(
+  '/bots/:botId/embedded-signup',
+  requireAuth,
+  requireVerifiedEmail,
+  checkWhatsAppAccess,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const datos = embeddedSignupSchema.parse(req.body);
+      await getOwnedBot(req.params.botId, req.user!.userId);
+
+      const resultado = await completarOnboarding(req.params.botId, datos);
+
+      res.json({
+        data: {
+          phoneNumberId: resultado.phoneNumberId,
+          wabaId: resultado.wabaId,
+          conectadoEn: resultado.conectadoEn.toISOString(),
+          // Se devuelve para mostrarlo UNA vez: Meta lo vuelve a pedir si el
+          // numero se re-registra alguna vez.
+          pin: resultado.pin,
+        },
+        error: null,
+        meta: null,
+      });
+    } catch (err) {
+      next(err);
+    }
   },
 );
 
