@@ -14,6 +14,21 @@ import EmbeddedSignupButton, { type ResultadoConexion } from './EmbeddedSignupBu
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const POLL_INTERVAL = 3000;
 
+/**
+ * El formulario BF-XXXXXX ya no se ofrece para conexiones nuevas.
+ *
+ * No es solo una simplificacion de pantalla: ese flujo conecta al cliente al
+ * numero compartido de BotForge, y metaPhoneNumberId es @unique. O sea que un
+ * segundo cliente no puede usarlo aunque quiera — el backend lo rechaza con
+ * "Este numero ya esta conectado a otro bot". Mostrarlo era ofrecer un camino
+ * que no lleva a ningun lado.
+ *
+ * El codigo se queda: el bot que ya esta conectado por ahi depende de esa
+ * infraestructura, y los endpoints siguen vivos. Poner esto en true vuelve a
+ * mostrar el formulario tal cual estaba.
+ */
+const MOSTRAR_FLUJO_MANUAL = false;
+
 type Step = 'idle' | 'requesting' | 'pending' | 'polling' | 'active' | 'expired' | 'recien-conectado';
 type Channel = 'meta' | 'twilio';
 
@@ -414,76 +429,76 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
   // ── IDLE / REQUESTING ──────────────────────────────────────────────────────
   return (
     <div className="max-w-xl space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Smartphone className="h-5 w-5 text-primary" />
-            Conectar número de WhatsApp
-          </CardTitle>
-          <CardDescription>
-            Ingresá tu número y te guiamos paso a paso.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* La conexión es el punto de no retorno: el aviso va ANTES del input,
-              no después, para que nadie se entere cuando ya conectó su línea */}
-          <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-            <div className="text-xs leading-relaxed text-amber-200/90">
-              <p className="font-semibold">Antes de conectar, tené en cuenta:</p>
-              <p className="mt-1">
-                El número que conectes pasa a ser gestionado por el bot y{' '}
-                <span className="font-semibold">ya no vas a poder usarlo con la app normal de
-                WhatsApp al mismo tiempo</span>. El historial de chats anterior tampoco se traslada.
-              </p>
-              <p className="mt-1">
-                Si querés seguir usando WhatsApp normal en tu celular, usá una línea distinta para
-                el bot.
+      {MOSTRAR_FLUJO_MANUAL && (
+        <>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Smartphone className="h-5 w-5 text-primary" />
+              Conectar número de WhatsApp
+            </CardTitle>
+            <CardDescription>
+              Ingresá tu número y te guiamos paso a paso.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* La conexión es el punto de no retorno: el aviso va ANTES del input,
+                no después, para que nadie se entere cuando ya conectó su línea */}
+            <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              <div className="text-xs leading-relaxed text-amber-200/90">
+                <p className="font-semibold">Antes de conectar, tené en cuenta:</p>
+                <p className="mt-1">
+                  El número que conectes pasa a ser gestionado por el bot y{' '}
+                  <span className="font-semibold">ya no vas a poder usarlo con la app normal de
+                  WhatsApp al mismo tiempo</span>. El historial de chats anterior tampoco se traslada.
+                </p>
+                <p className="mt-1">
+                  Si querés seguir usando WhatsApp normal en tu celular, usá una línea distinta para
+                  el bot.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="wa-number">Tu número de WhatsApp</Label>
+              <Input
+                id="wa-number"
+                placeholder="+595981234567"
+                value={phoneInput}
+                onChange={(e) => { setPhoneInput(e.target.value); setInputError(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') void handleRequestConnection(); }}
+                className="font-mono"
+                disabled={step === 'requesting'}
+              />
+              {inputError && <p className="text-xs text-destructive">{inputError}</p>}
+              <p className="text-xs text-muted-foreground">
+                Incluí el código de país. Ejemplo: +595 para Paraguay, +54 para Argentina.
               </p>
             </div>
-          </div>
+            <Button
+              className="w-full"
+              onClick={handleRequestConnection}
+              disabled={step === 'requesting' || !phoneInput}
+            >
+              {step === 'requesting' ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Generando código...</>
+              ) : (
+                <>Conectar WhatsApp →</>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="wa-number">Tu número de WhatsApp</Label>
-            <Input
-              id="wa-number"
-              placeholder="+595981234567"
-              value={phoneInput}
-              onChange={(e) => { setPhoneInput(e.target.value); setInputError(''); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') void handleRequestConnection(); }}
-              className="font-mono"
-              disabled={step === 'requesting'}
-            />
-            {inputError && <p className="text-xs text-destructive">{inputError}</p>}
-            <p className="text-xs text-muted-foreground">
-              Incluí el código de país. Ejemplo: +595 para Paraguay, +54 para Argentina.
-            </p>
+          <div className="flex items-center gap-3 pt-1">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              o conectá tu propia cuenta
+            </span>
+            <div className="h-px flex-1 bg-border" />
           </div>
-          <Button
-            className="w-full"
-            onClick={handleRequestConnection}
-            disabled={step === 'requesting' || !phoneInput}
-          >
-            {step === 'requesting' ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Generando código...</>
-            ) : (
-              <>Conectar WhatsApp →</>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Embedded Signup convive con el flujo de arriba, no lo reemplaza: los
-          bots ya conectados por codigo siguen funcionando igual. Va despues
-          porque el de arriba es el unico disponible para quien no tiene una
-          cuenta de WhatsApp Business propia todavia. */}
-      <div className="flex items-center gap-3 pt-1">
-        <div className="h-px flex-1 bg-border" />
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          o conectá tu propia cuenta
-        </span>
-        <div className="h-px flex-1 bg-border" />
-      </div>
+        </>
+      )}
 
       <EmbeddedSignupButton
         botId={bot.id}
@@ -498,7 +513,9 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
         }}
       />
 
-      <ChannelInstructions info={channelInfo} />
+      {/* Describen el mecanismo del numero compartido, que es el del flujo
+          manual. Un bot nuevo conecta el suyo, asi que aca no aplican. */}
+      {MOSTRAR_FLUJO_MANUAL && <ChannelInstructions info={channelInfo} />}
     </div>
   );
 }
