@@ -33,8 +33,13 @@ export interface CredencialMeta {
  */
 export interface BotConCredencial {
   metaPhoneNumberId: string | null;
-  // Sesion 2: metaBusinessToken?: string | null;
+  metaBusinessToken?: string | null;
+  /** ACTIVO | ERROR | REVOCADO | null */
+  metaEstado?: string | null;
 }
+
+/** El unico estado en el que el token propio del bot se considera usable. */
+export const ESTADO_ACTIVO = 'ACTIVO';
 
 /** El System User token de BotForge. Es el unico que existe hoy. */
 export function tokenGlobal(): string {
@@ -44,12 +49,18 @@ export function tokenGlobal(): string {
 /**
  * El token con el que corresponde hablarle a Meta por ESTE bot.
  *
- * HOY devuelve siempre el global, porque ningun bot tiene token propio. En la
- * Sesion 2, cuando el campo exista, la primera linea pasa a ser
- *   if (bot?.metaBusinessToken) return bot.metaBusinessToken;
- * y ningun call site se entera del cambio.
+ * Si el bot se conecto por Embedded Signup tiene su propio business token,
+ * scopeado a la WABA de su dueño: es el unico que sirve para operar ese numero.
+ *
+ * Se exige ademas metaEstado === ACTIVO. Un bot cuyo onboarding quedo a medias
+ * (ERROR) o al que el cliente le revoco el acceso (REVOCADO) tiene un token
+ * guardado que ya no funciona; usarlo daria un 401 en vez de caer al global,
+ * que al menos sigue atendiendo desde el numero de BotForge.
  */
-export function tokenDelBot(_bot?: BotConCredencial | null): string {
+export function tokenDelBot(bot?: BotConCredencial | null): string {
+  if (bot?.metaBusinessToken && bot.metaEstado === ESTADO_ACTIVO) {
+    return bot.metaBusinessToken;
+  }
   return tokenGlobal();
 }
 
