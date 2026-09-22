@@ -226,6 +226,11 @@ model Bot {
   /// persiste porque Meta lo vuelve a pedir si el numero se re-registra, y sin
   /// el la unica salida es resetear la 2FA desde WhatsApp Manager.
   metaRegistrationPin String?
+  /// Numero legible del cliente (+595...). Se guarda al conectar porque
+  /// metaPhoneNumberId es un id opaco y el panel necesita mostrar el numero.
+  /// Sin esto la pestaña mostraba el numero de BotForge para bots que tienen
+  /// el suyo propio.
+  metaDisplayNumber String?
   metaConectadoEn   DateTime?
   /// ACTIVO | ERROR | REVOCADO. En null = nunca paso por Embedded Signup.
   /// Explicito y no inferido del token: el cliente puede revocar el acceso

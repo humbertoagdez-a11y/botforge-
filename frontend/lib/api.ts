@@ -761,6 +761,18 @@ export const api = {
     },
   },
 
+  whatsapp: {
+    /** Cierra el onboarding que el cliente empezo en el popup de Meta. */
+    embeddedSignup: (
+      botId: string,
+      datos: { code: string; phoneNumberId: string; wabaId: string; businessId?: string },
+    ) =>
+      request<{ phoneNumberId: string; wabaId: string; conectadoEn: string; pin: string }>(
+        `/api/v1/whatsapp/bots/${botId}/embedded-signup`,
+        { method: 'POST', body: JSON.stringify(datos) },
+      ),
+  },
+
   pagopar: {
     checkout: (plan: 'STARTER' | 'PRO' | 'AGENCY') =>
       request<{ checkoutUrl: string; hashPedido: string }>('/api/v1/pagopar/checkout', {

@@ -122,6 +122,28 @@ export async function suscribirWebhooks(wabaId: string, businessToken: string): 
   }
 }
 
+/**
+ * Trae el numero legible (+595...) del phone_number_id.
+ *
+ * Nunca lanza: es informativo. Si falla, el bot queda conectado igual y el
+ * panel cae al numero de la plataforma, que es lo que mostraba antes.
+ */
+export async function traerNumeroLegible(
+  phoneNumberId: string,
+  businessToken: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${phoneNumberId}?fields=display_phone_number`, {
+      headers: { Authorization: `Bearer ${businessToken}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { display_phone_number?: string };
+    return body.display_phone_number ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Registra el numero para Cloud API y le fija el PIN de verificacion en dos pasos. */
 export async function registrarNumero(
   phoneNumberId: string,
@@ -208,11 +230,14 @@ export async function completarOnboarding(
   }
 
   const conectadoEn = new Date();
+  const displayNumber = await traerNumeroLegible(datos.phoneNumberId, businessToken);
+
   await prisma.bot.update({
     where: { id: botId },
     data: {
       ...base,
       metaPhoneNumberId: datos.phoneNumberId,
+      metaDisplayNumber: displayNumber,
       metaRegistrationPin: pin,
       metaConectadoEn: conectadoEn,
       metaEstado: ESTADO_ACTIVO,

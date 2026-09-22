@@ -114,7 +114,12 @@ router.get(
       // Con Meta los mensajes llegan al numero de negocio, no al del cliente:
       // ese es el numero que hay que mostrar como conectado. Con Twilio sigue
       // siendo el numero del cliente, que es donde rutea el sandbox.
-      const connectedNumber = bot.metaPhoneNumberId ? base.businessNumber : bot.whatsappNumber;
+      // El numero propio manda sobre el de la plataforma: un bot conectado por
+      // Embedded Signup atiende desde SU numero, y mostrar el de BotForge seria
+      // la misma contradiccion que ya se corrigio en el encabezado del bot.
+      const connectedNumber = bot.metaPhoneNumberId
+        ? (bot.metaDisplayNumber ?? base.businessNumber)
+        : bot.whatsappNumber;
 
       if (connectedNumber) {
         res.json({ data: { ...base, status: 'ACTIVE', phoneNumber: connectedNumber }, error: null, meta: null });

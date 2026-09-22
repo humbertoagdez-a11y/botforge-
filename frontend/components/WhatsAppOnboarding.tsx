@@ -9,6 +9,7 @@ import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { useAuthStore } from '@/lib/store';
 import type { Bot } from '@/lib/api';
+import EmbeddedSignupButton from './EmbeddedSignupButton';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const POLL_INTERVAL = 3000;
@@ -408,6 +409,26 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Embedded Signup convive con el flujo de arriba, no lo reemplaza: los
+          bots ya conectados por codigo siguen funcionando igual. Va despues
+          porque el de arriba es el unico disponible para quien no tiene una
+          cuenta de WhatsApp Business propia todavia. */}
+      <div className="flex items-center gap-3 pt-1">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          o conectá tu propia cuenta
+        </span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      <EmbeddedSignupButton
+        botId={bot.id}
+        onConectado={() => {
+          setStep('active');
+          onUpdate({ ...bot });
+        }}
+      />
 
       <ChannelInstructions info={channelInfo} />
     </div>
