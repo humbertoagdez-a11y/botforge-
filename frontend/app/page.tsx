@@ -9,10 +9,12 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
+  Clock,
   Cpu,
   GraduationCap,
   MessageSquare,
   Scissors,
+  Settings2,
   ShoppingBag,
   Sparkles,
   Stethoscope,
@@ -442,6 +444,72 @@ function Hero() {
             unoptimized
             className="h-auto w-full"
           />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── BIENVENIDA ───────────────────────────────────────────────────────────────
+
+/** Lo concreto que resuelve, en el lugar donde alguien decide si sigue leyendo. */
+const BIENVENIDA = [
+  {
+    icon: Clock,
+    titulo: 'Responde cuando vos no podes',
+    texto:
+      'A las once de la noche, un domingo, o mientras atendes a otro cliente. El mensaje no queda esperando hasta mañana.',
+  },
+  {
+    icon: Settings2,
+    titulo: 'Lo cargas vos, sin programar',
+    texto:
+      'Subis tu lista de precios o escribis lo que tiene que saber. Responde con eso: tus precios, tus horarios, tus envios.',
+  },
+  {
+    icon: MessageSquare,
+    titulo: 'En el WhatsApp de tu negocio',
+    texto:
+      'No es un chat mas en tu pagina. Contesta donde tus clientes ya te escriben, desde tu propio numero.',
+  },
+] as const;
+
+function WelcomeSection() {
+  return (
+    <section className="border-t border-white/5 bg-[#0A0A0F] py-14 md:py-20">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6">
+        <div className="mx-auto max-w-2xl text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200">
+            <Sparkles className="h-3.5 w-3.5" />
+            Hecho en Paraguay
+          </span>
+          {/* El salto forzado solo entra cuando hay ancho para que no quede
+              huerfana una palabra sola en la segunda linea */}
+          <h2 className="mt-4 text-balance text-2xl font-bold leading-tight text-white sm:text-3xl md:text-4xl">
+            Tus clientes escriben a cualquier hora.
+            <br className="hidden sm:block" />{' '}
+            <span className="text-cyan-400">Tu negocio no puede estar siempre.</span>
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-pretty text-sm leading-relaxed text-gray-300 sm:text-base">
+            Un mensaje sin responder a la noche es una venta que se va a otro lado. BotForge
+            atiende por vos con la informacion real de tu negocio, en guaranies y hablando como
+            se habla aca.
+          </p>
+        </div>
+
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 md:mt-12 md:grid-cols-3">
+          {BIENVENIDA.map(({ icon: Icon, titulo, texto }) => (
+            <div
+              key={titulo}
+              className="rounded-2xl border border-white/5 bg-[#111118] p-5 transition-colors hover:border-violet-500/25 sm:p-6"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10">
+                <Icon className="h-5 w-5 text-violet-400" />
+              </div>
+              <h3 className="mt-4 text-base font-semibold text-white">{titulo}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-400">{texto}</p>
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -882,6 +950,7 @@ export default function LandingPage() {
     <main className="min-h-screen bg-[#0A0A0F] font-sans antialiased">
       <Navbar />
       <Hero />
+      <WelcomeSection />
       <DemoSection />
       <MetricsSection />
       <StepsSection />
