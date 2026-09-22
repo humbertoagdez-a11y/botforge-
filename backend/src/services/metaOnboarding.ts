@@ -37,6 +37,8 @@ export interface DatosSignup {
 export interface ResultadoOnboarding {
   phoneNumberId: string;
   wabaId: string;
+  /** Numero legible del cliente. null si Meta no lo devolvio. */
+  displayNumber: string | null;
   /** Se muestra UNA vez al dueño: Meta lo pide si alguna vez re-registra */
   pin: string;
   conectadoEn: Date;
@@ -245,5 +247,5 @@ export async function completarOnboarding(
   });
 
   console.log(`[meta-onboarding] bot ${botId} conectado — waba ${datos.wabaId}`);
-  return { phoneNumberId: datos.phoneNumberId, wabaId: datos.wabaId, pin, conectadoEn };
+  return { phoneNumberId: datos.phoneNumberId, wabaId: datos.wabaId, displayNumber, pin, conectadoEn };
 }

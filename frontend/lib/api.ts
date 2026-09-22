@@ -767,7 +767,14 @@ export const api = {
       botId: string,
       datos: { code: string; phoneNumberId: string; wabaId: string; businessId?: string },
     ) =>
-      request<{ phoneNumberId: string; wabaId: string; conectadoEn: string; pin: string }>(
+      request<{
+        phoneNumberId: string;
+        wabaId: string;
+        /** Numero legible del cliente; null si Meta no lo devolvio */
+        displayNumber: string | null;
+        conectadoEn: string;
+        pin: string;
+      }>(
         `/api/v1/whatsapp/bots/${botId}/embedded-signup`,
         { method: 'POST', body: JSON.stringify(datos) },
       ),

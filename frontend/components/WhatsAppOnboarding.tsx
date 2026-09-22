@@ -9,12 +9,12 @@ import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { useAuthStore } from '@/lib/store';
 import type { Bot } from '@/lib/api';
-import EmbeddedSignupButton from './EmbeddedSignupButton';
+import EmbeddedSignupButton, { type ResultadoConexion } from './EmbeddedSignupButton';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 const POLL_INTERVAL = 3000;
 
-type Step = 'idle' | 'requesting' | 'pending' | 'polling' | 'active' | 'expired';
+type Step = 'idle' | 'requesting' | 'pending' | 'polling' | 'active' | 'expired' | 'recien-conectado';
 type Channel = 'meta' | 'twilio';
 
 /** Canal activo y número de negocio al que el cliente le escribe. Lo define el
@@ -56,6 +56,8 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
   const [connectedNumber, setConnectedNumber] = useState<string | null>(bot.whatsappNumber ?? null);
   const [msLeft, setMsLeft] = useState(0);
   const [disconnecting, setDisconnecting] = useState(false);
+  /** Resultado del Embedded Signup recien completado, para mostrar el PIN */
+  const [recienConectado, setRecienConectado] = useState<ResultadoConexion | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -203,6 +205,67 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
     if (!conn) return;
     void navigator.clipboard.writeText(conn.code);
     toast.success('Código copiado');
+  }
+
+  // ── RECIEN CONECTADO ───────────────────────────────────────────────────────
+  // Paso intermedio a proposito. La tarjeta trae el PIN, que es un dato que el
+  // usuario tiene que copiar: no puede desaparecer sola ni por un timer. Se
+  // avanza a ACTIVE solo cuando el aprieta "Listo".
+  if (step === 'recien-conectado' && recienConectado) {
+    return (
+      <div className="max-w-xl space-y-4">
+        <Card className="border-emerald-500/30 bg-emerald-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+              WhatsApp conectado
+            </CardTitle>
+            <CardDescription>
+              {recienConectado.displayNumber
+                ? `Tu número ${recienConectado.displayNumber} ya puede recibir y responder mensajes.`
+                : 'Tu número ya puede recibir y responder mensajes.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="flex items-center gap-2 text-xs font-semibold text-amber-200">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Guardá este PIN de verificación en dos pasos
+              </p>
+              <p className="mt-2 font-mono text-3xl tracking-widest text-foreground">
+                {recienConectado.pin}
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-amber-200/80">
+                Lo generamos y lo tenemos guardado, pero anotalo igual: Meta lo pide si alguna vez
+                volvés a registrar este número, y sin él la única salida es restablecer la
+                verificación en dos pasos desde tu Administrador de WhatsApp.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 gap-1.5"
+                onClick={() => {
+                  void navigator.clipboard.writeText(recienConectado.pin);
+                  toast.success('PIN copiado');
+                }}
+              >
+                <ClipboardCopy className="h-3.5 w-3.5" /> Copiar PIN
+              </Button>
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={() => {
+                setRecienConectado(null);
+                setStep('active');
+              }}
+            >
+              Listo, ya lo guardé
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   // ── ACTIVE ─────────────────────────────────────────────────────────────────
@@ -424,8 +487,13 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
 
       <EmbeddedSignupButton
         botId={bot.id}
-        onConectado={() => {
-          setStep('active');
+        onConectado={(r) => {
+          // El numero viene en la respuesta del backend: sin esto la vista
+          // quedaba vacia hasta recargar, porque el efecto que lo trae solo
+          // corre al montar.
+          setConnectedNumber(r.displayNumber);
+          setRecienConectado(r);
+          setStep('recien-conectado');
           onUpdate({ ...bot });
         }}
       />

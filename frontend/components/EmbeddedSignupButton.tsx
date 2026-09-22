@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardCopy, Facebook, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Facebook, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -35,17 +35,22 @@ interface DatosSignup {
   businessId?: string;
 }
 
-type Estado = 'cargando' | 'listo' | 'esperando' | 'enviando' | 'conectado' | 'error';
+type Estado = 'cargando' | 'listo' | 'esperando' | 'enviando' | 'error';
 
-interface ResultadoOk {
+export interface ResultadoConexion {
   phoneNumberId: string;
+  displayNumber: string | null;
   pin: string;
 }
 
 interface Props {
   botId: string;
-  /** Se llama al conectar bien, para que el padre refresque el estado del bot */
-  onConectado: () => void;
+  /**
+   * Se llama al conectar bien. El PIN lo muestra el PADRE, no este componente:
+   * al conectar, el padre pasa a su vista de conectado y desmontaria esta
+   * tarjeta en el mismo instante en que aparece.
+   */
+  onConectado: (r: ResultadoConexion) => void;
 }
 
 /**
@@ -87,7 +92,6 @@ function explicarError(err: ApiError): { mensaje: string; reintentable: boolean 
 
 export default function EmbeddedSignupButton({ botId, onConectado }: Props) {
   const [estado, setEstado] = useState<Estado>('cargando');
-  const [resultado, setResultado] = useState<ResultadoOk | null>(null);
   const [error, setError] = useState<{ mensaje: string; reintentable: boolean } | null>(null);
 
   // El code (callback de FB.login) y los ids (evento del popup) llegan por
@@ -106,10 +110,8 @@ export default function EmbeddedSignupButton({ botId, onConectado }: Props) {
     setEstado('enviando');
     try {
       const r = await api.whatsapp.embeddedSignup(botId, { code, ...datos });
-      setResultado({ phoneNumberId: r.phoneNumberId, pin: r.pin });
-      setEstado('conectado');
       toast.success('WhatsApp conectado');
-      onConectado();
+      onConectado({ phoneNumberId: r.phoneNumberId, displayNumber: r.displayNumber, pin: r.pin });
     } catch (err) {
       setError(explicarError(err as ApiError));
       setEstado('error');
@@ -180,7 +182,6 @@ export default function EmbeddedSignupButton({ botId, onConectado }: Props) {
   function conectar(): void {
     if (!window.FB) return;
     setError(null);
-    setResultado(null);
     codeRef.current = null;
     datosRef.current = null;
     enviadoRef.current = false;
@@ -203,50 +204,6 @@ export default function EmbeddedSignupButton({ botId, onConectado }: Props) {
         override_default_response_type: true,
         extras: { setup: {} },
       },
-    );
-  }
-
-  // ── Conectado ──────────────────────────────────────────────────────────────
-  if (estado === 'conectado' && resultado) {
-    return (
-      <Card className="border-emerald-500/30 bg-emerald-500/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-            WhatsApp conectado
-          </CardTitle>
-          <CardDescription>Tu número quedó listo para recibir y responder mensajes.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Identificador del número: <span className="font-mono text-foreground">{resultado.phoneNumberId}</span>
-          </p>
-
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-            <p className="flex items-center gap-2 text-xs font-semibold text-amber-200">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              Guardá este PIN de verificación en dos pasos
-            </p>
-            <p className="mt-2 font-mono text-2xl tracking-widest text-foreground">{resultado.pin}</p>
-            <p className="mt-2 text-xs leading-relaxed text-amber-200/80">
-              Lo generamos y lo tenemos guardado, pero anotalo igual: Meta lo pide si alguna vez
-              volvés a registrar este número, y sin él la única salida es restablecer la
-              verificación en dos pasos desde tu Administrador de WhatsApp.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2 gap-1.5"
-              onClick={() => {
-                void navigator.clipboard.writeText(resultado.pin);
-                toast.success('PIN copiado');
-              }}
-            >
-              <ClipboardCopy className="h-3.5 w-3.5" /> Copiar PIN
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     );
   }
 
@@ -289,6 +246,27 @@ export default function EmbeddedSignupButton({ botId, onConectado }: Props) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Mismo aviso que el flujo manual, con el mismo peso visual y ANTES
+            del boton: la consecuencia es identica e irreversible, y por aca se
+            llega mas rapido. */}
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+          <div className="text-xs leading-relaxed text-amber-200/90">
+            <p className="font-semibold">Antes de conectar, tené en cuenta:</p>
+            <p className="mt-1">
+              El número que conectes pasa a ser gestionado por el bot y{' '}
+              <span className="font-semibold">
+                ya no vas a poder usarlo con la app normal de WhatsApp al mismo tiempo
+              </span>
+              . El historial de chats anterior tampoco se traslada.
+            </p>
+            <p className="mt-1">
+              Si querés seguir usando WhatsApp normal en tu celular, usá una línea distinta para
+              el bot.
+            </p>
+          </div>
+        </div>
+
         <Button className="w-full gap-2 bg-[#1877F2] text-white hover:bg-[#1877F2]/90" onClick={conectar} disabled={ocupado}>
           {estado === 'cargando' && <><Loader2 className="h-4 w-4 animate-spin" /> Preparando…</>}
           {estado === 'esperando' && <><Loader2 className="h-4 w-4 animate-spin" /> Esperando a Facebook…</>}

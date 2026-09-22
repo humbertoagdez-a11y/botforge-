@@ -376,6 +376,8 @@ router.post(
         data: {
           phoneNumberId: resultado.phoneNumberId,
           wabaId: resultado.wabaId,
+          // El numero del cliente, para que el panel lo muestre sin recargar
+          displayNumber: resultado.displayNumber,
           conectadoEn: resultado.conectadoEn.toISOString(),
           // Se devuelve para mostrarlo UNA vez: Meta lo vuelve a pedir si el
           // numero se re-registra alguna vez.
