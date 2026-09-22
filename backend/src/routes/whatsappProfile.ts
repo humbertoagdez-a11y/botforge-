@@ -18,6 +18,7 @@ import multer from 'multer';
 import sharp, { type Metadata } from 'sharp';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { credencialDeBot, type CredencialMeta } from '../services/metaAuth';
 import { env } from '../config/env';
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -72,7 +73,7 @@ async function getOwnedBot(botId: string, userId: string) {
  * Devuelve el phone-number-id de ESE bot, que es lo unico que las funciones de
  * Graph necesitan.
  */
-async function resolverNumeroDelBot(botId: string, userId: string): Promise<string> {
+async function credencialDelBot(botId: string, userId: string): Promise<CredencialMeta> {
   const bot = await getOwnedBot(botId, userId);
 
   if (!bot.metaPhoneNumberId) {
@@ -83,7 +84,7 @@ async function resolverNumeroDelBot(botId: string, userId: string): Promise<stri
     throw new AppError(503, 'La integración de WhatsApp no está disponible en este momento');
   }
 
-  return bot.metaPhoneNumberId;
+  return credencialDeBot(bot);
 }
 
 // ─── VALIDACION ───────────────────────────────────────────────────────────────
@@ -138,8 +139,8 @@ router.get(
   '/',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const phoneNumberId = await resolverNumeroDelBot(req.params.botId, req.user!.userId);
-      const perfil = await conErrorLegible(() => getBusinessProfile(phoneNumberId));
+      const cred = await credencialDelBot(req.params.botId, req.user!.userId);
+      const perfil = await conErrorLegible(() => getBusinessProfile(cred));
       res.json({ data: perfil, error: null, meta: null });
     } catch (err) {
       next(err);
@@ -153,14 +154,14 @@ router.patch(
   '/',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const phoneNumberId = await resolverNumeroDelBot(req.params.botId, req.user!.userId);
+      const cred = await credencialDelBot(req.params.botId, req.user!.userId);
       const cambios = perfilSchema.parse(req.body);
 
-      await conErrorLegible(() => updateBusinessProfile(phoneNumberId, cambios));
+      await conErrorLegible(() => updateBusinessProfile(cred, cambios));
 
       // Se relee en vez de devolver lo que se mando: asi el panel muestra lo
       // que Meta guardo de verdad, que es lo que ve el cliente.
-      const perfil = await conErrorLegible(() => getBusinessProfile(phoneNumberId));
+      const perfil = await conErrorLegible(() => getBusinessProfile(cred));
       res.json({ data: perfil, error: null, meta: null });
     } catch (err) {
       next(err);
@@ -175,7 +176,7 @@ router.post(
   upload.single('file'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const phoneNumberId = await resolverNumeroDelBot(req.params.botId, req.user!.userId);
+      const cred = await credencialDelBot(req.params.botId, req.user!.userId);
 
       const archivo = req.file;
       if (!archivo) {
@@ -221,14 +222,14 @@ router.post(
       let handle: string;
       try {
         handle = await uploadProfilePicture(normalizada, 'image/jpeg');
-        await setProfilePictureHandle(phoneNumberId, handle);
+        await setProfilePictureHandle(cred, handle);
       } catch (err) {
         if (err instanceof AppError) throw err;
         const detalle = err instanceof Error ? err.message : 'Error desconocido';
         throw new AppError(502, `No se pudo actualizar la foto de perfil. ${detalle}`, 'META_FOTO_ERROR');
       }
 
-      const perfil = await conErrorLegible(() => getBusinessProfile(phoneNumberId));
+      const perfil = await conErrorLegible(() => getBusinessProfile(cred));
       res.json({ data: perfil, error: null, meta: null });
     } catch (err) {
       next(err);

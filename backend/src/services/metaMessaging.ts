@@ -8,6 +8,7 @@
 import { env } from '../config/env';
 import { cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
 import type { PendingImage } from './tenantAgent';
+import { authHeader, type CredencialMeta } from './metaAuth';
 
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -23,24 +24,17 @@ function assertConfigured(): void {
 }
 
 /**
- * De que numero sale cada mensaje.
+ * Con que credencial sale cada mensaje.
  *
- * Va como PRIMER parametro y es obligatorio a proposito: antes estas funciones
- * leian env.META_PHONE_NUMBER_ID por su cuenta, asi que era imposible notar
- * desde el llamador que todos los mensajes salian del mismo numero. Ahora, si
- * aparece un segundo numero de negocio, el compilador obliga a decidir cual
- * usar en cada envio en vez de heredar el global en silencio.
+ * Va como PRIMER parametro y es obligatoria a proposito. Antes estas funciones
+ * leian env.META_PHONE_NUMBER_ID y env.META_WHATSAPP_TOKEN por su cuenta, asi
+ * que desde el llamador era imposible notar que todo salia del mismo numero y
+ * con el mismo token. Ahora el compilador obliga a decidirlo en cada envio.
  *
- * Cada bot guarda el suyo en Bot.metaPhoneNumberId; el webhook ademas recibe en
- * el payload el numero que recibio el mensaje, que es el que corresponde para
- * responder. env.META_PHONE_NUMBER_ID queda SOLO como el numero propio de
- * BotForge, para el flujo de verificacion de conexiones nuevas.
+ * El numero y el token van atados en el mismo objeto (ver metaAuth.ts): con un
+ * token por cliente, mandarlos sueltos permitiria combinar el numero de un
+ * negocio con el token de otro.
  */
-export type PhoneNumberId = string;
-
-function authHeader(): { Authorization: string } {
-  return { Authorization: `Bearer ${env.META_WHATSAPP_TOKEN}` };
-}
 
 /** Meta espera el numero con codigo de pais y sin '+' ni prefijo de canal. */
 function toMetaNumber(to: string): string {
@@ -97,7 +91,7 @@ function esperaAntesDeReintentar(res: Response, intento: number): number {
 }
 
 async function postMessage(
-  phoneNumberId: PhoneNumberId,
+  cred: CredencialMeta,
   payload: Record<string, unknown>,
 ): Promise<void> {
   assertConfigured();
@@ -107,9 +101,9 @@ async function postMessage(
   for (let intento = 0; intento <= REINTENTOS; intento++) {
     let res: Response;
     try {
-      res = await fetch(`${GRAPH_BASE}/${phoneNumberId}/messages`, {
+      res = await fetch(`${GRAPH_BASE}/${cred.phoneNumberId}/messages`, {
         method: 'POST',
-        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        headers: { ...authHeader(cred.token), 'Content-Type': 'application/json' },
         body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
       });
     } catch (err) {
@@ -136,11 +130,11 @@ async function postMessage(
 }
 
 export async function sendTextMessage(
-  phoneNumberId: PhoneNumberId,
+  cred: CredencialMeta,
   to: string,
   body: string,
 ): Promise<void> {
-  await postMessage(phoneNumberId, {
+  await postMessage(cred, {
     to: toMetaNumber(to),
     type: 'text',
     text: { body },
@@ -163,7 +157,7 @@ export async function sendTextMessage(
  * distinguir en Railway entre "anduvo" y "nunca se llamo".
  */
 export async function markAsReadAndTyping(
-  phoneNumberId: PhoneNumberId,
+  cred: CredencialMeta,
   messageId: string,
 ): Promise<void> {
   if (!isMetaConfigured()) {
@@ -172,9 +166,9 @@ export async function markAsReadAndTyping(
   }
 
   try {
-    const res = await fetch(`${GRAPH_BASE}/${phoneNumberId}/messages`, {
+    const res = await fetch(`${GRAPH_BASE}/${cred.phoneNumberId}/messages`, {
       method: 'POST',
-      headers: { ...authHeader(), 'Content-Type': 'application/json' },
+      headers: { ...authHeader(cred.token), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         status: 'read',
@@ -196,12 +190,12 @@ export async function markAsReadAndTyping(
 
 /** Envia una imagen ya hospedada en una URL publica accesible por Meta. */
 export async function sendImageByUrl(
-  phoneNumberId: PhoneNumberId,
+  cred: CredencialMeta,
   to: string,
   imageUrl: string,
   caption: string,
 ): Promise<void> {
-  await postMessage(phoneNumberId, {
+  await postMessage(cred, {
     to: toMetaNumber(to),
     type: 'image',
     image: { link: imageUrl, caption },
@@ -215,7 +209,7 @@ export async function sendImageByUrl(
  * whatsapp_temp para poder limpiarlos en lote desde Cloudinary.
  */
 export async function sendImageMessage(
-  phoneNumberId: PhoneNumberId,
+  cred: CredencialMeta,
   to: string,
   imageBase64: string,
   mimeType: string,
@@ -234,7 +228,7 @@ export async function sendImageMessage(
     },
   );
 
-  await sendImageByUrl(phoneNumberId, to, uploadRes.secure_url, caption);
+  await sendImageByUrl(cred, to, uploadRes.secure_url, caption);
 }
 
 /**
@@ -244,10 +238,12 @@ export async function sendImageMessage(
  */
 export async function downloadMedia(
   mediaId: string,
+  /** Solo el token: bajar un media no sale por ningun numero de negocio */
+  token: string,
 ): Promise<{ buffer: ArrayBuffer; mimeType: string }> {
   assertConfigured();
 
-  const metaRes = await fetch(`${GRAPH_BASE}/${mediaId}`, { headers: authHeader() });
+  const metaRes = await fetch(`${GRAPH_BASE}/${mediaId}`, { headers: authHeader(token) });
   if (!metaRes.ok) {
     throw new Error(`No se pudo leer el media ${mediaId} — ${await describeError(metaRes)}`);
   }
@@ -257,7 +253,7 @@ export async function downloadMedia(
     throw new Error(`Meta no devolvió URL de descarga para el media ${mediaId}`);
   }
 
-  const binRes = await fetch(meta.url, { headers: authHeader() });
+  const binRes = await fetch(meta.url, { headers: authHeader(token) });
   if (!binRes.ok) {
     throw new Error(`No se pudo descargar el media ${mediaId} — HTTP ${binRes.status}`);
   }
@@ -274,13 +270,13 @@ export async function downloadMedia(
  * por URL; las de Drive llegan como binario y hay que hospedarlas primero.
  */
 export async function sendPendingImage(
-  phoneNumberId: PhoneNumberId,
+  cred: CredencialMeta,
   to: string,
   img: PendingImage,
 ): Promise<void> {
   if (img.source === 'url') {
-    await sendImageByUrl(phoneNumberId, to, img.url, img.caption);
+    await sendImageByUrl(cred, to, img.url, img.caption);
     return;
   }
-  await sendImageMessage(phoneNumberId, to, img.imageBase64, img.mimeType, img.caption);
+  await sendImageMessage(cred, to, img.imageBase64, img.mimeType, img.caption);
 }

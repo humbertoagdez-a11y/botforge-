@@ -12,6 +12,7 @@
  * META_WHATSAPP_TOKEN nunca se loguea: viaja solo en el header Authorization.
  */
 import { env } from '../config/env';
+import { authHeader, tokenGlobal, type CredencialMeta } from './metaAuth';
 
 const GRAPH_VERSION = 'v21.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -50,10 +51,6 @@ export type Vertical = (typeof VERTICALES)[number];
 
 const CAMPOS = 'about,address,description,email,profile_picture_url,websites,vertical';
 
-function authHeader(): { Authorization: string } {
-  return { Authorization: `Bearer ${env.META_WHATSAPP_TOKEN}` };
-}
-
 /**
  * Lee el cuerpo del error de Graph sin filtrar credenciales. Meta responde
  * { error: { message, type, code } }; el token nunca viene en la respuesta.
@@ -70,10 +67,10 @@ async function describeError(res: Response): Promise<string> {
 }
 
 /** Lee los 7 campos del perfil del numero de ESE bot. */
-export async function getBusinessProfile(phoneNumberId: string): Promise<BusinessProfile> {
+export async function getBusinessProfile(cred: CredencialMeta): Promise<BusinessProfile> {
   const res = await fetch(
-    `${GRAPH_BASE}/${phoneNumberId}/whatsapp_business_profile?fields=${CAMPOS}`,
-    { headers: authHeader() },
+    `${GRAPH_BASE}/${cred.phoneNumberId}/whatsapp_business_profile?fields=${CAMPOS}`,
+    { headers: authHeader(cred.token) },
   );
 
   if (!res.ok) {
@@ -91,7 +88,7 @@ export async function getBusinessProfile(phoneNumberId: string): Promise<Busines
  * que el usuario no toco.
  */
 export async function updateBusinessProfile(
-  phoneNumberId: string,
+  cred: CredencialMeta,
   data: BusinessProfileUpdate,
 ): Promise<void> {
   const payload: Record<string, unknown> = { messaging_product: 'whatsapp' };
@@ -99,9 +96,9 @@ export async function updateBusinessProfile(
     if (valor !== undefined) payload[clave] = valor;
   }
 
-  const res = await fetch(`${GRAPH_BASE}/${phoneNumberId}/whatsapp_business_profile`, {
+  const res = await fetch(`${GRAPH_BASE}/${cred.phoneNumberId}/whatsapp_business_profile`, {
     method: 'POST',
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    headers: { ...authHeader(cred.token), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 
@@ -123,6 +120,11 @@ export async function uploadProfilePicture(
   fileBuffer: Buffer,
   mimeType: string,
 ): Promise<string> {
+  // Usa el token global a proposito: la sesion de subida se abre contra
+  // /{app-id}/uploads, que es un recurso de la APP de BotForge y no del numero
+  // de ningun cliente. Queda pendiente de confirmar en la Sesion 2 si un
+  // business token de cliente puede escribir en ese nodo; si no puede, este es
+  // justamente el lugar donde NO hay que cambiarlo.
   if (!env.META_APP_ID) {
     throw new Error('Falta configurar META_APP_ID para poder cambiar la foto de perfil');
   }
@@ -132,7 +134,7 @@ export async function uploadProfilePicture(
   try {
     const res = await fetch(
       `${GRAPH_BASE}/${env.META_APP_ID}/uploads?file_length=${fileBuffer.length}&file_type=${encodeURIComponent(mimeType)}`,
-      { method: 'POST', headers: authHeader() },
+      { method: 'POST', headers: authHeader(tokenGlobal()) },
     );
     if (!res.ok) {
       throw new Error(await describeError(res));
@@ -150,7 +152,7 @@ export async function uploadProfilePicture(
   try {
     const res = await fetch(`${GRAPH_BASE}/${sessionId}`, {
       method: 'POST',
-      headers: { ...authHeader(), file_offset: '0', 'Content-Type': 'application/octet-stream' },
+      headers: { ...authHeader(tokenGlobal()), file_offset: '0', 'Content-Type': 'application/octet-stream' },
       body: new Uint8Array(fileBuffer),
     });
     if (!res.ok) {
@@ -173,11 +175,11 @@ export async function uploadProfilePicture(
  * actualizacion generica del perfil.
  */
 export async function setProfilePictureHandle(
-  phoneNumberId: string,
+  cred: CredencialMeta,
   handle: string,
 ): Promise<void> {
   try {
-    await updateBusinessProfile(phoneNumberId, { profile_picture_handle: handle });
+    await updateBusinessProfile(cred, { profile_picture_handle: handle });
   } catch (err) {
     const detalle = err instanceof Error ? err.message : String(err);
     throw new Error(`Falló el paso 3 de la subida de la foto (asociarla al perfil) — ${detalle}`);

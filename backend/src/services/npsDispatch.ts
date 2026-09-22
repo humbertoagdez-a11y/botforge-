@@ -9,6 +9,7 @@
 import { prisma } from '../lib/prisma';
 import { conversationIsRipe, markAsked, npsQuestion, shouldAskNps } from './nps';
 import { isMetaConfigured, sendTextMessage } from './metaMessaging';
+import { credencialDeBot } from './metaAuth';
 
 /** Cuántas conversaciones se revisan por corrida, para acotar el trabajo */
 const MAX_POR_CORRIDA = 100;
@@ -71,7 +72,7 @@ export async function dispatchNpsSurveys(): Promise<number> {
         // El filtro del where ya garantiza metaPhoneNumberId != null; el
         // chequeo queda porque TypeScript no puede saberlo desde el tipo.
         if (!conv.bot.metaPhoneNumberId) continue;
-        await sendTextMessage(conv.bot.metaPhoneNumberId, clientId, npsQuestion());
+        await sendTextMessage(credencialDeBot(conv.bot), clientId, npsQuestion());
         // Se marca DESPUÉS de enviar: si el envío falla, se reintenta en la
         // próxima corrida en vez de quemar el cooldown de 30 días
         await markAsked(conv.botId, clientId);

@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { reportarError } from '../lib/monitoring';
 import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
+import { credencialDeBot, credencialGlobal, tokenGlobal } from '../services/metaAuth';
 import {
   downloadMedia,
   isMetaConfigured,
@@ -106,6 +107,9 @@ function alreadyProcessed(messageId: string): boolean {
  * Devuelve el texto del cliente y, si mando una imagen, su descripcion segun
  * Vision. `unsupported` marca los tipos que no sabemos procesar.
  */
+// Sesion 2: el media pertenece a la WABA que recibio el mensaje, asi que con
+// un token por cliente habra que resolver el bot ANTES de llamar aca y pasarle
+// su token. Hoy el global es el unico y es el correcto.
 async function extractContent(
   msg: MetaMessage,
 ): Promise<{ text: string; imageContext: string; unsupported: boolean }> {
@@ -117,7 +121,7 @@ async function extractContent(
       const mediaId = msg.audio?.id;
       if (!mediaId) return { text: '', imageContext: '', unsupported: true };
       try {
-        const { buffer, mimeType } = await downloadMedia(mediaId);
+        const { buffer, mimeType } = await downloadMedia(mediaId, tokenGlobal());
         const transcript = await transcribeAudio(buffer, msg.audio?.mime_type ?? mimeType);
         return { text: transcript.trim(), imageContext: '', unsupported: false };
       } catch (err) {
@@ -131,7 +135,7 @@ async function extractContent(
       const caption = (msg.image?.caption ?? '').trim();
       if (!mediaId) return { text: caption, imageContext: '', unsupported: false };
       try {
-        const { buffer } = await downloadMedia(mediaId);
+        const { buffer } = await downloadMedia(mediaId, tokenGlobal());
         const imageContext = await analyzeImage(buffer);
         return { text: caption, imageContext, unsupported: false };
       } catch (err) {
@@ -160,12 +164,12 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   // RAG, loop del agente): el cliente ve el "visto" y el "escribiendo...".
   // Se espera a proposito para que el indicador aparezca antes de arrancar;
   // la funcion nunca lanza, asi que no puede frenar el procesamiento.
-  if (msg.id) await markAsReadAndTyping(phoneNumberId, msg.id);
+  if (msg.id) await markAsReadAndTyping(credencialGlobal(phoneNumberId), msg.id);
 
   const { text, imageContext, unsupported } = await extractContent(msg);
 
   if (unsupported) {
-    await sendTextMessage(phoneNumberId, clientNumber, 'Por ahora puedo leer texto, audios e imágenes. ¿Me lo escribís?');
+    await sendTextMessage(credencialGlobal(phoneNumberId), clientNumber, 'Por ahora puedo leer texto, audios e imágenes. ¿Me lo escribís?');
     return;
   }
 
@@ -177,7 +181,7 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
     });
     // El codigo llega al numero de BotForge, y desde ese mismo numero se
     // responde: es el unico caso donde corresponde el numero de la plataforma.
-    await sendTextMessage(phoneNumberId, clientNumber, reply);
+    await sendTextMessage(credencialGlobal(phoneNumberId), clientNumber, reply);
     return;
   }
 
@@ -187,13 +191,13 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   console.log('[meta] bot encontrado:', bot?.id, 'phone_number_id:', phoneNumberId);
 
   if (!bot) {
-    await sendTextMessage(phoneNumberId, clientNumber, 'Este número no tiene un bot activo configurado.');
+    await sendTextMessage(credencialGlobal(phoneNumberId), clientNumber, 'Este número no tiene un bot activo configurado.');
     return;
   }
 
   // Sin texto ni imagen legible no hay nada que mandarle al agente
   if (!text && !imageContext) {
-    await sendTextMessage(bot.metaPhoneNumberId ?? phoneNumberId, clientNumber, 'No pude entender ese mensaje. ¿Me lo escribís?');
+    await sendTextMessage(credencialDeBot(bot), clientNumber, 'No pude entender ese mensaje. ¿Me lo escribís?');
     return;
   }
 
@@ -205,12 +209,13 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
     imageContext: imageContext || undefined,
   });
 
-  // El numero del bot, no el global: es de donde el cliente espera la respuesta
-  const numeroDelBot = bot.metaPhoneNumberId ?? phoneNumberId;
+  // La credencial del bot, no la global: el cliente espera la respuesta desde
+  // el numero del bot, y en la Sesion 2 ademas ira firmada con SU token
+  const credBot = credencialDeBot(bot);
 
   if (result.text) {
     try {
-      await sendTextMessage(numeroDelBot, clientNumber, result.text);
+      await sendTextMessage(credBot, clientNumber, result.text);
       // Salio de verdad: recien ahora se cobra el cupo
       if (result.messageId) await confirmarEntrega(bot.userId);
     } catch (err) {
@@ -223,7 +228,7 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
 
   if (result.pendingImage) {
     try {
-      await sendPendingImage(numeroDelBot, clientNumber, result.pendingImage);
+      await sendPendingImage(credBot, clientNumber, result.pendingImage);
     } catch (mediaErr) {
       // El texto ya salió: que falle la imagen no puede tumbar la respuesta
       reportarError('meta-envio-imagen', mediaErr, { origen: result.pendingImage.source });
@@ -257,7 +262,7 @@ async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
           if (msg.from) {
             try {
               await sendTextMessage(
-                phoneNumberId,
+                credencialGlobal(phoneNumberId),
                 `+${msg.from.replace(/^\+/, '')}`,
                 'Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.',
               );
