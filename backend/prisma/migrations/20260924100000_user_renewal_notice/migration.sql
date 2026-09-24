@@ -5,7 +5,10 @@
 -- le llegaban TRES emails identicos en tres dias seguidos.
 --
 -- Guarda CUANDO se aviso. El cron compara esa fecha contra planExpiresAt: si
--- el aviso es posterior al ultimo vencimiento conocido, ya se aviso por este
--- ciclo. Al renovar, planExpiresAt se mueve hacia adelante y el proximo ciclo
--- vuelve a avisar solo.
-ALTER TABLE "User" ADD COLUMN "renewalNoticeSentAt" TIMESTAMP(3);
+-- el aviso es posterior al arranque del ciclo, ya se aviso por este periodo. Al
+-- renovar, planExpiresAt se mueve hacia adelante y el ciclo siguiente vuelve a
+-- avisar solo.
+--
+-- La tabla es "users", no "User": el modelo lleva @@map("users"), igual que
+-- casi todos los de este schema.
+ALTER TABLE "users" ADD COLUMN "renewalNoticeSentAt" TIMESTAMP(3);
