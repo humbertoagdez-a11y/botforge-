@@ -75,6 +75,7 @@ Business.
 | `npx prisma studio` | GUI de base de datos |
 | `docker-compose up -d` | PostgreSQL y Redis locales |
 | `npm run reporte:muestra` | PDFs de informe de ejemplo en `backend/tmp/` |
+| `npm run verificar:planes` | Chequear que los planes del frontend y del backend coincidan |
 | `curl <backend>/health` | Ver qué commit está desplegado |
 
 ## Reglas de código
@@ -150,8 +151,11 @@ está en `docs/04-PLANES-Y-LIMITES.md`. Resumen:
 | Informes semanales | ❌ | ❌ | ✅ | ✅ |
 | Informe consolidado | ❌ | ❌ | ❌ | ✅ |
 
-Los precios están duplicados en pricing, landing y términos: el frontend no
-puede importar del backend. Si cambiás un límite, tocá los cuatro lugares.
+Los límites tienen una sola fuente por lado: `planLimits.ts` (de donde deriva
+`services/planCatalog.ts`) y `frontend/lib/planes.ts`. El frontend no puede
+importar del backend, así que esa frontera la cubre `npm run verificar:planes`,
+que falla si los dos se desincronizan. Si cambiás un límite: tocás
+`planLimits.ts`, después `frontend/lib/planes.ts`, y corrés el verificador.
 
 ## Estado del proyecto
 
@@ -169,8 +173,7 @@ Lo que falta está en `docs/05-PENDIENTES-Y-RIESGOS.md`.
 - En desarrollo los archivos van a `backend/uploads/`; en producción, Cloudinary
   (el disco de Railway es efímero)
 - `npm run typecheck` antes de cada commit
-- El build del frontend falla en `/apple-icon` desde el 2026-07-20. Es
-  preexistente y no bloquea el deploy — no perder tiempo ahí salvo que cambie
-  de naturaleza
+- El build del frontend vuelve a terminar limpio: `/apple-icon` se resolvió el
+  2026-09-23 pasando de la ruta dinámica de `@vercel/og` a un PNG estático
 - Al compactar contexto con `/compact`, preservar: archivos modificados, fase
   actual, decisiones de arquitectura tomadas

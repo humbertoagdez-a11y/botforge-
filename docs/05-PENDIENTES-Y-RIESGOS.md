@@ -4,20 +4,39 @@ Lo que se sabe que falta. Nada de esto bloquea el lanzamiento; están ordenados
 por relación valor/esfuerzo.
 
 > Consolidado de la auditoría de pre-lanzamiento del 2026-08-15, más lo que
-> quedó explícitamente sin resolver en sesiones anteriores.
+> quedó explícitamente sin resolver en sesiones anteriores. Revisado en la
+> auditoría previa a la venta del 2026-09-23.
 
 ## Pendientes
 
 | # | Qué | Por qué importa | Esfuerzo |
 |---|---|---|---|
 | 1 | **Sentry en el frontend** | El backend ya está integrado (ver `06-MONITOREO.md`). Falta el lado del cliente: errores de React y fetch fallidos. Se postergó porque el cupo gratuito es compartido y los errores de navegador podrían quemarlo, dejando sin alertas al backend | Mediano |
-| 2 | **Arreglar `/apple-icon`** | Falla en cada build desde el 2026-07-20 (`@vercel/og`, `TypeError: Invalid URL`). No bloquea el deploy, pero ensucia el output y esconde fallos nuevos | Chico |
+| ~~2~~ | ~~**Arreglar `/apple-icon`**~~ | **Resuelto el 2026-09-23.** Se reemplazó la ruta dinámica de `@vercel/og` por un PNG estático en `app/apple-icon.png`, con el mismo dibujo. El build del frontend vuelve a terminar sin errores | — |
 | 3 | **Índice en `messages(conversationId, createdAt)`** | El informe semanal y el historial filtran por eso constantemente. Con volumen se va a notar | Chico |
 | 4 | **Zona horaria de `fechaPago` de Pagopar** | Pagopar manda la fecha sin zona (`"2026-08-16 22:50:00"`) y se parsea como hora local del servidor. En Railway (UTC) queda ~4h corrida respecto de Paraguay. Solo afecta conciliación, no el cobro ni la activación | Chico |
 | 5 | **Rotación del Chat de prueba** | El historial crece sin techo por conversación. Hoy solo se leen los últimos 10 mensajes, pero la fila sigue engordando | Chico |
 | 6 | **Reintento con backoff para Resend** | Un email fallido es best-effort y se pierde. Para verificación de cuenta y recuperación de contraseña, perderlo **bloquea al usuario** | Mediano |
-| 7 | **Sincronizar límites de planes por endpoint** | Pricing, landing y términos son espejos manuales de `planLimits.ts`. Un cambio de límite exige tocar 4 archivos y es fácil olvidarse de uno | Mediano |
+| ~~7~~ | ~~**Sincronizar límites de planes por endpoint**~~ | **Resuelto el 2026-09-23.** Eran siete espejos manuales, no cuatro. Ahora hay una sola fuente por lado: `services/planCatalog.ts` (deriva de `LIMITS` + `PLAN_MONTOS`, sin números a mano) y `frontend/lib/planes.ts`. `npm run verificar:planes` compara los once campos de cada plan y sale con código 1 si difieren | — |
 | 8 | **Tests automatizados de los caminos críticos** | Todo lo verificado en las últimas sesiones fue con scripts temporales que se borraron. Auth, pago y límites deberían tener tests permanentes en Jest | Grande |
+
+## Lo que se corrigió en la auditoría del 2026-09-23
+
+Queda anotado para no volver a auditarlo, y porque cada uno explica por qué el
+código quedó como quedó.
+
+| Qué era | Por qué importaba | Dónde |
+|---|---|---|
+| **CSRF por cookie** | Las cookies salen con `SameSite=None` (frontend y backend en dominios distintos) y `requireAuth` las aceptaba antes que el header. Con `express.urlencoded` global, un formulario oculto en cualquier sitio hacía un POST simple —sin preflight, lo único que CORS habría frenado— y la cookie viajaba igual | `middleware/auth.ts`: la cookie solo vale en GET/HEAD/OPTIONS |
+| **Inyección de HTML en los emails** | Ninguna plantilla escapaba. El mensaje de un cliente de WhatsApp, el comentario de una encuesta, el asunto de un ticket y las preguntas que el bot no supo responder llegaban crudos a un email con remitente de BotForge que lee el dueño del negocio. Phishing contra el cliente | `escaparHtml()` en `services/email.ts`, aplicado en las ocho plantillas |
+| **Widget público sin techo propio** | Único endpoint que llama a Anthropic sin sesión, y cada respuesta descuenta del cupo del dueño. El `botId` viaja en el HTML de cualquier página donde esté embebido | `widgetPorVisitante` y `widgetPorBot` en `middleware/rateLimit.ts` |
+| **Asistente de la landing sin tope de gasto** | El historial lo manda entero el cliente: 40 × 2000 = 40.000 caracteres de input por request, 20 por minuto, sin techo horario | `routes/assistant.ts`: 20 mensajes, 12.000 caracteres, límite por hora |
+| **WhatsApp seguía andando con el plan vencido** | `checkWhatsAppAccess` solo corre al CONECTAR. Después, un plan vencido caía a FREE y el bot seguía atendiendo con los 100 mensajes de Free, para siempre | `services/inboundMessage.ts` mira `effectivePlan()` en cada mensaje |
+| **Sin detección de acceso revocado** | Si el cliente sacaba el permiso desde Meta, los envíos rebotaban y el panel seguía diciendo "WhatsApp conectado" | `ErrorEnvioMeta` distingue credencial muerta de fallo pasajero; marca `REVOCADO` y el panel lo muestra |
+| **Desconectar dejaba rastro** | Solo limpiaba `whatsappNumber` y `metaPhoneNumberId`: quedaban el token del cliente, el wabaId, el PIN y `metaEstado` en ACTIVO | `DELETE /connect` limpia las ocho columnas |
+| **Textos del flujo viejo** | El prompt del asistente explicaba conectar WhatsApp "mandando el código BF-XXXXXX al número de Twilio"; el bloque "Cómo funciona" le decía a todos que atendían desde el número de BotForge (H-7) | `platformAgent.ts`, `assistant.ts`, `WhatsAppOnboarding.tsx` |
+| **Pestañas invisibles en móvil** | A 375px entraban 2 de las 7 pestañas del bot. Las otras 5 —incluida WhatsApp— eran alcanzables por scroll pero sin ninguna señal de que existieran | Degradado en el borde y pestaña activa a la vista, en `ui/tabs.tsx` |
+| **Subir documento verificaba pertenencia tarde** | `checkDocLimit` contaba los documentos de un bot ajeno y multer escribía el archivo antes del 403, dejándolo huérfano | `requireOwnedBot` antes de todo, en `routes/documents.ts` |
 
 ## Riesgos conocidos
 
@@ -44,6 +63,23 @@ usuarios que ya tengan Drive conectado y necesiten refrescar el token.
 política de privacidad divulga un tratamiento de datos, no promete un beneficio,
 y puede haber usuarios con una carpeta conectada. Revisar si se desmonta la
 integración del todo.
+
+**Las credenciales de terceros siguen en texto plano.** `Bot.metaBusinessToken`
+y `Bot.metaRegistrationPin` se guardan sin cifrar. El cifrado ya está escrito
+(`lib/cifrado.ts`, AES-256-GCM) y aplicado en los dos puntos donde se escribe y
+se lee, pero queda **apagado** hasta que se cargue `TOKEN_ENCRYPTION_KEY` en
+Railway: 64 caracteres hexadecimales, que se generan con
+`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+Sin la variable el comportamiento es idéntico al de hoy. Al cargarla, lo nuevo
+queda cifrado y las filas viejas se siguen leyendo, así que no hay que migrar
+nada de golpe. Si la clave se pierde, cada cliente tiene que reconectar su
+WhatsApp.
+
+**Pagopar no verifica el monto pagado.** `activarPlan` confía en el campo
+`pagado` de la notificación y no compara `monto` contra `order.montoTotal`. La
+firma liga la notificación al pedido, así que el monto no lo elige el
+comprador; el hueco sería un pago parcial que Pagopar reporte como pagado. No
+se tocó porque cualquier cambio acá es cambio en el flujo de pagos.
 
 **Next.js 14.2.35 tiene un aviso crítico sin aplicar.** `npm audit` marca
 DoS por el Image Optimizer y deserialización de peticiones HTTP, y aplica
