@@ -4,6 +4,8 @@ import { prisma } from '../lib/prisma';
 import { reportarError } from '../lib/monitoring';
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { env } from '../config/env';
+import { escaparHtml, sendEmail } from '../services/email';
 import {
   DOCUMENTO_REQUERIDO,
   PLAN_MONTOS,
@@ -407,6 +409,91 @@ function esPagoConfirmado(notif: NotificacionPagopar): boolean {
 }
 
 /**
+ * El monto que informa Pagopar, como número.
+ *
+ * Viene a veces como número y a veces como string, y según el medio de pago
+ * puede traer decimales ("350000.00"). El guaraní no usa centavos, así que se
+ * redondea: lo que importa es que sean los mismos 350.000, no el formato.
+ *
+ * Devuelve null cuando el campo no vino o no se puede interpretar. Ahí NO se
+ * bloquea el pago: un campo ausente es un problema de formato de Pagopar, y
+ * dejar a un cliente que pagó sin su plan es peor que activar sin comparar.
+ */
+export function montoInformado(valor: unknown): number | null {
+  if (typeof valor === 'number' && Number.isFinite(valor)) return Math.round(valor);
+  if (typeof valor === 'string') {
+    let limpio = valor.trim().replace(/\s/g, '');
+    if (!limpio) return null;
+    // Coma como separador decimal ("350000,00"). Se acepta solo con uno o dos
+    // decimales: asi no se confunde con una coma de miles, donde interpretar
+    // mal daria un monto distinto y bloquearia un pago legitimo.
+    if (/^-?\d+,\d{1,2}$/.test(limpio)) limpio = limpio.replace(',', '.');
+    const n = Number(limpio);
+    if (Number.isFinite(n)) return Math.round(n);
+  }
+  return null;
+}
+
+export type VeredictoMonto = 'coincide' | 'distinto' | 'sin-dato';
+
+/**
+ * Qué hacer con el monto que informó Pagopar.
+ *
+ * 'sin-dato' activa igual: un campo ausente es un problema de formato de
+ * Pagopar, y dejar sin plan a alguien que pagó es peor que activar sin
+ * comparar. 'distinto' no activa nada.
+ */
+export function veredictoMonto(esperado: number, informadoCrudo: unknown): VeredictoMonto {
+  const informado = montoInformado(informadoCrudo);
+  if (informado === null) return 'sin-dato';
+  return informado === Math.round(esperado) ? 'coincide' : 'distinto';
+}
+
+/**
+ * Avisa que llegó un pago por un monto distinto al del pedido.
+ *
+ * Va por email y no solo al log porque es plata: alguien pagó algo y su plan
+ * no se activó, así que hay una persona esperando del otro lado. Nunca lanza.
+ */
+async function avisarMontoDistinto(
+  order: { idPedidoComercio: string; plan: string; montoTotal: number; userId: string },
+  informado: number,
+  origen: string,
+): Promise<void> {
+  const linea = (k: string, v: string) =>
+    `<tr><td style="padding:6px 12px 6px 0;color:#666;">${escaparHtml(k)}</td>` +
+    `<td style="padding:6px 0;"><strong>${escaparHtml(v)}</strong></td></tr>`;
+  try {
+    await sendEmail(
+      env.ADMIN_EMAIL,
+      `Pagopar informó un monto distinto — pedido ${order.idPedidoComercio}`,
+      `<!DOCTYPE html><html lang="es"><body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
+  <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
+    <p style="font-size:20px;font-weight:bold;color:#7C3AED;margin:0 0 20px;">BotForge</p>
+    <p style="background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;font-size:14px;font-weight:bold;border-radius:8px;padding:10px 14px;margin:0 0 20px;">
+      El plan NO se activó. Llegó una confirmación de pago por un monto que no coincide con el pedido.
+    </p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;margin:0 0 20px;">
+      ${linea('Pedido', order.idPedidoComercio)}
+      ${linea('Plan', order.plan)}
+      ${linea('Monto del pedido', `Gs. ${order.montoTotal.toLocaleString('es-PY')}`)}
+      ${linea('Monto informado', `Gs. ${informado.toLocaleString('es-PY')}`)}
+      ${linea('Origen', origen)}
+      ${linea('Usuario', order.userId)}
+    </table>
+    <p style="font-size:14px;line-height:1.6;color:#333333;margin:0;">
+      Revisalo en el panel de Pagopar antes de activar nada a mano. Si el pago es legítimo,
+      el cliente está esperando su plan.
+    </p>
+  </div>
+</body></html>`,
+    );
+  } catch (err) {
+    console.error('[pagopar] no se pudo avisar del monto distinto:', err);
+  }
+}
+
+/**
  * Marca el pedido como pagado y activa el plan. Idempotente: el `pagado: false`
  * en el where hace que solo gane el primero que llegue, así el webhook y la
  * consulta al volver del checkout no pueden aplicar el plan dos veces.
@@ -414,12 +501,36 @@ function esPagoConfirmado(notif: NotificacionPagopar): boolean {
  * Devuelve true si esta llamada fue la que lo activó.
  */
 async function activarPlan(
-  order: { id: string; userId: string; plan: string; idPedidoComercio: string },
+  order: { id: string; userId: string; plan: string; idPedidoComercio: string; montoTotal: number },
   fechaPago: Date,
   origen: 'webhook' | 'consulta',
   /** Datos del cobro que informa Pagopar. Se guardan para conciliar después. */
-  cobro: { formaPago?: string | null; numeroComprobante?: string | null } = {},
+  cobro: { formaPago?: string | null; numeroComprobante?: string | null; monto?: unknown } = {},
 ): Promise<boolean> {
+  // El monto se compara ANTES de tocar la base.
+  //
+  // La firma de la notificación liga el token al hash del pedido, así que el
+  // comprador no elige cuánto pagar. Lo que esto cubre es el caso de un pago
+  // parcial que Pagopar reporte igual como pagado: sin comparar, unos pocos
+  // guaraníes activaban un plan de 750.000.
+  const veredicto = veredictoMonto(order.montoTotal, cobro.monto);
+  if (veredicto === 'distinto') {
+    const informado = montoInformado(cobro.monto)!;
+    console.error(
+      `[pagopar] MONTO DISTINTO — pedido ${order.idPedidoComercio} (${origen}): ` +
+        `esperado ${order.montoTotal}, informado ${informado}. El plan NO se activa.`,
+    );
+    await avisarMontoDistinto(order, informado, origen);
+    return false;
+  }
+  if (veredicto === 'sin-dato') {
+    // No bloquea, pero queda el rastro para poder mirarlo contra un payload real
+    console.warn(
+      `[pagopar] la notificación del pedido ${order.idPedidoComercio} no trae un monto ` +
+        `interpretable (llegó ${JSON.stringify(cobro.monto)}); se activa sin comparar`,
+    );
+  }
+
   const marcado = await prisma.pagoparOrder.updateMany({
     where: { id: order.id, pagado: false },
     data: {
@@ -519,6 +630,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
           // Pagopar lo manda como string, pero según el medio puede venir
           // numérico; se normaliza a texto para no perder ceros a la izquierda
           numeroComprobante: texto(notif!.numero_comprobante_interno),
+          monto: notif!.monto,
         },
       );
     }
@@ -590,6 +702,7 @@ router.get(
           {
             formaPago: remoto.forma_pago ?? null,
             numeroComprobante: remoto.numero_comprobante_interno ?? null,
+            monto: remoto.monto,
           },
         );
         pagado = true;
