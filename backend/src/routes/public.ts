@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { runTenantTurn } from '../services/tenantAgent';
 import { AppError } from '../middleware/errorHandler';
 import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
+import { widgetPorBot, widgetPorVisitante } from '../middleware/rateLimit';
 import { resolverConversacion } from '../services/conversacion';
 
 const router = Router();
@@ -14,7 +15,11 @@ const chatSchema = z.object({
   conversationId: z.string().uuid().optional(),
 });
 
-router.post('/bots/:botId/chat/stream', async (req: Request, res: Response, next: NextFunction) => {
+router.post(
+  '/bots/:botId/chat/stream',
+  widgetPorVisitante,
+  widgetPorBot,
+  async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { message, conversationId } = chatSchema.parse(req.body);
 
@@ -90,10 +95,11 @@ router.post('/bots/:botId/chat/stream', async (req: Request, res: Response, next
     }
 
     res.end();
-  } catch (err) {
-    if (!res.headersSent) next(err);
-    else res.end();
-  }
-});
+    } catch (err) {
+      if (!res.headersSent) next(err);
+      else res.end();
+    }
+  },
+);
 
 export default router;

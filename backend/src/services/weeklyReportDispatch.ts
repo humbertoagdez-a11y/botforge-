@@ -10,7 +10,7 @@
  */
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
-import { sendEmail } from './email';
+import { escaparHtml, sendEmail } from './email';
 import { LIMITS, effectivePlan } from '../middleware/planLimits';
 import { generarYGuardar, semanaAnterior, type WeeklyReportContent } from './weeklyReport';
 import { generarYGuardarConsolidado, type ConsolidatedContent } from './consolidatedReport';
@@ -77,17 +77,17 @@ function emailIndividual(params: {
     .slice(0, 3)
     .map(
       (q) => `<li style="margin:0 0 6px;font-size:14px;color:#333333;">
-        ${q.pregunta} <span style="color:#888888;">(${q.veces} ${q.veces === 1 ? 'vez' : 'veces'})</span>
+        ${escaparHtml(q.pregunta)} <span style="color:#888888;">(${q.veces} ${q.veces === 1 ? 'vez' : 'veces'})</span>
       </li>`,
     )
     .join('');
 
   return envoltorio(`
     <p style="font-size:13px;color:#7C3AED;margin:0 0 4px;font-weight:bold;letter-spacing:0.5px;">INFORME SEMANAL</p>
-    <h1 style="font-size:22px;color:#111111;margin:0 0 4px;">${botName}</h1>
+    <h1 style="font-size:22px;color:#111111;margin:0 0 4px;">${escaparHtml(botName)}</h1>
     <p style="font-size:13px;color:#888888;margin:0 0 24px;">Semana del ${rangoTexto(weekStart, weekEnd)}</p>
 
-    <p style="font-size:15px;line-height:1.6;color:#333333;margin:0 0 16px;">Hola ${nombre},</p>
+    <p style="font-size:15px;line-height:1.6;color:#333333;margin:0 0 16px;">Hola ${escaparHtml(nombre)},</p>
 
     <div style="border-left:3px solid ${TONO_COLOR[r.tono]};background:#fafafa;padding:16px 18px;border-radius:0 8px 8px 0;margin:0 0 24px;">
       <p style="font-size:15px;font-weight:bold;color:${TONO_COLOR[r.tono]};margin:0 0 8px;">${r.titulo}</p>
@@ -130,7 +130,7 @@ function emailConsolidado(params: {
     .map(
       (b, i) => `<tr>
         <td style="padding:8px 0;border-bottom:1px solid #eeeeee;font-size:14px;color:#111111;">
-          <span style="color:#999999;">${i + 1}.</span> ${b.botName}
+          <span style="color:#999999;">${i + 1}.</span> ${escaparHtml(b.botName)}
         </td>
         <td style="padding:8px 0;border-bottom:1px solid #eeeeee;font-size:13px;color:#333333;text-align:right;">
           ${b.conversations} conv. · ${b.nps !== null ? `${b.nps.toFixed(1)}/5` : 'sin NPS'}
@@ -144,7 +144,7 @@ function emailConsolidado(params: {
     <h1 style="font-size:22px;color:#111111;margin:0 0 4px;">Tus ${content.totalBots} bots</h1>
     <p style="font-size:13px;color:#888888;margin:0 0 24px;">Semana del ${rangoTexto(weekStart, weekEnd)}</p>
 
-    <p style="font-size:15px;line-height:1.6;color:#333333;margin:0 0 16px;">Hola ${nombre},</p>
+    <p style="font-size:15px;line-height:1.6;color:#333333;margin:0 0 16px;">Hola ${escaparHtml(nombre)},</p>
 
     <div style="border-left:3px solid ${TONO_COLOR[r.tono]};background:#fafafa;padding:16px 18px;border-radius:0 8px 8px 0;margin:0 0 24px;">
       <p style="font-size:15px;font-weight:bold;color:${TONO_COLOR[r.tono]};margin:0 0 8px;">${r.titulo}</p>

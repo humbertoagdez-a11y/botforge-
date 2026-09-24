@@ -9,7 +9,7 @@ import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth';
 import { authLimiter, forgotPasswordLimiter, resendVerificationLimiter } from '../middleware/rateLimit';
-import { sendEmail } from '../services/email';
+import { escaparHtml, sendEmail } from '../services/email';
 
 const router = Router();
 
@@ -31,7 +31,7 @@ function welcomeEmailHtml(name: string): string {
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
-      <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+      <p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(name)},</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
         Tu cuenta está lista. Ya podés crear tu primer bot y conectarlo a WhatsApp.
       </p>
@@ -67,7 +67,7 @@ function verificationEmailHtml(name: string, code: string): string {
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
-      <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+      <p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(name)},</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
         Usá este código para confirmar tu email y activar tu cuenta:
       </p>
@@ -416,7 +416,7 @@ function resetPasswordEmailHtml(name: string, resetUrl: string): string {
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
-      <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+      <p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(name)},</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
         Recibimos un pedido para restablecer la contraseña de tu cuenta.
         Hacé clic en el botón para elegir una nueva.

@@ -14,7 +14,7 @@ import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 import { runTenantTurn, type PendingImage } from './tenantAgent';
-import { sendEmail } from './email';
+import { escaparHtml, sendEmail } from './email';
 import { getNpsState, npsFollowUp, parseNpsReply, saveComment, saveScore } from './nps';
 
 // ─── Notificación "el cliente pide un humano" ─────────────────────────────────
@@ -59,10 +59,10 @@ export async function notifyHumanRequested(
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:20px;font-weight:bold;color:#7C3AED;margin:0 0 20px;">BotForge</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 8px;">
-        Un cliente pidió hablar con una persona en el bot <strong>${bot.name}</strong>.
+        Un cliente pidió hablar con una persona en el bot <strong>${escaparHtml(bot.name)}</strong>.
       </p>
-      <p style="font-size:14px;color:#333;margin:0 0 4px;">Número del cliente: <strong>${clientNumber}</strong></p>
-      <p style="font-size:14px;color:#333;margin:0 0 20px;">Mensaje: "${preview}"</p>
+      <p style="font-size:14px;color:#333;margin:0 0 4px;">Número del cliente: <strong>${escaparHtml(clientNumber)}</strong></p>
+      <p style="font-size:14px;color:#333;margin:0 0 20px;">Mensaje: "${escaparHtml(preview)}"</p>
       <a href="${env.FRONTEND_URL}/dashboard/conversations"
          style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:10px 24px;border-radius:8px;">
         Ver la conversación

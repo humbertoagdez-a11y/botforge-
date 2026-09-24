@@ -92,3 +92,48 @@ export const authLimiter = rateLimit({
     meta: null,
   },
 });
+
+// ─── Widget público ───────────────────────────────────────────────────────────
+/**
+ * El chat del widget es el único endpoint que llama a Anthropic SIN sesión, y
+ * cada mensaje que responde descuenta del cupo mensual del DUEÑO del bot.
+ *
+ * Sin un límite propio, el único techo era el global de 600 cada 15 minutos por
+ * IP: con el botId (que viaja en el HTML de cualquier página donde esté
+ * embebido el widget) alcanzaba para vaciarle a un cliente los 1.000 mensajes
+ * del plan Básico en unas horas, y encima pagando nosotros los tokens.
+ *
+ * Van dos techos porque protegen de cosas distintas:
+ *  - por visitante corta al que abusa desde una IP, sin afectar a los demás;
+ *  - por bot acota el daño de un abuso repartido entre muchas IPs, que es el
+ *    único que puede llegar a agotar el cupo del dueño.
+ */
+function botIdDe(req: { params: Record<string, string> }): string {
+  return req.params.botId ?? 'sin-bot';
+}
+
+export const widgetPorVisitante = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req): string => `widget:${botIdDe(req)}:${req.ip ?? 'sin-ip'}`,
+  message: {
+    data: null,
+    error: { code: 'RATE_LIMIT', message: 'Estás escribiendo muy rápido. Esperá un momento.' },
+    meta: null,
+  },
+});
+
+export const widgetPorBot = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 150,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req): string => `widget-bot:${botIdDe(req)}`,
+  message: {
+    data: null,
+    error: { code: 'RATE_LIMIT', message: 'El chat recibió demasiadas consultas por ahora. Probá más tarde.' },
+    meta: null,
+  },
+});

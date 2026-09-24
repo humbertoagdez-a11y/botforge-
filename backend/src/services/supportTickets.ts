@@ -11,7 +11,7 @@ import type { TicketCategory, TicketPriority, TicketStatus } from '@prisma/clien
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
-import { sendEmail } from './email';
+import { escaparHtml, sendEmail } from './email';
 
 /** Arranca en BF-1001 para no exponer lo chico que es el volumen todavia */
 const REF_OFFSET = 1000;
@@ -326,7 +326,8 @@ const shell = (inner: string) => `<!DOCTYPE html>
   </body>
 </html>`;
 
-const quote = (texto: string) => `<div style="border-left:3px solid #DDD6FE;background:#FAF9FF;padding:12px 16px;margin:0 0 20px;font-size:14px;line-height:1.6;color:#333333;white-space:pre-wrap;">${texto}</div>`;
+// El texto lo escribe el cliente y este email lo lee el admin: va escapado
+const quote = (texto: string) => `<div style="border-left:3px solid #DDD6FE;background:#FAF9FF;padding:12px 16px;margin:0 0 20px;font-size:14px;line-height:1.6;color:#333333;white-space:pre-wrap;">${escaparHtml(texto)}</div>`;
 
 const boton = (href: string, label: string) =>
   `<a href="${href}" style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:0 0 28px;">${label}</a>`;
@@ -343,13 +344,13 @@ function adminNewTicketHtml(t: {
 
   return shell(`
     ${banner}
-    <p style="font-size:18px;font-weight:bold;margin:0 0 4px;">${t.ref} · ${CATEGORY_LABEL[t.category]}</p>
-    <p style="font-size:16px;margin:0 0 20px;color:#333333;">${t.subject}</p>
+    <p style="font-size:18px;font-weight:bold;margin:0 0 4px;">${escaparHtml(t.ref)} · ${CATEGORY_LABEL[t.category]}</p>
+    <p style="font-size:16px;margin:0 0 20px;color:#333333;">${escaparHtml(t.subject)}</p>
     <table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;margin:0 0 20px;">
-      <tr><td style="padding:6px 0;color:#666;">Cliente</td><td style="padding:6px 0;"><strong>${t.clientName}</strong> — ${t.clientEmail}</td></tr>
+      <tr><td style="padding:6px 0;color:#666;">Cliente</td><td style="padding:6px 0;"><strong>${escaparHtml(t.clientName)}</strong> — ${escaparHtml(t.clientEmail)}</td></tr>
       <tr><td style="padding:6px 0;color:#666;">Plan</td><td style="padding:6px 0;">${PLAN_LABEL[t.plan] ?? t.plan}</td></tr>
       <tr><td style="padding:6px 0;color:#666;">Prioridad</td><td style="padding:6px 0;">${PRIORITY_LABEL[t.priority]}</td></tr>
-      ${t.botName ? `<tr><td style="padding:6px 0;color:#666;">Bot</td><td style="padding:6px 0;">${t.botName}</td></tr>` : ''}
+      ${t.botName ? `<tr><td style="padding:6px 0;color:#666;">Bot</td><td style="padding:6px 0;">${escaparHtml(t.botName)}</td></tr>` : ''}
     </table>
     <p style="font-size:13px;font-weight:bold;color:#666666;margin:0 0 6px;">CONTEXTO DE LA CUENTA</p>
     ${quote(t.context || 'Sin datos')}
@@ -361,14 +362,14 @@ function adminNewTicketHtml(t: {
 
 function clientConfirmationHtml(name: string, ref: string, subject: string, body: string): string {
   return shell(`
-    <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+    <p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(name)},</p>
     <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
       Recibimos tu consulta y quedó registrada con el número
-      <strong style="font-family:'Courier New',monospace;">${ref}</strong>.
+      <strong style="font-family:'Courier New',monospace;">${escaparHtml(ref)}</strong>.
       Citá ese número si querés hacer referencia a este caso.
     </p>
     <p style="font-size:13px;font-weight:bold;color:#666666;margin:0 0 6px;">LO QUE NOS CONTASTE</p>
-    <p style="font-size:14px;font-weight:bold;color:#333;margin:0 0 8px;">${subject}</p>
+    <p style="font-size:14px;font-weight:bold;color:#333;margin:0 0 8px;">${escaparHtml(subject)}</p>
     ${quote(body)}
     ${boton(`${env.FRONTEND_URL}/dashboard/soporte`, 'Ver el estado de mi consulta')}
     <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
@@ -380,10 +381,10 @@ function clientConfirmationHtml(name: string, ref: string, subject: string, body
 
 function clientReplyHtml(name: string, ref: string, subject: string, body: string): string {
   return shell(`
-    <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+    <p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(name)},</p>
     <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
       Tenés una respuesta en tu consulta
-      <strong style="font-family:'Courier New',monospace;">${ref}</strong> — ${subject}
+      <strong style="font-family:'Courier New',monospace;">${escaparHtml(ref)}</strong> — ${escaparHtml(subject)}
     </p>
     ${quote(body)}
     ${boton(`${env.FRONTEND_URL}/dashboard/soporte`, 'Ver la conversación')}
@@ -392,10 +393,10 @@ function clientReplyHtml(name: string, ref: string, subject: string, body: strin
 
 function clientResolvedHtml(name: string, ref: string, subject: string): string {
   return shell(`
-    <p style="font-size:16px;margin:0 0 12px;">Hola ${name},</p>
+    <p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(name)},</p>
     <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
       Marcamos como resuelta tu consulta
-      <strong style="font-family:'Courier New',monospace;">${ref}</strong> — ${subject}.
+      <strong style="font-family:'Courier New',monospace;">${escaparHtml(ref)}</strong> — ${escaparHtml(subject)}.
       Si el tema sigue, respondé en el mismo hilo y lo reabrimos.
     </p>
     ${boton(`${env.FRONTEND_URL}/dashboard/soporte`, 'Ver la conversación')}
@@ -404,9 +405,9 @@ function clientResolvedHtml(name: string, ref: string, subject: string): string 
 
 function adminReplyHtml(ref: string, subject: string, clientName: string, body: string, ticketId: string): string {
   return shell(`
-    <p style="font-size:18px;font-weight:bold;margin:0 0 4px;">${ref}</p>
+    <p style="font-size:18px;font-weight:bold;margin:0 0 4px;">${escaparHtml(ref)}</p>
     <p style="font-size:15px;margin:0 0 20px;color:#333333;">
-      <strong>${clientName}</strong> respondió en: ${subject}
+      <strong>${escaparHtml(clientName)}</strong> respondió en: ${escaparHtml(subject)}
     </p>
     ${quote(body)}
     ${boton(`${env.FRONTEND_URL}/dashboard/soporte?ticket=${ticketId}`, 'Ver el hilo')}

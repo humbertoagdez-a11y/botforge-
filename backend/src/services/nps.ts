@@ -17,7 +17,7 @@ import type { NpsSentiment } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { LIMITS, effectivePlan } from '../middleware/planLimits';
-import { sendEmail } from './email';
+import { escaparHtml, sendEmail } from './email';
 
 /** No se le vuelve a preguntar al mismo cliente antes de este plazo */
 const COOLDOWN_DIAS = 30;
@@ -282,12 +282,12 @@ function detractorEmailHtml(nombre: string, botName: string, score: number, comm
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
-      ${nombre ? `<p style="font-size:16px;margin:0 0 12px;">Hola ${nombre},</p>` : ''}
+      ${nombre ? `<p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(nombre)},</p>` : ''}
       <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
-        Un cliente calificó la atención de <strong>${botName}</strong> con
+        Un cliente calificó la atención de <strong>${escaparHtml(botName)}</strong> con
         <strong style="color:#DC2626;">${score} de 5</strong> y dejó este comentario:
       </p>
-      <div style="border-left:3px solid #FECACA;background:#FEF2F2;padding:14px 16px;margin:0 0 24px;font-size:14px;line-height:1.6;color:#333333;white-space:pre-wrap;">${comment}</div>
+      <div style="border-left:3px solid #FECACA;background:#FEF2F2;padding:14px 16px;margin:0 0 24px;font-size:14px;line-height:1.6;color:#333333;white-space:pre-wrap;">${escaparHtml(comment)}</div>
       <a href="${statsUrl}"
          style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:0 0 28px;">
         Ver todas las opiniones

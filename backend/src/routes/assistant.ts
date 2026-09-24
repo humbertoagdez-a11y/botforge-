@@ -47,6 +47,29 @@ const assistantLimiter = rateLimit({
   },
 });
 
+/**
+ * Techo por hora, ademas del de 20 por minuto.
+ *
+ * Este endpoint es publico y sin sesion, y cada llamada es una llamada paga a
+ * Anthropic. El limite por minuto frena una rafaga; sin uno por hora, un
+ * script paciente podia sostener 20 por minuto todo el dia y convertir la
+ * landing en un proxy gratis de Claude a costa nuestra.
+ */
+const assistantLimiterHora = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 80,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    data: null,
+    error: { code: 'RATE_LIMIT', message: 'Llegaste al limite de consultas por ahora. Registrate y seguimos adentro.' },
+    meta: null,
+  },
+});
+
+/** Tope de caracteres de TODA la conversacion, no de cada mensaje. */
+const MAX_CHARS_CONVERSACION = 12000;
+
 const chatSchema = z.object({
   messages: z
     .array(
@@ -56,9 +79,17 @@ const chatSchema = z.object({
       }),
     )
     .min(1)
-    .max(40)
+    // 20 y no 40: el historial lo manda ENTERO el cliente en cada request, asi
+    // que cada mensaje extra se vuelve a pagar como input en todas las
+    // llamadas siguientes. Una charla de landing no necesita mas.
+    .max(20)
     .refine((msgs) => msgs[0].role === 'user', {
       message: 'El primer mensaje debe ser del usuario',
+    })
+    // El tope por mensaje no alcanza: 20 x 2000 son 40.000 caracteres de
+    // input por request, elegidos por quien llama.
+    .refine((msgs) => msgs.reduce((t, m) => t + m.content.length, 0) <= MAX_CHARS_CONVERSACION, {
+      message: 'La conversacion es demasiado larga. Empezá una nueva.',
     }),
 });
 
@@ -74,7 +105,7 @@ async function callFallback(messages: Anthropic.MessageParam[]): Promise<string>
 }
 
 // POST /api/v1/assistant/chat — publico, responde por SSE
-router.post('/chat', assistantLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/chat', assistantLimiter, assistantLimiterHora, async (req: Request, res: Response, next: NextFunction) => {
   let streaming = false;
   try {
     const { messages } = chatSchema.parse(req.body);

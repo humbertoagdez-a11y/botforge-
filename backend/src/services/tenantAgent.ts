@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { getRelevantChunks } from './rag';
-import { sendEmail } from './email';
+import { escaparHtml, sendEmail } from './email';
 import { searchFileByName, downloadFileAsBase64, getValidAccessToken } from './googleDrive';
 import { isCloudinaryConfigured } from '../config/cloudinary';
 import { logCacheUsage } from '../lib/cacheUsage';
@@ -396,10 +396,10 @@ export async function executeTenantTool(
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:20px;font-weight:bold;color:#7C3AED;margin:0 0 20px;">BotForge</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 8px;">
-        El bot <strong>${context.botName}</strong> derivó una conversación a atención humana.
+        El bot <strong>${escaparHtml(context.botName)}</strong> derivó una conversación a atención humana.
       </p>
-      <p style="font-size:14px;color:#333;margin:0 0 4px;">Cliente: <strong>${context.clientId}</strong> (${context.channel})</p>
-      <p style="font-size:14px;color:#333;margin:0 0 20px;">Motivo: "${motivo.slice(0, 300)}"</p>
+      <p style="font-size:14px;color:#333;margin:0 0 4px;">Cliente: <strong>${escaparHtml(context.clientId)}</strong> (${escaparHtml(context.channel)})</p>
+      <p style="font-size:14px;color:#333;margin:0 0 20px;">Motivo: "${escaparHtml(motivo.slice(0, 300))}"</p>
       <a href="${env.FRONTEND_URL}/dashboard/conversations"
          style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:10px 24px;border-radius:8px;">
         Ver la conversación

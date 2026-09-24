@@ -19,15 +19,27 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
-  // Acepta cookie (web) o Authorization: Bearer <token> (scripts/API)
-  let token = req.cookies?.accessToken as string | undefined;
+/** Metodos que no cambian estado: para ellos la cookie sola es aceptable. */
+const METODOS_SEGUROS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.slice(7);
-    }
+export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
+  // El header manda. El frontend SIEMPRE lo manda (guarda el token en
+  // localStorage y lo pone en cada fetch), asi que este es el camino real.
+  const authHeader = req.headers.authorization;
+  let token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+
+  // La cookie es el respaldo, y solo para metodos que no cambian estado.
+  //
+  // Por que: las cookies salen con SameSite=None (frontend y backend viven en
+  // dominios distintos en Railway), asi que el navegador las adjunta tambien
+  // en una request disparada desde OTRO sitio. Con express.urlencoded montado
+  // globalmente, un formulario oculto en una pagina cualquiera puede hacer un
+  // POST simple —sin preflight, que es lo unico que CORS habria frenado— y la
+  // cookie viaja igual. CORS impide LEER la respuesta, no impide el efecto.
+  // Aceptando la cookie solo en GET/HEAD/OPTIONS, ese POST cruzado se queda
+  // sin credencial y muere en 401.
+  if (!token && METODOS_SEGUROS.has(req.method)) {
+    token = req.cookies?.accessToken as string | undefined;
   }
 
   if (!token) {

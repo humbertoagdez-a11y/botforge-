@@ -65,8 +65,29 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+/**
+ * Verifica pertenencia ANTES de contar documentos y antes de que multer
+ * escriba nada en disco.
+ *
+ * Sin esto, checkDocLimit contaba los documentos de un bot ajeno (filtrando si
+ * el bot de otro estaba o no en su tope) y multer guardaba el archivo en
+ * /uploads igual, para recien despues morir con un 403 y dejar el archivo
+ * huerfano.
+ */
+function requireOwnedBot(req: Request, _res: Response, next: NextFunction): void {
+  void (async () => {
+    try {
+      await getOwnedBot(req.params.botId, req.user!.userId);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  })();
+}
+
 router.post(
   '/',
+  requireOwnedBot,
   checkDocLimit,
   (req: Request, res: Response, next: NextFunction) => {
     upload.single('file')(req, res, (err) => {

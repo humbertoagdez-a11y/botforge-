@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { LIMITS, effectivePlan } from '../middleware/planLimits';
-import { sendEmail } from './email';
+import { escaparHtml, sendEmail } from './email';
 
 // Paraguay: UTC-4 como offset por defecto (según spec). El cron dispara a las
 // 21:00 America/Asuncion; acá calculamos el rango del día calendario paraguayo.
@@ -44,7 +44,7 @@ function summaryEmailHtml(params: {
       (b) => `
       <tr>
         <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-size:14px;color:#111111;">
-          <strong>${b.name}</strong>
+          <strong>${escaparHtml(b.name)}</strong>
         </td>
         <td style="padding:10px 0;border-bottom:1px solid #eeeeee;font-size:14px;color:#333333;text-align:right;">
           ${b.messagesToday} mensaje${b.messagesToday === 1 ? '' : 's'} · ${b.newConversationsToday} conversación${b.newConversationsToday === 1 ? '' : 'es'} nueva${b.newConversationsToday === 1 ? '' : 's'}
@@ -66,7 +66,7 @@ function summaryEmailHtml(params: {
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
-      <p style="font-size:16px;margin:0 0 8px;">Hola ${name},</p>
+      <p style="font-size:16px;margin:0 0 8px;">Hola ${escaparHtml(name)},</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
         Este es tu resumen de hoy. Tus bots siguieron trabajando:
       </p>

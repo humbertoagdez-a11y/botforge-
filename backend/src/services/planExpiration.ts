@@ -11,7 +11,7 @@
  */
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
-import { sendEmail } from './email';
+import { escaparHtml, sendEmail } from './email';
 
 /** Cuantos dias antes del vencimiento se avisa por email */
 const AVISO_DIAS = 3;
@@ -131,7 +131,7 @@ function expiringSoonHtml(nombre: string, plan: string, dias: number): string {
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
-      <p style="font-size:16px;margin:0 0 8px;">Hola ${nombre},</p>
+      <p style="font-size:16px;margin:0 0 8px;">Hola ${escaparHtml(nombre)},</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
         Tu plan <strong>${PLAN_LABEL[plan] ?? plan}</strong> vence en
         <strong>${dias} día${dias === 1 ? '' : 's'}</strong>. Renovalo para que tus bots
@@ -162,7 +162,7 @@ async function notifyDowngraded(email: string, nombre: string, planAnterior: str
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
     <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
       <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
-      <p style="font-size:16px;margin:0 0 8px;">Hola ${nombre},</p>
+      <p style="font-size:16px;margin:0 0 8px;">Hola ${escaparHtml(nombre)},</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
         Tu plan <strong>${PLAN_LABEL[planAnterior] ?? planAnterior}</strong> venció y tu cuenta
         pasó al plan Free. Tus bots y documentos siguen ahí, pero WhatsApp queda desactivado.

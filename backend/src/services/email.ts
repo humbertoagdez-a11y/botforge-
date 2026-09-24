@@ -1,6 +1,27 @@
 import { env } from '../config/env';
 
 /**
+ * Escapa un dato que va a interpolarse dentro del HTML de un email.
+ *
+ * Hace falta porque varios de estos emails llevan texto que NO escribio quien
+ * los recibe: el mensaje de un cliente de WhatsApp, el comentario de una
+ * encuesta, el asunto de un ticket. Sin escapar, cualquiera de esos textos
+ * puede meter etiquetas —un <a> a otro sitio, por ejemplo— en un email que
+ * llega con el remitente de BotForge. Es un vector de phishing contra el
+ * dueño del negocio, no un problema de quien escribe.
+ *
+ * Se escapan las cinco entidades que importan en contenido y en atributos.
+ */
+export function escaparHtml(valor: unknown): string {
+  return String(valor ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
  * Envia un email via Resend (fetch nativo). Nunca lanza: si falta la API key
  * o el envio falla, loggea y devuelve false — los emails son best-effort.
  */
