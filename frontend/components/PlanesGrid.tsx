@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, IdCard, Loader2, ShieldCheck, Sparkles, Zap } from 'lucide-react';
 import { toast } from 'sonner';
@@ -31,9 +31,14 @@ import { PLANES, precioTexto, type PlanPago } from '@/lib/planes';
 interface Props {
   /** Sin sesión el botón manda a registrarse en vez de abrir el checkout. */
   publica?: boolean;
+  /**
+   * Plan que hay que empezar a pagar apenas carga la página. Llega del link
+   * del email de vencimiento; null en la navegación normal.
+   */
+  renovar?: PlanPago | null;
 }
 
-export default function PlanesGrid({ publica = false }: Props) {
+export default function PlanesGrid({ publica = false, renovar = null }: Props) {
   const router = useRouter();
   const { token, user, setAuth } = useAuthStore();
   const [loading, setLoading] = useState<string | null>(null);
@@ -98,6 +103,27 @@ export default function PlanesGrid({ publica = false }: Props) {
     }
     void irAlCheckout(planId);
   }
+
+  /**
+   * Arranca el pago del plan que venía en el link del email, una sola vez.
+   *
+   * El toast no es decoración: irse solo a la pasarela de pago sin decir nada
+   * es desorientador. Se avisa qué está pasando y, si no era lo que quería,
+   * cancela en Pagopar sin que se le cobre nada.
+   */
+  const yaDisparado = useRef(false);
+  useEffect(() => {
+    if (!renovar || publica || yaDisparado.current) return;
+    // Sin sesión todavía cargada no se puede saber si falta la cédula
+    if (!token || !user) return;
+    yaDisparado.current = true;
+    const plan = PLANES.find((p) => p.id === renovar);
+    toast.info(`Te llevamos a pagar tu plan ${plan?.nombre ?? renovar}.`);
+    handleUpgrade(renovar);
+    // handleUpgrade y PLANES son estables dentro del render; el efecto
+    // depende solo de que aparezca la sesión
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renovar, publica, token, user]);
 
   async function confirmarDocumento() {
     const valor = documento.trim();

@@ -62,50 +62,55 @@ enum NpsSentiment {
 }
 
 model User {
-  id                    String    @id @default(uuid())
-  email                 String    @unique
-  passwordHash          String
-  name                  String
-  plan                  Plan      @default(FREE)
-  stripeCustomerId      String?   @unique
-  stripeSubscriptionId  String?   @unique
-  planExpiresAt         DateTime?
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  passwordHash           String
+  name                   String
+  plan                   Plan      @default(FREE)
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  planExpiresAt          DateTime?
+  /// Cuando se le aviso que el plan estaba por vencer. Evita mandarle el mismo
+  /// email tres dias seguidos: el cron corre a diario y avisa con 3 dias de
+  /// anticipacion. Se compara contra planExpiresAt, asi al renovar el ciclo
+  /// siguiente vuelve a avisar solo.
+  renewalNoticeSentAt    DateTime?
   /// CI o RUC. Opcional: solo hace falta para pagar, Pagopar lo exige.
   /// No se pide en el registro, se pide al ir al checkout.
-  documento             String?
+  documento              String?
   /// Sin verificar no hay sesion: el registro no devuelve tokens hasta
   /// confirmar el codigo. Los usuarios previos al deploy quedan en true
   /// via la migracion, para no dejarlos afuera.
-  emailVerified         Boolean   @default(false)
-  emailVerifiedAt       DateTime?
-  messagesUsedThisMonth Int       @default(0)
-  messagesResetAt       DateTime  @default(now())
+  emailVerified          Boolean   @default(false)
+  emailVerifiedAt        DateTime?
+  messagesUsedThisMonth  Int       @default(0)
+  messagesResetAt        DateTime  @default(now())
   /// Cupo del asistente de plataforma (Agente Tipo A), por plan
-  assistantMsgsThisMonth Int      @default(0)
-  assistantMsgsToday     Int      @default(0)
-  assistantResetAt       DateTime @default(now())
-  assistantDayResetAt    DateTime @default(now())
+  assistantMsgsThisMonth Int       @default(0)
+  assistantMsgsToday     Int       @default(0)
+  assistantResetAt       DateTime  @default(now())
+  assistantDayResetAt    DateTime  @default(now())
   /// Cupo del Chat de prueba del panel. Contador aparte del de clientes
   /// reales: probar el propio bot no puede comerse los mensajes que el
   /// negocio necesita para vender. Igual tiene tope, porque cada mensaje
   /// es una llamada a Anthropic con costo real.
-  testMsgsThisMonth      Int      @default(0)
-  testMsgsToday          Int      @default(0)
-  testResetAt            DateTime @default(now())
-  testDayResetAt         DateTime @default(now())
-  dailySummaryEnabled   Boolean   @default(true)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  testMsgsThisMonth      Int       @default(0)
+  testMsgsToday          Int       @default(0)
+  testResetAt            DateTime  @default(now())
+  testDayResetAt         DateTime  @default(now())
+  dailySummaryEnabled    Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  bots                     Bot[]
-  refreshTokens            RefreshToken[]
-  passwordResetTokens      PasswordResetToken[]
-  emailVerificationCodes   EmailVerificationCode[]
-  supportTickets           SupportTicket[]
-  notificationConfigs      NotificationConfig[]
+  bots                      Bot[]
+  refreshTokens             RefreshToken[]
+  passwordResetTokens       PasswordResetToken[]
+  emailVerificationCodes    EmailVerificationCode[]
+  supportTickets            SupportTicket[]
+  notificationConfigs       NotificationConfig[]
   platformAssistantMessages PlatformAssistantMessage[]
-  pagoparOrders            PagoparOrder[]
-  consolidatedReports      ConsolidatedReport[]
+  pagoparOrders             PagoparOrder[]
+  consolidatedReports       ConsolidatedReport[]
 
   @@map("users")
 }
@@ -114,25 +119,25 @@ model User {
 /// se crea antes de mandar al cliente al checkout y lo marca pagado el
 /// webhook, siempre despues de validar el token sha1.
 model PagoparOrder {
-  id               String    @id @default(uuid())
-  userId           String
-  plan             String
-  montoTotal       Int
+  id                String    @id @default(uuid())
+  userId            String
+  plan              String
+  montoTotal        Int
   /// Lo devuelve Pagopar al iniciar la transaccion; identifica el pedido
-  hashPedido       String?   @unique
+  hashPedido        String?   @unique
   /// Nuestro identificador, el que viaja en el token de la firma
-  idPedidoComercio String    @unique
-  pagado           Boolean   @default(false)
-  fechaPago        DateTime?
+  idPedidoComercio  String    @unique
+  pagado            Boolean   @default(false)
+  fechaPago         DateTime?
   /// Medio con el que efectivamente pagó (QR, transferencia, tarjeta...).
   /// Lo dice la notificacion; se guarda para no depender de volver a
   /// consultarle a Pagopar cada vez que alguien mira el pedido.
-  formaPago        String?
+  formaPago         String?
   /// Numero de comprobante que emite Pagopar al acreditar el pago. Es el dato
   /// con el que se concilia un cobro ante un reclamo, asi que se persiste en
   /// vez de quedar solo en el log del webhook.
   numeroComprobante String?
-  createdAt        DateTime  @default(now())
+  createdAt         DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -159,7 +164,7 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
 }
@@ -200,28 +205,28 @@ model PasswordResetToken {
 }
 
 model Bot {
-  id             String   @id @default(uuid())
-  userId         String
-  name           String
-  personality    String   @default("Eres un asistente útil y amigable.")
-  language       String   @default("es")
-  whatsappNumber String?  @unique
+  id                  String    @id @default(uuid())
+  userId              String
+  name                String
+  personality         String    @default("Eres un asistente útil y amigable.")
+  language            String    @default("es")
+  whatsappNumber      String?   @unique
   // Meta Cloud API: id del numero de negocio que recibe los mensajes.
   // Es la clave de ruteo de Meta, distinta del numero del cliente que guarda
   // whatsappNumber (flujo Twilio). Se mantienen separados para poder volver
   // atras a Twilio sin perder el vinculo.
-  metaPhoneNumberId String? @unique
+  metaPhoneNumberId   String?   @unique
   // ─── Embedded Signup ───────────────────────────────────────────────────────
   // Se llenan cuando el cliente conecta SU numero con su propia cuenta de Meta.
   // En null significa que el bot usa el numero y el token globales de BotForge,
   // que es como funcionan todos los bots conectados por el flujo BF-XXXXXX.
   /// WABA del cliente. Hace falta para suscribir los webhooks de ESE negocio.
-  metaWabaId        String?
+  metaWabaId          String?
   /// Portfolio de negocio del cliente. Solo para soporte y trazabilidad.
-  metaBusinessId    String?
+  metaBusinessId      String?
   /// Business token scopeado a los activos de ese cliente. El token global de
   /// BotForge no sirve para operar una WABA ajena.
-  metaBusinessToken String?
+  metaBusinessToken   String?
   /// PIN de verificacion en dos pasos que se fijo al registrar el numero. Se
   /// persiste porque Meta lo vuelve a pedir si el numero se re-registra, y sin
   /// el la unica salida es resetear la 2FA desde WhatsApp Manager.
@@ -230,18 +235,18 @@ model Bot {
   /// metaPhoneNumberId es un id opaco y el panel necesita mostrar el numero.
   /// Sin esto la pestaña mostraba el numero de BotForge para bots que tienen
   /// el suyo propio.
-  metaDisplayNumber String?
-  metaConectadoEn   DateTime?
+  metaDisplayNumber   String?
+  metaConectadoEn     DateTime?
   /// ACTIVO | ERROR | REVOCADO. En null = nunca paso por Embedded Signup.
   /// Explicito y no inferido del token: el cliente puede revocar el acceso
   /// desde Business Manager y nos enteramos recien cuando falla un envio.
-  metaEstado        String?
+  metaEstado          String?
   /// Encuesta de satisfaccion al cerrar la conversacion. Apagada por defecto:
   /// nadie empieza a encuestar a sus clientes sin haberlo decidido.
-  npsEnabled     Boolean  @default(false)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  npsEnabled          Boolean   @default(false)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   documents           Document[]
@@ -304,7 +309,7 @@ model ConsolidatedReport {
 /// Respuesta de un cliente final a la encuesta. El numero solo no sirve de
 /// mucho: lo valioso es el comment, que es por que puntuo asi.
 model NpsResponse {
-  id             String   @id @default(uuid())
+  id             String       @id @default(uuid())
   botId          String
   conversationId String?
   /// Identificador del cliente final (numero de WhatsApp o id del widget)
@@ -315,8 +320,8 @@ model NpsResponse {
   /// Lo que escribio el cliente cuando se le pregunto que mejorar
   comment        String?
   /// true si el dueño ya lo marco como visto
-  reviewed       Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  reviewed       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
 
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
@@ -361,8 +366,8 @@ model SupportTicket {
   updatedAt  DateTime       @updatedAt
   resolvedAt DateTime?
 
-  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bot      Bot?                  @relation(fields: [botId], references: [id], onDelete: SetNull)
+  user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bot      Bot?                   @relation(fields: [botId], references: [id], onDelete: SetNull)
   messages SupportTicketMessage[]
 
   @@index([userId, createdAt])
@@ -425,26 +430,26 @@ model WhatsAppConnection {
   createdAt        DateTime           @default(now())
   expiresAt        DateTime
 
-  bot              Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
   @@map("whatsapp_connections")
 }
 
 model Document {
-  id         String         @id @default(uuid())
-  botId      String
-  name       String
-  mimeType   String
-  filePath   String
-  url        String?
-  fileSize   Int
-  status     DocumentStatus @default(PENDING)
-  errorMsg   String?
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  id        String         @id @default(uuid())
+  botId     String
+  name      String
+  mimeType  String
+  filePath  String
+  url       String?
+  fileSize  Int
+  status    DocumentStatus @default(PENDING)
+  errorMsg  String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
-  bot        Bot     @relation(fields: [botId], references: [id], onDelete: Cascade)
-  chunks     Chunk[]
+  bot    Bot     @relation(fields: [botId], references: [id], onDelete: Cascade)
+  chunks Chunk[]
 
   @@map("documents")
 }
@@ -480,30 +485,30 @@ model BotImage {
 }
 
 model Chunk {
-  id           String   @id @default(uuid())
-  documentId   String
-  botId        String
-  content      String
-  tokenCount   Int
-  chunkIndex   Int
-  pineconeId   String   @unique
-  createdAt    DateTime @default(now())
+  id         String   @id @default(uuid())
+  documentId String
+  botId      String
+  content    String
+  tokenCount Int
+  chunkIndex Int
+  pineconeId String   @unique
+  createdAt  DateTime @default(now())
 
-  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@map("chunks")
 }
 
 model Conversation {
-  id          String   @id @default(uuid())
-  botId       String
-  channelId   String
-  channel     String   @default("web")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  botId     String
+  channelId String
+  channel   String   @default("web")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  messages    Message[]
+  bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages Message[]
 
   @@unique([botId, channelId])
   @@map("conversations")
@@ -522,7 +527,7 @@ model Message {
   entregado      Boolean     @default(true)
   createdAt      DateTime    @default(now())
 
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@map("messages")
 }

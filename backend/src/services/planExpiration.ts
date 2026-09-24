@@ -12,6 +12,7 @@
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { escaparHtml, sendEmail } from './email';
+import { PLAN_MONTOS } from './pagopar';
 
 /** Cuantos dias antes del vencimiento se avisa por email */
 const AVISO_DIAS = 3;
@@ -73,12 +74,34 @@ export async function downgradeExpiredPlans(): Promise<number> {
 // ─── Aviso previo al vencimiento ──────────────────────────────────────────────
 
 /**
+ * Si a este usuario ya se le aviso por el ciclo que esta corriendo.
+ *
+ * El ciclo arranca AVISO_DIAS antes del vencimiento. Un aviso anterior a ese
+ * momento pertenece a un periodo que el usuario ya renovo, asi que no cuenta:
+ * es lo que hace que al renovar no haya que limpiar la columna a mano.
+ */
+export function yaSeAviso(
+  planExpiresAt: Date,
+  renewalNoticeSentAt: Date | null,
+): boolean {
+  if (!renewalNoticeSentAt) return false;
+  const arranqueDelCiclo = planExpiresAt.getTime() - AVISO_DIAS * 24 * 60 * 60 * 1000;
+  return renewalNoticeSentAt.getTime() >= arranqueDelCiclo;
+}
+
+/**
  * Avisa por email a quienes les vence el plan dentro de los proximos
  * AVISO_DIAS dias. Devuelve la cantidad de avisos enviados.
  *
- * Como no hay una columna que registre el ultimo aviso, corriendo a diario
- * manda un recordatorio por dia durante los ultimos 3 dias (3 emails). Para
- * que sea exactamente uno haria falta un campo tipo renewalNoticeSentAt.
+ * UNO por ciclo, no uno por dia. El cron corre todos los dias y AVISO_DIAS es
+ * 3, asi que sin registrar el aviso al usuario le llegaban tres emails
+ * identicos en tres dias seguidos — que es la forma mas rapida de enseñarle a
+ * ignorar los emails de BotForge.
+ *
+ * El criterio es comparar renewalNoticeSentAt contra planExpiresAt: si ya se
+ * aviso DESPUES del arranque de este ciclo, no se vuelve a avisar. Al renovar,
+ * planExpiresAt se corre hacia adelante y el ciclo siguiente avisa solo, sin
+ * que nadie tenga que limpiar la columna.
  */
 export async function notifyExpiringSoon(): Promise<number> {
   let enviados = 0;
@@ -92,12 +115,18 @@ export async function notifyExpiringSoon(): Promise<number> {
         plan: { not: 'FREE' },
         planExpiresAt: { gt: ahora, lte: limite },
       },
-      select: { id: true, email: true, name: true, plan: true, planExpiresAt: true },
+      select: {
+        id: true, email: true, name: true, plan: true,
+        planExpiresAt: true, renewalNoticeSentAt: true,
+      },
     });
 
     for (const user of porVencer) {
       try {
         if (!user.planExpiresAt) continue;
+
+        if (yaSeAviso(user.planExpiresAt, user.renewalNoticeSentAt)) continue;
+
         const diasRestantes = Math.max(
           1,
           Math.ceil((user.planExpiresAt.getTime() - ahora.getTime()) / (24 * 60 * 60 * 1000)),
@@ -108,7 +137,15 @@ export async function notifyExpiringSoon(): Promise<number> {
           `Tu plan ${PLAN_LABEL[user.plan] ?? user.plan} vence en ${diasRestantes} día${diasRestantes === 1 ? '' : 's'}`,
           expiringSoonHtml(user.name, user.plan, diasRestantes),
         );
-        if (ok) enviados += 1;
+        if (!ok) continue; // el email no salio: se reintenta mañana
+
+        // Se marca DESPUES de que el email salio. Al reves, un fallo de Resend
+        // dejaba al usuario sin aviso y sin posibilidad de recibirlo despues.
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { renewalNoticeSentAt: new Date() },
+        });
+        enviados += 1;
       } catch (err) {
         console.error(`[planExpiration] Error avisando al usuario ${user.id}:`, err);
       }
@@ -124,8 +161,19 @@ export async function notifyExpiringSoon(): Promise<number> {
 
 // ─── Plantillas ───────────────────────────────────────────────────────────────
 
+/**
+ * Link que abre el checkout del plan que ya tiene.
+ *
+ * Antes apuntaba a /pricing pelado: el usuario aterrizaba en una tabla de
+ * cuatro planes y tenia que acordarse de cual era el suyo. Con `renovar` la
+ * pagina arranca el pago de ese plan sola.
+ */
+function urlDeRenovacion(plan: string): string {
+  return `${env.FRONTEND_URL}/pricing?renovar=${encodeURIComponent(plan)}`;
+}
+
 function expiringSoonHtml(nombre: string, plan: string, dias: number): string {
-  const pricingUrl = `${env.FRONTEND_URL}/pricing`;
+  const pricingUrl = urlDeRenovacion(plan);
   return `<!DOCTYPE html>
 <html lang="es">
   <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
@@ -139,7 +187,7 @@ function expiringSoonHtml(nombre: string, plan: string, dias: number): string {
       </p>
       <a href="${pricingUrl}"
          style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:8px 0 28px;">
-        Renovar mi plan
+        Renovar ${PLAN_LABEL[plan] ?? plan} por Gs. ${(PLAN_MONTOS[plan as keyof typeof PLAN_MONTOS] ?? 0).toLocaleString('es-PY')}
       </a>
       <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
       <p style="font-size:12px;color:#888888;margin:0;">
@@ -152,7 +200,7 @@ function expiringSoonHtml(nombre: string, plan: string, dias: number): string {
 
 /** Aviso posterior: el plan ya vencio y la cuenta quedo en Free */
 async function notifyDowngraded(email: string, nombre: string, planAnterior: string): Promise<void> {
-  const pricingUrl = `${env.FRONTEND_URL}/pricing`;
+  const pricingUrl = urlDeRenovacion(planAnterior);
   try {
     await sendEmail(
       email,

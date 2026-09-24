@@ -1,0 +1,11 @@
+-- Un solo aviso de vencimiento por ciclo, en vez de uno por dia.
+--
+-- notifyExpiringSoon corre todos los dias a las 03:00 y avisa a quien le vence
+-- el plan dentro de 3 dias. Sin una columna que registre el aviso, al usuario
+-- le llegaban TRES emails identicos en tres dias seguidos.
+--
+-- Guarda CUANDO se aviso. El cron compara esa fecha contra planExpiresAt: si
+-- el aviso es posterior al ultimo vencimiento conocido, ya se aviso por este
+-- ciclo. Al renovar, planExpiresAt se mueve hacia adelante y el proximo ciclo
+-- vuelve a avisar solo.
+ALTER TABLE "User" ADD COLUMN "renewalNoticeSentAt" TIMESTAMP(3);
