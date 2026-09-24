@@ -13,12 +13,16 @@ interface Props {
   onUploaded: (doc: BotDocument) => void;
 }
 
-const ACCEPTED = '.pdf,.docx,.xlsx,.xls,.txt';
+// Sin .xls: el formato viejo de Excel ya no se puede leer desde que se migro
+// a exceljs, y ofrecerlo era mandar al usuario a subir algo que iba a fallar.
+// Guardarlo como .xlsx desde el mismo Excel es un clic.
+const ACCEPTED = '.pdf,.docx,.xlsx,.csv,.txt';
 const ACCEPTED_TYPES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
+  'text/csv',
   'text/plain',
 ];
 
@@ -31,7 +35,7 @@ export default function DocumentUploader({ botId, onUploaded }: Props) {
   const handleFile = useCallback(
     async (file: File) => {
       if (!ACCEPTED_TYPES.includes(file.type)) {
-        toast.error('Tipo de archivo no soportado. Usá PDF, Word, Excel o TXT.');
+        toast.error('Tipo de archivo no soportado. Usá PDF, Word, Excel (.xlsx), CSV o TXT.');
         return;
       }
       if (file.size > 20 * 1024 * 1024) {
@@ -97,7 +101,7 @@ export default function DocumentUploader({ botId, onUploaded }: Props) {
           </div>
           <div>
             <p className="text-sm font-medium">Arrastrá un archivo o hacé clic</p>
-            <p className="mt-1 text-xs text-muted-foreground">PDF, Word, Excel, TXT — máx. 20 MB</p>
+            <p className="mt-1 text-xs text-muted-foreground">PDF, Word, Excel (.xlsx), CSV o TXT — máx. 20 MB</p>
           </div>
           <Button size="sm" variant="outline" onClick={() => inputRef.current?.click()}>
             Elegir archivo
