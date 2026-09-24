@@ -3,6 +3,7 @@ import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
+import { PRECIOS_TEXTO } from '../services/planCatalog';
 
 const router = Router();
 
@@ -18,8 +19,8 @@ Sobre BotForge:
 - El cliente sube documentos con info de su negocio
 - El bot aprende y responde solo, 24 horas, 7 dias
 - Funciona para: restaurantes, clinicas, tiendas, peluquerias, inmobiliarias, academias, y cualquier negocio
-- Planes: Free (Gs 0), Basico (Gs 150.000), Profesional (Gs 350.000), Agencia (Gs 750.000)
-- Se conecta al WhatsApp actual del cliente en 2 minutos
+- Planes: ${PRECIOS_TEXTO}
+- El cliente conecta SU PROPIO numero de WhatsApp Business desde el panel, autorizando con su cuenta de Facebook. No usa un numero de BotForge
 - No requiere conocimientos tecnicos
 - Impulsado por Claude AI de Anthropic
 - Desarrollado en Paraguay para negocios de LATAM

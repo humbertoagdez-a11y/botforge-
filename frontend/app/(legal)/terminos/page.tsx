@@ -1,6 +1,30 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import LegalDoc, { L, Li, T, type LegalSection } from '@/components/LegalDoc';
+import { PLANES, precioTexto } from '@/lib/planes';
+
+/**
+ * Los limites del contrato salen del catalogo, no de una copia a mano.
+ *
+ * Esto son terminos de servicio: si la tabla de aca dice 1.000 mensajes y el
+ * backend aplica 900, lo que vale frente a un cliente es lo que dice este
+ * documento. Era el espejo manual con mas consecuencias de los cuatro.
+ */
+function limitesDe(id: (typeof PLANES)[number]['id']): string {
+  const p = PLANES.find((x) => x.id === id)!;
+  const partes = [
+    p.bots === null ? 'bots ilimitados' : `${p.bots} bot${p.bots === 1 ? '' : 's'}`,
+    p.docsPorBot === null ? 'documentos sin límite' : `${p.docsPorBot} documentos por bot`,
+    `${p.mensajesPorMes.toLocaleString('es-PY')} mensajes por mes`,
+  ];
+  if (p.imagenesPorBot === null) partes.push('imágenes sin límite');
+  else if (p.imagenesPorBot > 0) partes.push(`hasta ${p.imagenesPorBot} imágenes por bot`);
+  partes.push(p.whatsapp ? 'con WhatsApp' : 'sin WhatsApp');
+  if (p.nps) partes.push('encuestas de satisfacción');
+  if (p.informeSemanal) partes.push('informe semanal de cada bot');
+  if (p.informeConsolidado) partes.push('informe consolidado que compara todos tus bots');
+  return `${partes.join(', ')}.`;
+}
 
 export const metadata: Metadata = {
   title: 'Términos de servicio',
@@ -61,19 +85,11 @@ const SECCIONES: LegalSection[] = [
           límites:
         </p>
         <L>
-          <Li><T>Free</T> — sin costo. 1 bot, 3 documentos, 100 mensajes por mes, sin WhatsApp.</Li>
-          <Li>
-            <T>Básico</T> — Gs. 150.000. 1 bot, 10 documentos por bot, 1.000 mensajes por mes, con
-            WhatsApp, hasta 8 imágenes por bot y encuestas de satisfacción.
-          </Li>
-          <Li>
-            <T>Profesional</T> — Gs. 350.000. 5 bots, 50 documentos por bot, 4.000 mensajes por mes,
-            hasta 30 imágenes por bot e informe semanal de cada bot.
-          </Li>
-          <Li>
-            <T>Agencia</T> — Gs. 750.000. Bots, documentos e imágenes ilimitados, 10.000 mensajes
-            por mes e informe consolidado que compara todos tus bots.
-          </Li>
+          {PLANES.map((p) => (
+            <Li key={p.id}>
+              <T>{p.nombre}</T> — {p.precioGs === 0 ? 'sin costo' : precioTexto(p)}. {limitesDe(p.id)}
+            </Li>
+          ))}
         </L>
         <p className="pt-2">
           El asistente del panel también tiene un cupo diario y mensual según el plan, que podés ver

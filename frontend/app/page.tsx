@@ -23,6 +23,8 @@ import {
   Zap,
 } from 'lucide-react';
 import BotForgeAssistant from '@/components/BotForgeAssistant';
+import { SitioFooter, SitioHeader } from '@/components/SitioChrome';
+import { PLANES as CATALOGO, precioTexto } from '@/lib/planes';
 
 // ─── DATOS ────────────────────────────────────────────────────────────────────
 
@@ -166,8 +168,12 @@ const RUBRO_CARDS = [
 ];
 
 /**
- * Espejo de backend/src/middleware/planLimits.ts (LIMITS), igual que la tabla
- * de /pricing. Si cambia un limite alla, hay que actualizar los dos lugares.
+ * Las tarjetas de la landing salen del catalogo de `lib/planes.ts`, que es la
+ * unica fuente de precios y limites del frontend. Antes esta lista estaba
+ * escrita a mano y era el tercer espejo manual de planLimits.ts.
+ *
+ * Lo unico propio de la landing es el texto del boton: aca nadie tiene sesion,
+ * asi que todos llevan a registrarse.
  *
  * Nada de esta lista puede prometer algo que el codigo no cumpla hoy: aca
  * figuraban "Acceso a API" y "Soporte prioritario" para Agencia, y ninguna de
@@ -175,60 +181,17 @@ const RUBRO_CARDS = [
  * usuario al abrirlo, no su plan). Tambien decia "Panel de estadisticas" como
  * beneficio de Profesional cuando lo tienen todos los planes.
  */
-const PLANES = [
-  {
-    name: 'FREE',
-    price: 'Gs. 0',
-    highlight: false,
-    features: [
-      '1 bot',
-      '100 mensajes por mes',
-      '3 documentos de entrenamiento',
-      'Chat de prueba en el panel',
-    ],
-    cta: 'Empezar gratis',
-  },
-  {
-    name: 'BASICO',
-    price: 'Gs. 150.000',
-    highlight: false,
-    features: [
-      'Conexion a WhatsApp Business',
-      'Hasta 8 imagenes que tu bot envia',
-      'Encuestas de satisfaccion',
-      '1.000 mensajes por mes',
-      '10 documentos de entrenamiento',
-    ],
-    cta: 'Elegir Basico',
-  },
-  {
-    name: 'PROFESIONAL',
-    price: 'Gs. 350.000',
-    highlight: true,
-    features: [
-      'Informe semanal de cada bot',
-      'Hasta 5 bots',
-      '4.000 mensajes por mes',
-      'Hasta 30 imagenes por bot',
-      '50 documentos por bot',
-      'Todo lo del plan Basico',
-    ],
-    cta: 'Elegir Profesional',
-  },
-  {
-    name: 'AGENCIA',
-    price: 'Gs. 750.000',
-    highlight: false,
-    features: [
-      'Informe consolidado entre todos tus bots',
-      'Bots ilimitados',
-      'Documentos e imagenes sin limite',
-      '10.000 mensajes por mes',
-      'Todo lo del plan Profesional',
-    ],
-    cta: 'Elegir Agencia',
-  },
-];
+const PLANES = CATALOGO.map((p) => ({
+  id: p.id,
+  name: p.nombre,
+  price: precioTexto(p),
+  highlight: p.destacado,
+  mensajes: p.mensajesPorMes,
+  // En la landing se muestran solo los primeros cinco: la tarjeta compite con
+  // el resto de la pagina por atencion, y la lista completa esta en /planes.
+  features: p.beneficios.slice(0, 5).map((b) => b.texto),
+  cta: p.id === 'FREE' ? 'Empezar gratis' : `Elegir ${p.nombre}`,
+}));
 
 const FAQS = [
   {
@@ -322,60 +285,6 @@ function AnimatedCounter({
 }
 
 // ─── NAVBAR ───────────────────────────────────────────────────────────────────
-
-function Navbar() {
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  const scrollTo = useCallback((id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
-
-  return (
-    <header
-      className={`sticky top-0 z-40 transition-colors duration-300 ${
-        scrolled ? 'border-b border-white/5 bg-black/80 backdrop-blur-lg' : 'bg-transparent'
-      }`}
-    >
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="font-mono text-lg font-bold text-white">
-          BotForge
-        </Link>
-        <nav className="hidden items-center gap-6 text-sm text-gray-400 md:flex">
-          <button onClick={() => scrollTo('como-funciona')} className="transition-colors hover:text-white">
-            Caracteristicas
-          </button>
-          <button onClick={() => scrollTo('precios')} className="transition-colors hover:text-white">
-            Precios
-          </button>
-          <button onClick={() => scrollTo('faq')} className="transition-colors hover:text-white">
-            FAQ
-          </button>
-        </nav>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/auth/login"
-            className="rounded-lg border border-white/20 px-3.5 py-1.5 text-sm text-white transition-colors hover:bg-white/10"
-          >
-            Ingresar
-          </Link>
-          <Link
-            href="/auth/register"
-            className="rounded-lg bg-violet-600 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-500"
-          >
-            Empezar gratis
-          </Link>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 // ─── HERO ─────────────────────────────────────────────────────────────────────
 
@@ -791,6 +700,12 @@ function PricingSection() {
                   /mes
                 </span>
               </p>
+              {/* El numero que decide la compra: cuantas consultas puede
+                  atender por mes. Va antes de la lista de funciones. */}
+              <p className={`mt-2 text-sm ${plan.highlight ? 'text-violet-100' : 'text-gray-400'}`}>
+                <span className="font-semibold text-white">{plan.mensajes.toLocaleString('es-PY')}</span>{' '}
+                respuestas por mes
+              </p>
               <ul className="mt-6 flex-1 space-y-2.5">
                 {plan.features.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-sm">
@@ -812,6 +727,15 @@ function PricingSection() {
             </div>
           ))}
         </div>
+
+        <p className="mt-10 text-center text-sm text-gray-400">
+          <Link
+            href="/planes"
+            className="font-medium text-violet-300 underline underline-offset-4 transition-colors hover:text-violet-200"
+          >
+            Ver la comparacion completa y las dudas frecuentes
+          </Link>
+        </p>
       </div>
     </section>
   );
@@ -885,70 +809,12 @@ function FinalCta() {
   );
 }
 
-function Footer() {
-  const scrollTo = useCallback((id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
-
-  return (
-    <footer className="bg-[#070709] py-12">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="flex flex-col items-center gap-6 text-center">
-          <div>
-            <p className="font-mono text-lg font-bold text-white">BotForge</p>
-            <p className="mt-1 text-sm text-gray-500">Chatbots con IA para negocios paraguayos</p>
-          </div>
-          <nav className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-sm text-gray-500">
-            <button onClick={() => scrollTo('como-funciona')} className="transition-colors hover:text-gray-300">
-              Caracteristicas
-            </button>
-            <span className="text-gray-700">|</span>
-            <button onClick={() => scrollTo('precios')} className="transition-colors hover:text-gray-300">
-              Precios
-            </button>
-            <span className="text-gray-700">|</span>
-            <button onClick={() => scrollTo('faq')} className="transition-colors hover:text-gray-300">
-              FAQ
-            </button>
-            <span className="text-gray-700">|</span>
-            <a href="mailto:humbertoagdez@gmail.com" className="transition-colors hover:text-gray-300">
-              Contacto
-            </a>
-            <span className="text-gray-700">|</span>
-            <Link href="/terminos" className="transition-colors hover:text-gray-300">
-              Términos
-            </Link>
-            <span className="text-gray-700">|</span>
-            <Link href="/privacidad" className="transition-colors hover:text-gray-300">
-              Privacidad
-            </Link>
-            <span className="text-gray-700">|</span>
-            <Link href="/cookies" className="transition-colors hover:text-gray-300">
-              Cookies
-            </Link>
-            <span className="text-gray-700">|</span>
-            <Link href="/eliminar-datos" className="transition-colors hover:text-gray-300">
-              Eliminar datos
-            </Link>
-          </nav>
-        </div>
-        <div className="mt-8 border-t border-white/5 pt-6 text-center">
-          <p className="text-xs text-gray-600">2026 BotForge · Desarrollado en Paraguay</p>
-          <a href="mailto:humbertoagdez@gmail.com" className="mt-1 inline-block text-xs text-gray-600 hover:text-gray-400">
-            humbertoagdez@gmail.com
-          </a>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen bg-[#0A0A0F] font-sans antialiased">
-      <Navbar />
+      <SitioHeader enLanding />
       <Hero />
       <WelcomeSection />
       <DemoSection />
@@ -958,7 +824,7 @@ export default function LandingPage() {
       <PricingSection />
       <FaqSection />
       <FinalCta />
-      <Footer />
+      <SitioFooter enLanding />
       <BotForgeAssistant />
     </main>
   );

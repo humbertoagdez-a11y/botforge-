@@ -14,7 +14,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:generate": "prisma generate",
-    "reporte:muestra": "tsx src/scripts/reporteDeMuestra.ts tmp"
+    "reporte:muestra": "tsx src/scripts/reporteDeMuestra.ts tmp",
+    "verificar:planes": "tsx src/scripts/verificarPlanes.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",

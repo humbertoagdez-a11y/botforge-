@@ -26,6 +26,7 @@ import { contentSinRazonamiento, sinBloquesDeRazonamiento } from '../lib/anthrop
 import { esNoRespuesta } from '../lib/frasesBot';
 import { agregarConocimiento } from '../services/knowledge';
 import { CATEGORY_LABEL, createTicket, listUserTickets } from '../services/supportTickets';
+import { planesParaAsistente } from '../services/planCatalog';
 
 const router = Router();
 
@@ -878,11 +879,9 @@ async function executeToolCall(
 
     case 'request_plan_upgrade': {
       const input = parsed.data as z.infer<typeof toolInputSchemas.request_plan_upgrade>;
-      const info = {
-        STARTER: { label: 'Básico', price: 'Gs. 150.000/mes', incluye: '1 bot, 1.000 mensajes/mes, 10 documentos por bot, WhatsApp' },
-        PRO: { label: 'Profesional', price: 'Gs. 350.000/mes', incluye: '5 bots, 4.000 mensajes/mes, 50 documentos por bot, WhatsApp + estadísticas' },
-        AGENCY: { label: 'Agencia', price: 'Gs. 750.000/mes', incluye: 'Bots ilimitados, 10.000 mensajes/mes, documentos ilimitados, soporte prioritario' },
-      }[input.targetPlan];
+      // Sale del catalogo, que deriva de LIMITS y de los precios de Pagopar:
+      // antes estaba escrito a mano aca y se desincronizaba solo.
+      const info = planesParaAsistente()[input.targetPlan];
       return {
         result: {
           targetPlan: input.targetPlan,

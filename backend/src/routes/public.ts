@@ -7,12 +7,24 @@ import { AppError } from '../middleware/errorHandler';
 import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
 import { widgetPorBot, widgetPorVisitante } from '../middleware/rateLimit';
 import { resolverConversacion } from '../services/conversacion';
+import { catalogoPublico } from '../services/planCatalog';
 
 const router = Router();
 
 const chatSchema = z.object({
   message: z.string().min(1).max(2000),
   conversationId: z.string().uuid().optional(),
+});
+
+/**
+ * GET /planes — catalogo publico, derivado de LIMITS y de los precios reales.
+ *
+ * Existe para que la pagina de planes y cualquier integracion futura puedan
+ * leer los limites de la fuente de verdad en vez de copiarlos. Es publico a
+ * proposito: son los precios de la landing, no hay nada que proteger.
+ */
+router.get('/planes', (_req: Request, res: Response) => {
+  res.json({ data: catalogoPublico(), error: null, meta: null });
 });
 
 router.post(

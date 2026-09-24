@@ -29,7 +29,7 @@ const POLL_INTERVAL = 3000;
  */
 const MOSTRAR_FLUJO_MANUAL = false;
 
-type Step = 'idle' | 'requesting' | 'pending' | 'polling' | 'active' | 'expired' | 'recien-conectado';
+type Step = 'idle' | 'requesting' | 'pending' | 'polling' | 'active' | 'expired' | 'recien-conectado' | 'revocado';
 type Channel = 'meta' | 'twilio';
 
 /** Canal activo y número de negocio al que el cliente le escribe. Lo define el
@@ -47,6 +47,12 @@ interface ConnectionInfo extends ChannelInfo {
 interface StatusResponse extends Partial<ChannelInfo> {
   status: string;
   phoneNumber?: string;
+  /**
+   * true cuando el bot atiende desde el número del PROPIO negocio (Embedded
+   * Signup). Con el flujo viejo atendía desde el número compartido de
+   * BotForge, y el panel explicaba eso mismo a todo el mundo.
+   */
+  numeroPropio?: boolean;
 }
 
 interface Props {
@@ -69,6 +75,7 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
   const [conn, setConn] = useState<ConnectionInfo | null>(null);
   const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
   const [connectedNumber, setConnectedNumber] = useState<string | null>(bot.whatsappNumber ?? null);
+  const [numeroPropio, setNumeroPropio] = useState(false);
   const [msLeft, setMsLeft] = useState(0);
   const [disconnecting, setDisconnecting] = useState(false);
   /** Resultado del Embedded Signup recien completado, para mostrar el PIN */
@@ -97,11 +104,18 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
 
         const { channel, businessNumber, status, phoneNumber } = json.data;
         if (channel && businessNumber) setChannelInfo({ channel, businessNumber });
+        setNumeroPropio(Boolean(json.data.numeroPropio));
 
         // Solo promovemos a 'active'; nunca degradamos un flujo ya empezado
         if (status === 'ACTIVE') {
           setConnectedNumber(phoneNumber ?? null);
           setStep('active');
+        } else if (status === 'REVOKED') {
+          // El numero sigue vinculado pero Meta rechaza los envios: el dueño
+          // tiene que volver a autorizar. Mostrarlo como conectado era
+          // dejarlo creyendo que su WhatsApp atiende cuando no atiende.
+          setConnectedNumber(phoneNumber ?? null);
+          setStep('revocado');
         }
       } catch {
         // sin conexión: las instrucciones quedan ocultas hasta el próximo intento
@@ -283,6 +297,44 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
     );
   }
 
+  // ── REVOCADO ───────────────────────────────────────────────────────────────
+  if (step === 'revocado') {
+    return (
+      <div className="max-w-xl space-y-4">
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              Tu WhatsApp dejó de responder
+            </CardTitle>
+            <CardDescription>
+              Meta ya no nos deja enviar mensajes desde{' '}
+              <span className="font-mono text-foreground">{connectedNumber}</span>. Suele pasar
+              cuando se revoca el permiso de la app desde la configuración de Facebook, o cuando
+              cambia el dueño de la cuenta de WhatsApp Business.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Los mensajes que te escriban mientras tanto no se responden. Volvé a conectar el
+              número para que el bot siga atendiendo; no perdés ni los documentos ni las
+              conversaciones.
+            </p>
+            <EmbeddedSignupButton
+              botId={bot.id}
+              onConectado={(r) => {
+                setConnectedNumber(r.displayNumber);
+                setRecienConectado(r);
+                setStep('recien-conectado');
+                onUpdate({ ...bot });
+              }}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // ── ACTIVE ─────────────────────────────────────────────────────────────────
   if (step === 'active') {
     return (
@@ -309,7 +361,7 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
             </div>
           </CardContent>
         </Card>
-        <ChannelInstructions info={channelInfo} />
+        <ChannelInstructions info={channelInfo} numeroPropio={numeroPropio} />
       </div>
     );
   }
@@ -520,10 +572,26 @@ export default function WhatsAppOnboarding({ bot, onUpdate }: Props) {
   );
 }
 
-/** Instrucciones según el canal activo. Con Meta el cliente no configura nada:
-    el número y el webhook son de la plataforma. Con Twilio sigue viendo la
-    configuración del webhook, porque la cuenta de Twilio es suya. */
-function ChannelInstructions({ info }: { info: ChannelInfo | null }) {
+/**
+ * Instrucciones según el canal activo.
+ *
+ * `numeroPropio` separa los dos casos de Meta, que decían lo mismo y no lo son:
+ * un bot conectado por Embedded Signup atiende desde el número DEL NEGOCIO,
+ * mientras que el bot que quedó del flujo viejo atiende desde el número
+ * compartido de BotForge. Este bloque le decía a todos que atendían desde el
+ * número de BotForge, que para un cliente nuevo es simplemente falso: le
+ * mostraba un número que no es suyo y que no controla.
+ *
+ * Con Twilio el cliente sigue viendo la configuración del webhook, porque la
+ * cuenta de Twilio es suya.
+ */
+function ChannelInstructions({
+  info,
+  numeroPropio = false,
+}: {
+  info: ChannelInfo | null;
+  numeroPropio?: boolean;
+}) {
   if (!info) return null;
 
   if (info.channel === 'meta') {
@@ -533,14 +601,30 @@ function ChannelInstructions({ info }: { info: ChannelInfo | null }) {
           <CardTitle className="text-sm font-semibold text-muted-foreground">Cómo funciona</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-xs text-muted-foreground">
-          <p>
-            Tu bot atiende desde el número de WhatsApp Business de BotForge:{' '}
-            <span className="font-mono font-semibold text-foreground">{info.businessNumber}</span>
-          </p>
-          <p>
-            No tenés que configurar nada más. Apenas verificás tu número, los mensajes que lleguen
-            a ese WhatsApp los responde tu bot automáticamente.
-          </p>
+          {numeroPropio ? (
+            <>
+              <p>
+                Tu bot atiende desde <span className="font-semibold text-foreground">tu propio número</span>,
+                el que autorizaste con tu cuenta de Facebook. Los clientes te escriben ahí como
+                siempre y les responde el bot.
+              </p>
+              <p>
+                No tenés que configurar nada más. Si cambiás los documentos del bot, la respuesta
+                cambia en el momento, sin reconectar nada.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                Este bot atiende desde el número de WhatsApp Business de BotForge:{' '}
+                <span className="font-mono font-semibold text-foreground">{info.businessNumber}</span>
+              </p>
+              <p>
+                Es una conexión del método anterior. Los bots nuevos se conectan con su propio
+                número desde la cuenta de Facebook del negocio.
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
     );
