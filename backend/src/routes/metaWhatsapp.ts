@@ -7,11 +7,13 @@ import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
 import { credencialDeBot, credencialGlobal } from '../services/metaAuth';
 import {
   downloadMedia,
+  ErrorEnvioMeta,
   isMetaConfigured,
   markAsReadAndTyping,
   sendPendingImage,
   sendTextMessage,
 } from '../services/metaMessaging';
+import { marcarRevocado } from '../services/metaOnboarding';
 import {
   confirmarEntrega,
   handleVerificationCode,
@@ -167,10 +169,13 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   // token es el que corresponde para el typing indicator y para bajar el media.
   // Puede ser null (numero sin bot, o codigo de verificacion entrando por el
   // numero de BotForge); ahi se usa la credencial global, como siempre.
-  const bot = await prisma.bot.findFirst({
-    where: { metaPhoneNumberId: phoneNumberId, isActive: true },
-  });
-  console.log('[meta] bot encontrado:', bot?.id, 'phone_number_id:', phoneNumberId);
+  // El bot se busca SIN filtrar por isActive: si esta pausado igual es suyo el
+  // numero, y contestarle al cliente con la credencial global fallaria — el
+  // token global no tiene permiso sobre la WABA de otro negocio. Antes un bot
+  // pausado conectado por Embedded Signup dejaba al cliente sin ninguna
+  // respuesta, ni siquiera el aviso.
+  const bot = await prisma.bot.findFirst({ where: { metaPhoneNumberId: phoneNumberId } });
+  console.log('[meta] bot encontrado:', bot?.id, 'activo:', bot?.isActive, 'phone_number_id:', phoneNumberId);
 
   const credEntrante = bot ? credencialDeBot(bot) : credencialGlobal(phoneNumberId);
 
@@ -204,6 +209,15 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
     return;
   }
 
+  if (!bot.isActive) {
+    await sendTextMessage(
+      credEntrante,
+      clientNumber,
+      'Este WhatsApp está pausado en este momento. Volvé a escribir más tarde.',
+    );
+    return;
+  }
+
   // Sin texto ni imagen legible no hay nada que mandarle al agente
   if (!text && !imageContext) {
     await sendTextMessage(credencialDeBot(bot), clientNumber, 'No pude entender ese mensaje. ¿Me lo escribís?');
@@ -231,6 +245,7 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
       // Ya se reintento dentro de sendTextMessage. No se cobra el cupo y queda
       // marcado, para que el dueño no vea una respuesta fantasma en el panel.
       if (result.messageId) await marcarNoEntregado(result.messageId);
+      await revisarSiRevocaron(bot, err);
       throw err;
     }
   }
@@ -246,6 +261,22 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
 }
 
 /** Recorre el payload y procesa cada mensaje entrante, en orden. */
+/**
+ * Si el envio fallo porque el cliente nos saco el acceso, se deja anotado.
+ *
+ * Solo aplica a los bots con token propio (Embedded Signup): si el token es el
+ * global, un 190 es un problema nuestro, no del cliente, y marcarle el bot
+ * como revocado seria mentirle.
+ */
+async function revisarSiRevocaron(
+  bot: { id: string; metaBusinessToken: string | null },
+  err: unknown,
+): Promise<void> {
+  if (!(err instanceof ErrorEnvioMeta) || !err.credencialInvalida) return;
+  if (!bot.metaBusinessToken) return;
+  await marcarRevocado(bot.id, `envio rechazado con codigo ${err.codigo ?? 'sin codigo'}`);
+}
+
 async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -270,8 +301,13 @@ async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
           reportarError('meta-mensaje', err, { tipo: msg.type ?? 'desconocido' });
           if (msg.from) {
             try {
+              // La credencial del BOT, no la global: si el numero es de un
+              // cliente (Embedded Signup), el token global no tiene permiso
+              // sobre su WABA y este aviso nunca llegaba a destino.
+              const dueño = await prisma.bot.findFirst({ where: { metaPhoneNumberId: phoneNumberId } });
+              const cred = dueño ? credencialDeBot(dueño) : credencialGlobal(phoneNumberId);
               await sendTextMessage(
-                credencialGlobal(phoneNumberId),
+                cred,
                 `+${msg.from.replace(/^\+/, '')}`,
                 'Hubo un problema al procesar tu mensaje. Por favor intentá de nuevo.',
               );

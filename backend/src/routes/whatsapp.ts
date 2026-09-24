@@ -7,7 +7,7 @@ import { env } from '../config/env';
 import { requireAuth, requireVerifiedEmail } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkWhatsAppAccess } from '../middleware/planLimits';
-import { completarOnboarding } from '../services/metaOnboarding';
+import { completarOnboarding, ESTADO_REVOCADO } from '../services/metaOnboarding';
 import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
 import {
   handleVerificationCode,
@@ -122,7 +122,20 @@ router.get(
         : bot.whatsappNumber;
 
       if (connectedNumber) {
-        res.json({ data: { ...base, status: 'ACTIVE', phoneNumber: connectedNumber }, error: null, meta: null });
+        // REVOCADO tiene su propio estado: el numero sigue vinculado pero los
+        // envios rebotan. Mostrarlo como ACTIVE era dejarle al dueño un
+        // WhatsApp "conectado" que en realidad no contesta a nadie.
+        res.json({
+          data: {
+            ...base,
+            status: bot.metaEstado === ESTADO_REVOCADO ? 'REVOKED' : 'ACTIVE',
+            phoneNumber: connectedNumber,
+            // Solo los conectados por Embedded Signup tienen numero propio
+            numeroPropio: Boolean(bot.metaBusinessToken) || Boolean(bot.metaDisplayNumber),
+          },
+          error: null,
+          meta: null,
+        });
         return;
       }
 
@@ -175,11 +188,26 @@ router.delete(
         data: { status: 'EXPIRED' },
       });
 
-      // Limpia los dos vinculos: si solo se borrara whatsappNumber, un bot
-      // conectado por Meta seguiria respondiendo despues de "Desconectar".
+      // Se limpia TODO el rastro de Meta, no solo el vinculo.
+      //
+      // Antes quedaban metaBusinessToken, metaEstado ACTIVO, el wabaId y el
+      // numero visible. Consecuencias reales: seguiamos guardando la
+      // credencial de un cliente que ya se fue, y si despues conectaba OTRO
+      // numero, tokenDelBot() devolvia el token viejo —que no tiene permiso
+      // sobre la WABA nueva— hasta que el onboarding lo pisara.
       const updated = await prisma.bot.update({
         where: { id: bot.id },
-        data: { whatsappNumber: null, metaPhoneNumberId: null },
+        data: {
+          whatsappNumber: null,
+          metaPhoneNumberId: null,
+          metaBusinessToken: null,
+          metaBusinessId: null,
+          metaWabaId: null,
+          metaDisplayNumber: null,
+          metaRegistrationPin: null,
+          metaConectadoEn: null,
+          metaEstado: null,
+        },
       });
 
       res.json({ data: updated, error: null, meta: null });

@@ -12,7 +12,12 @@ import type { Bot } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
-import { assertMessageLimit, incrementMessageUsage } from '../middleware/planLimits';
+import {
+  assertMessageLimit,
+  effectivePlan,
+  incrementMessageUsage,
+  LIMITS,
+} from '../middleware/planLimits';
 import { runTenantTurn, type PendingImage } from './tenantAgent';
 import { escaparHtml, sendEmail } from './email';
 import { getNpsState, npsFollowUp, parseNpsReply, saveComment, saveScore } from './nps';
@@ -226,6 +231,23 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
   });
   const npsReply = await handleNpsReply(bot.id, clientNumber, conversacionPrevia?.id ?? null, text);
   if (npsReply) return { text: npsReply, isNotice: true };
+
+  // WhatsApp segun el plan VIGENTE, no segun el que tenia al conectar.
+  //
+  // checkWhatsAppAccess solo corre al conectar el numero. Una vez conectado, un
+  // plan vencido caia a FREE (que no tiene WhatsApp) y el bot seguia
+  // atendiendo igual, con los 100 mensajes de Free, para siempre. Era pagar un
+  // mes de Basico y quedarse con WhatsApp gratis.
+  const dueño = await prisma.user.findUniqueOrThrow({
+    where: { id: bot.userId },
+    select: { plan: true, planExpiresAt: true },
+  });
+  if (!LIMITS[effectivePlan(dueño)].whatsapp) {
+    return {
+      text: 'Este WhatsApp no está disponible en este momento. Escribinos más tarde.',
+      isNotice: true,
+    };
+  }
 
   const readyDocs = await prisma.document.count({ where: { botId: bot.id, status: 'READY' } });
   if (readyDocs === 0) {

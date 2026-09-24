@@ -64,6 +64,30 @@ function assertConfigurado(): void {
   }
 }
 
+/**
+ * El cliente nos saco el acceso: se deja anotado para que el panel pueda
+ * pedirle que reconecte en vez de mostrarle un WhatsApp "conectado" que no
+ * responde.
+ *
+ * El token se borra: ya no sirve para nada y no hay motivo para seguir
+ * guardando una credencial de un tercero. El phoneNumberId se conserva a
+ * proposito, asi el webhook sigue reconociendo el numero si el cliente vuelve.
+ *
+ * Nunca lanza: se llama desde el camino de error de un envio, y no puede
+ * tapar el error original.
+ */
+export async function marcarRevocado(botId: string, motivo: string): Promise<void> {
+  try {
+    await prisma.bot.update({
+      where: { id: botId },
+      data: { metaEstado: ESTADO_REVOCADO, metaBusinessToken: null },
+    });
+    console.warn(`[meta] bot ${botId} marcado como REVOCADO — ${motivo}`);
+  } catch (err) {
+    console.error(`[meta] no se pudo marcar el bot ${botId} como revocado:`, err);
+  }
+}
+
 /** PIN de verificacion en dos pasos. Seis digitos, incluidos los ceros a la izquierda. */
 export function generarPin(): string {
   return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');

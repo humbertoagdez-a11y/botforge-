@@ -10,7 +10,10 @@ import { cloudinary, isCloudinaryConfigured } from '../config/cloudinary';
 import type { PendingImage } from './tenantAgent';
 import { authHeader, type CredencialMeta } from './metaAuth';
 
-const GRAPH_VERSION = 'v21.0';
+// Misma version que metaOnboarding.ts y que el SDK del popup. Estaban en
+// v21 y v23 a la vez: dos versiones de Graph conviviendo en el mismo flujo
+// es una fuente de diferencias de comportamiento imposible de diagnosticar.
+const GRAPH_VERSION = 'v23.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 export function isMetaConfigured(): boolean {
@@ -45,14 +48,54 @@ function toMetaNumber(to: string): string {
  * Lee el cuerpo del error de Graph sin filtrar credenciales. Meta responde
  * { error: { message, type, code } }; el token nunca viene en la respuesta.
  */
-async function describeError(res: Response): Promise<string> {
+interface DetalleError {
+  texto: string;
+  /** Codigo de error de Graph, no el status HTTP */
+  codigo: number | null;
+  tipo: string | null;
+}
+
+async function describeError(res: Response): Promise<DetalleError> {
   try {
-    const data = (await res.json()) as { error?: { message?: string; code?: number } };
+    const data = (await res.json()) as {
+      error?: { message?: string; code?: number; type?: string };
+    };
     const message = data.error?.message ?? 'sin detalle';
-    const code = data.error?.code ?? res.status;
-    return `${code}: ${message}`;
+    const codigo = data.error?.code ?? null;
+    return {
+      texto: `${codigo ?? res.status}: ${message}`,
+      codigo,
+      tipo: data.error?.type ?? null,
+    };
   } catch {
-    return `HTTP ${res.status}`;
+    return { texto: `HTTP ${res.status}`, codigo: null, tipo: null };
+  }
+}
+
+/**
+ * El cliente nos saco el acceso (o el token dejo de valer).
+ *
+ * Meta lo avisa con un OAuthException: 190 es el token invalido o revocado,
+ * 102 la sesion caida, y 10 / 200 / 299 son permisos que ya no tenemos. Un 401
+ * crudo cuenta igual. Importa distinguirlo de un fallo pasajero: un 500 se
+ * reintenta, una credencial muerta no mejora reintentando y hay que avisarle
+ * al dueño que reconecte.
+ */
+const CODIGOS_CREDENCIAL_MUERTA = new Set([10, 102, 190, 200, 299]);
+
+export class ErrorEnvioMeta extends Error {
+  readonly credencialInvalida: boolean;
+  readonly codigo: number | null;
+
+  constructor(mensaje: string, detalle: DetalleError | null, status: number) {
+    super(mensaje);
+    this.name = 'ErrorEnvioMeta';
+    this.codigo = detalle?.codigo ?? null;
+    this.credencialInvalida =
+      status === 401 ||
+      (detalle?.codigo !== null &&
+        detalle?.codigo !== undefined &&
+        CODIGOS_CREDENCIAL_MUERTA.has(detalle.codigo));
   }
 }
 
@@ -97,6 +140,8 @@ async function postMessage(
   assertConfigured();
 
   let ultimoError = '';
+  let ultimoDetalle: DetalleError | null = null;
+  let ultimoStatus = 0;
 
   for (let intento = 0; intento <= REINTENTOS; intento++) {
     let res: Response;
@@ -109,6 +154,8 @@ async function postMessage(
     } catch (err) {
       // Fallo de red: tambien es pasajero
       ultimoError = err instanceof Error ? err.message : String(err);
+      ultimoDetalle = null;
+      ultimoStatus = 0;
       if (intento === REINTENTOS) break;
       await dormir(Math.min(ESPERA_BASE_MS * 2 ** intento, ESPERA_MAX_MS));
       continue;
@@ -116,7 +163,9 @@ async function postMessage(
 
     if (res.ok) return;
 
-    ultimoError = await describeError(res);
+    ultimoStatus = res.status;
+    ultimoDetalle = await describeError(res);
+    ultimoError = ultimoDetalle.texto;
     if (!esPasajero(res.status) || intento === REINTENTOS) break;
 
     const espera = esperaAntesDeReintentar(res, intento);
@@ -126,7 +175,7 @@ async function postMessage(
     await dormir(espera);
   }
 
-  throw new Error(`Meta rechazó el envío — ${ultimoError}`);
+  throw new ErrorEnvioMeta(`Meta rechazó el envío — ${ultimoError}`, ultimoDetalle, ultimoStatus);
 }
 
 export async function sendTextMessage(
@@ -181,7 +230,7 @@ export async function markAsReadAndTyping(
       console.log(`[whatsapp] typing indicator enviado (wamid ${messageId})`);
       return;
     }
-    console.warn(`[whatsapp] error en typing indicator: ${await describeError(res)}`);
+    console.warn(`[whatsapp] error en typing indicator: ${(await describeError(res)).texto}`);
   } catch (err) {
     const detalle = err instanceof Error ? err.message : String(err);
     console.warn(`[whatsapp] error en typing indicator: ${detalle}`);
@@ -245,7 +294,7 @@ export async function downloadMedia(
 
   const metaRes = await fetch(`${GRAPH_BASE}/${mediaId}`, { headers: authHeader(token) });
   if (!metaRes.ok) {
-    throw new Error(`No se pudo leer el media ${mediaId} — ${await describeError(metaRes)}`);
+    throw new Error(`No se pudo leer el media ${mediaId} — ${(await describeError(metaRes)).texto}`);
   }
 
   const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
