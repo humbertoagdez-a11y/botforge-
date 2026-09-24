@@ -45,7 +45,7 @@ const DUDAS: Array<{ p: string; r: string }> = [
 
 export default function PlanesPublicosPage() {
   return (
-    <main className="theme-dashboard min-h-screen bg-[#0A0A0F] font-sans antialiased">
+    <main className="theme-dashboard min-h-screen bg-[#0A0A0F] font-sans text-foreground antialiased">
       <SitioHeader />
 
       <section className="border-b border-white/5 px-4 py-14 sm:px-6 md:py-20">

@@ -147,14 +147,17 @@ export default function PlanesGrid({ publica = false }: Props) {
                 </div>
               )}
 
-              <div className="mb-4">
-                <p className="font-semibold">{plan.nombre}</p>
+              {/* text-foreground explicito: fuera del layout del panel no hay
+                  ningun ancestro que fije el color, y el nombre y el precio
+                  quedaban casi invisibles sobre el fondo oscuro. */}
+              <div className="mb-4 text-foreground">
+                <p className="font-semibold text-foreground">{plan.nombre}</p>
                 <div className="mt-1">
                   {plan.precioGs === 0 ? (
-                    <p className="text-3xl font-bold">Gratis</p>
+                    <p className="text-3xl font-bold text-foreground">Gratis</p>
                   ) : (
                     <>
-                      <p className="text-3xl font-bold">{precioTexto(plan)}</p>
+                      <p className="text-3xl font-bold text-foreground">{precioTexto(plan)}</p>
                       <p className="text-xs text-muted-foreground">≈ USD {plan.precioUsd} por mes</p>
                     </>
                   )}
@@ -166,7 +169,7 @@ export default function PlanesGrid({ publica = false }: Props) {
                   negocio compara cuántas consultas puede atender, no cuántas
                   funciones hay en la lista. */}
               <div className="mb-4 rounded-lg border border-border/60 bg-background/40 px-3 py-2">
-                <p className="text-xl font-bold leading-none">
+                <p className="text-xl font-bold leading-none text-foreground">
                   {plan.mensajesPorMes.toLocaleString('es-PY')}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
