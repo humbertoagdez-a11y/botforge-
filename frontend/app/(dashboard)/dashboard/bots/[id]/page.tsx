@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -233,6 +233,17 @@ function NpsCard({
   );
 }
 
+/** Las pestañas que se pueden abrir desde un link. */
+const TABS_VALIDAS = new Set([
+  'documents',
+  'images',
+  'chat',
+  'instructivo',
+  'config',
+  'whatsapp',
+  'whatsapp-profile',
+]);
+
 export default function BotDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -240,7 +251,17 @@ export default function BotDetailPage() {
   const [docs, setDocs] = useState<BotDocument[]>([]);
   const [loadingBot, setLoadingBot] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [activeTab, setActiveTab] = useState('documents');
+  /**
+   * La pestaña puede venir en la URL (?tab=whatsapp). La usa el email que
+   * avisa que el WhatsApp dejo de responder: sin esto, el link dejaba al dueño
+   * en Documentos y tenia que encontrar la pestaña a mano, que en un telefono
+   * es justo lo que no se ve.
+   */
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => {
+    const pedida = searchParams.get('tab');
+    return pedida && TABS_VALIDAS.has(pedida) ? pedida : 'documents';
+  });
   const { openAssistant } = useAssistantStore();
   const { user } = useAuthStore();
 

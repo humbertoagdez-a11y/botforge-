@@ -17,6 +17,7 @@ import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { ESTADO_ACTIVO } from './metaAuth';
+import { escaparHtml, sendEmail } from './email';
 import { cifrar } from '../lib/cifrado';
 
 const GRAPH_VERSION = 'v23.0';
@@ -65,25 +66,91 @@ function assertConfigurado(): void {
   }
 }
 
+/** Email al dueño: su WhatsApp dejo de responder y no se entero solo. */
+async function avisarRevocado(bot: {
+  id: string;
+  name: string;
+  metaDisplayNumber: string | null;
+  user: { email: string; name: string };
+}): Promise<void> {
+  const url = `${env.FRONTEND_URL}/dashboard/bots/${bot.id}?tab=whatsapp`;
+  const numero = bot.metaDisplayNumber ?? 'tu numero de WhatsApp';
+  try {
+    await sendEmail(
+      bot.user.email,
+      `Tu WhatsApp de "${bot.name}" dejo de responder`,
+      `<!DOCTYPE html>
+<html lang="es">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
+    <div style="max-width:520px;margin:0 auto;padding:32px 24px;">
+      <p style="font-size:22px;font-weight:bold;color:#7C3AED;margin:0 0 24px;">BotForge</p>
+      <p style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;font-size:14px;font-weight:bold;border-radius:8px;padding:10px 14px;margin:0 0 20px;">
+        Los mensajes que te lleguen ahora mismo no se estan respondiendo.
+      </p>
+      <p style="font-size:16px;margin:0 0 12px;">Hola ${escaparHtml(bot.user.name)},</p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
+        Meta dejo de permitirnos enviar mensajes desde
+        <strong>${escaparHtml(numero)}</strong>, el numero de tu bot
+        <strong>${escaparHtml(bot.name)}</strong>. Suele pasar cuando se revoca el permiso de
+        la app desde la configuracion de Facebook, o cuando cambia el dueño de la cuenta de
+        WhatsApp Business.
+      </p>
+      <p style="font-size:15px;line-height:1.6;margin:0 0 20px;">
+        Se arregla volviendo a conectar el numero desde el panel. No perdes ni los documentos
+        ni las conversaciones: el bot sigue con todo lo que ya le cargaste.
+      </p>
+      <a href="${url}"
+         style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:0 0 28px;">
+        Volver a conectar WhatsApp
+      </a>
+      <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
+      <p style="font-size:12px;color:#888888;margin:0;">
+        Si no reconoces este cambio, escribinos desde el panel y lo miramos juntos.
+      </p>
+    </div>
+  </body>
+</html>`,
+    );
+  } catch (err) {
+    console.error(`[meta] no se pudo avisar de la revocacion del bot ${bot.id}:`, err);
+  }
+}
+
 /**
  * El cliente nos saco el acceso: se deja anotado para que el panel pueda
  * pedirle que reconecte en vez de mostrarle un WhatsApp "conectado" que no
- * responde.
+ * responde, y se le avisa por email.
  *
  * El token se borra: ya no sirve para nada y no hay motivo para seguir
  * guardando una credencial de un tercero. El phoneNumberId se conserva a
  * proposito, asi el webhook sigue reconociendo el numero si el cliente vuelve.
  *
- * Nunca lanza: se llama desde el camino de error de un envio, y no puede
- * tapar el error original.
+ * UN solo email por evento. Esto se llama desde el camino de error de CADA
+ * envio fallido, asi que sin condicion en el where, un numero revocado con
+ * diez clientes escribiendo le mandaba diez emails al dueño en un minuto. El
+ * updateMany filtra por el estado anterior: solo la primera llamada cambia una
+ * fila, y solo esa avisa.
+ *
+ * Nunca lanza: no puede tapar el error original del envio.
  */
 export async function marcarRevocado(botId: string, motivo: string): Promise<void> {
   try {
-    await prisma.bot.update({
-      where: { id: botId },
+    const cambiados = await prisma.bot.updateMany({
+      where: { id: botId, metaEstado: { not: ESTADO_REVOCADO } },
       data: { metaEstado: ESTADO_REVOCADO, metaBusinessToken: null },
     });
+    if (cambiados.count === 0) return; // ya estaba marcado: nada que avisar
+
     console.warn(`[meta] bot ${botId} marcado como REVOCADO — ${motivo}`);
+
+    const bot = await prisma.bot.findUnique({
+      where: { id: botId },
+      select: {
+        id: true, name: true, metaDisplayNumber: true,
+        user: { select: { email: true, name: true } },
+      },
+    });
+    if (bot) await avisarRevocado(bot);
   } catch (err) {
     console.error(`[meta] no se pudo marcar el bot ${botId} como revocado:`, err);
   }
