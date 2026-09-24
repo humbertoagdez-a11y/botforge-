@@ -6,11 +6,31 @@
  * que ese espejo no se pueda desincronizar en silencio: corre con
  * `npm run verificar:planes` y sale con código 1 si algún número difiere.
  *
- * Importa el archivo del frontend directamente (tsx lo compila al vuelo);
- * `planes.ts` no importa nada, así que no arrastra el resto del frontend.
+ * El archivo del frontend se carga con un import DINÁMICO y una ruta armada en
+ * tiempo de ejecución. Es a propósito: un import estático lo metía dentro del
+ * programa de TypeScript del backend, y `tsc` fallaba con TS6059 porque queda
+ * fuera de `rootDir`. Eso rompía `npm run build`, o sea el despliegue entero,
+ * por un script que ni siquiera se publica.
  */
+import { join } from 'path';
+import { pathToFileURL } from 'url';
 import { catalogoPublico, type PlanPublico } from '../services/planCatalog';
-import { PLANES, type Plan as PlanFront } from '../../../frontend/lib/planes';
+
+/** Lo que este script necesita de cada plan del frontend. */
+interface PlanFront {
+  id: string;
+  precioGs: number;
+  bots: number | null;
+  docsPorBot: number | null;
+  imagenesPorBot: number | null;
+  mensajesPorMes: number;
+  whatsapp: boolean;
+  nps: boolean;
+  informeSemanal: boolean;
+  informeConsolidado: boolean;
+  asistentePorDia: number;
+  pruebaPorDia: number;
+}
 
 interface Diferencia {
   plan: string;
@@ -20,40 +40,48 @@ interface Diferencia {
 }
 
 /** Los campos que tienen que coincidir. El texto comercial no entra acá. */
-const CAMPOS: Array<[keyof PlanPublico, keyof PlanFront]> = [
-  ['precioGs', 'precioGs'],
-  ['bots', 'bots'],
-  ['docsPorBot', 'docsPorBot'],
-  ['imagenesPorBot', 'imagenesPorBot'],
-  ['mensajesPorMes', 'mensajesPorMes'],
-  ['whatsapp', 'whatsapp'],
-  ['nps', 'nps'],
-  ['informeSemanal', 'informeSemanal'],
-  ['informeConsolidado', 'informeConsolidado'],
-  ['asistentePorDia', 'asistentePorDia'],
-  ['pruebaPorDia', 'pruebaPorDia'],
+const CAMPOS: Array<keyof PlanPublico & keyof PlanFront> = [
+  'precioGs',
+  'bots',
+  'docsPorBot',
+  'imagenesPorBot',
+  'mensajesPorMes',
+  'whatsapp',
+  'nps',
+  'informeSemanal',
+  'informeConsolidado',
+  'asistentePorDia',
+  'pruebaPorDia',
 ];
 
-function main(): void {
+async function cargarPlanesDelFrontend(): Promise<PlanFront[]> {
+  const ruta = join(__dirname, '..', '..', '..', 'frontend', 'lib', 'planes.ts');
+  const mod = (await import(pathToFileURL(ruta).href)) as { PLANES?: PlanFront[] };
+  if (!Array.isArray(mod.PLANES)) {
+    throw new Error(`No se pudo leer PLANES desde ${ruta}`);
+  }
+  return mod.PLANES;
+}
+
+async function main(): Promise<void> {
   const back = catalogoPublico();
+  const front = await cargarPlanesDelFrontend();
   const diferencias: Diferencia[] = [];
 
   for (const b of back) {
-    const f = PLANES.find((p) => p.id === b.id);
+    const f = front.find((p) => p.id === b.id);
     if (!f) {
       diferencias.push({ plan: b.id, campo: '(el plan entero)', backend: 'existe', frontend: 'falta' });
       continue;
     }
-    for (const [campoBack, campoFront] of CAMPOS) {
-      const vb = b[campoBack];
-      const vf = f[campoFront];
-      if (vb !== vf) {
-        diferencias.push({ plan: b.id, campo: String(campoBack), backend: vb, frontend: vf });
+    for (const campo of CAMPOS) {
+      if (b[campo] !== f[campo]) {
+        diferencias.push({ plan: b.id, campo, backend: b[campo], frontend: f[campo] });
       }
     }
   }
 
-  for (const f of PLANES) {
+  for (const f of front) {
     if (!back.some((b) => b.id === f.id)) {
       diferencias.push({ plan: f.id, campo: '(el plan entero)', backend: 'falta', frontend: 'existe' });
     }
@@ -73,4 +101,7 @@ function main(): void {
   process.exit(1);
 }
 
-main();
+void main().catch((err) => {
+  console.error('[verificar:planes]', err);
+  process.exit(1);
+});
