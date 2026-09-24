@@ -85,6 +85,17 @@ const envSchema = z.object({
   // Railway y compararla a ojo con el git log.
   RAILWAY_GIT_COMMIT_SHA: z.string().optional().default(''),
   RAILWAY_GIT_COMMIT_MESSAGE: z.string().optional().default(''),
+  // Clave para cifrar en reposo las credenciales de terceros que guardamos
+  // (Bot.metaBusinessToken y Bot.metaRegistrationPin). 64 caracteres
+  // hexadecimales, o sea 32 bytes. Generarla con:
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  //
+  // OPCIONAL a proposito: sin ella todo funciona igual que hasta ahora, con
+  // los valores en texto plano. Al cargarla, lo que se escriba de ahi en
+  // adelante queda cifrado y lo viejo se sigue leyendo sin migrar nada.
+  // Si se pierde, los valores cifrados no se recuperan y cada cliente tiene
+  // que reconectar su WhatsApp: guardarla junto a las demas claves.
+  TOKEN_ENCRYPTION_KEY: z.string().optional().default(''),
   // Monitoreo de errores. OPCIONAL a proposito: sin DSN el sistema funciona
   // exactamente igual, solo que los errores quedan unicamente en los logs.
   SENTRY_DSN: z.string().optional().default(''),

@@ -17,6 +17,7 @@ import { env } from './config/env';
 import { globalLimiter, webhookLimiter } from './middleware/rateLimit';
 import { errorHandler } from './middleware/errorHandler';
 import { reportarError } from './lib/monitoring';
+import { cifradoActivo } from './lib/cifrado';
 import { Sentry, sentryHabilitado } from './instrument';
 
 import authRouter from './routes/auth';
@@ -293,6 +294,7 @@ function resumenIntegraciones(): string {
     `Cloudinary: ${estado(Boolean(env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY))}`,
     `Resend (emails): ${estado(Boolean(env.RESEND_API_KEY))}`,
     `Twilio: ${env.TWILIO_WHATSAPP_ENABLED ? 'activo' : 'apagado'}`,
+    `Cifrado de credenciales: ${cifradoActivo() ? 'activo' : 'apagado (texto plano)'}`,
   ].join(' · ');
 }
 

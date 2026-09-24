@@ -17,6 +17,7 @@ import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { ESTADO_ACTIVO } from './metaAuth';
+import { cifrar } from '../lib/cifrado';
 
 const GRAPH_VERSION = 'v23.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -227,7 +228,9 @@ export async function completarOnboarding(
   const base = {
     metaWabaId: datos.wabaId,
     metaBusinessId: datos.businessId ?? null,
-    metaBusinessToken: businessToken,
+    // Cifrado en reposo si TOKEN_ENCRYPTION_KEY esta cargada. Sin la
+    // variable devuelve el mismo string, o sea el comportamiento de hoy.
+    metaBusinessToken: cifrar(businessToken),
   };
 
   // 2. Webhooks primero.
@@ -264,7 +267,7 @@ export async function completarOnboarding(
       ...base,
       metaPhoneNumberId: datos.phoneNumberId,
       metaDisplayNumber: displayNumber,
-      metaRegistrationPin: pin,
+      metaRegistrationPin: cifrar(pin),
       metaConectadoEn: conectadoEn,
       metaEstado: ESTADO_ACTIVO,
     },

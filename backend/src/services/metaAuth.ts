@@ -10,6 +10,7 @@
  * no leen env.META_WHATSAPP_TOKEN: piden una credencial y la usan.
  */
 import { env } from '../config/env';
+import { descifrar } from '../lib/cifrado';
 
 /**
  * El numero y el token viajan JUNTOS a proposito.
@@ -59,7 +60,12 @@ export function tokenGlobal(): string {
  */
 export function tokenDelBot(bot?: BotConCredencial | null): string {
   if (bot?.metaBusinessToken && bot.metaEstado === ESTADO_ACTIVO) {
-    return bot.metaBusinessToken;
+    // Guardado cifrado si TOKEN_ENCRYPTION_KEY esta cargada; si no, tal cual.
+    // descifrar() distingue los dos casos por el prefijo del valor.
+    const enClaro = descifrar(bot.metaBusinessToken);
+    if (enClaro) return enClaro;
+    // No se pudo abrir: mejor caer al token global que quedarse sin ninguno
+    console.error('[metaAuth] el token del bot no se pudo descifrar, se usa el global');
   }
   return tokenGlobal();
 }
