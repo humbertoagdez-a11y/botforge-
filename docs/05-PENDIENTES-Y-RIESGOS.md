@@ -64,6 +64,13 @@ política de privacidad divulga un tratamiento de datos, no promete un beneficio
 y puede haber usuarios con una carpeta conectada. Revisar si se desmonta la
 integración del todo.
 
+**Nombrar tablas en las migraciones a mano.** El nombre va del `@@map` del
+modelo, no del nombre del modelo: la tabla de `User` es `users`. Una migración
+escrita como `ALTER TABLE "User"` falla, y una migración fallida **bloquea
+todos los deploys siguientes** con P3009 hasta que alguien la marque como
+`rolled-back` a mano. Pasó el 2026-09-24; el backend siguió sirviendo el commit
+anterior, así que no hubo caída, pero el deploy quedó trabado hasta resolverlo.
+
 **Las credenciales de terceros siguen en texto plano.** `Bot.metaBusinessToken`
 y `Bot.metaRegistrationPin` se guardan sin cifrar. El cifrado ya está escrito
 (`lib/cifrado.ts`, AES-256-GCM) y aplicado en los dos puntos donde se escribe y
@@ -89,7 +96,15 @@ los defaults de caché y el build. Atenuante: `next.config.mjs` está vacío, si
 `remotePatterns`, lo que limita una de las variantes. Pendiente desde el
 2026-09-20.
 
-**`xlsx` (SheetJS) no tiene parche y procesa archivos que suben los usuarios.**
+**~~`xlsx` (SheetJS) no tiene parche~~ — resuelto el 2026-09-24.** Se migró a
+`exceljs`, con salida idéntica byte a byte sobre el mismo `.xlsx`. Lo que se
+perdió es la lectura del `.xls` viejo (OLE2), que exceljs no soporta: ahora se
+detecta por los bytes y se rechaza con un mensaje que dice cómo convertirlo,
+que queda en `errorMsg` del documento. El `moderate` que npm le cuelga a
+exceljs no es suyo: viene de `uuid@8.3.2`, el mismo que ya arrastraba `bull`.
+El texto de abajo queda como registro de por qué se decidió así.
+
+**El problema original de `xlsx`, para referencia.**
 Prototype pollution y ReDoS, `fixAvailable: false` desde hace meses porque el
 proyecto dejó de publicar en npm y sólo distribuye desde su propio CDN. Es la
 vulnerabilidad de mayor exposición real del backend: entra por

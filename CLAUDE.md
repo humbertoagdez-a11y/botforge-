@@ -55,7 +55,7 @@ Business.
 - IA: Anthropic Claude API con RAG. `claude-sonnet-5` primario,
   `claude-opus-4-8` de respaldo ante `stop_reason: 'refusal'`
 - Vector DB: Pinecone (dimensión 384, modelo `all-MiniLM-L6-v2`)
-- Procesamiento docs: pdf-parse, mammoth, xlsx
+- Procesamiento docs: pdf-parse, mammoth, exceljs (el `.xls` viejo no se lee)
 - WhatsApp: **Meta Cloud API**. Twilio quedó apagado con kill switch
   (`TWILIO_WHATSAPP_ENABLED`), el código sigue por si hay que volver
 - Pagos: **Pagopar**. Stripe está desmontado, el código quedó
@@ -88,7 +88,10 @@ Business.
 - Variables de entorno siempre desde `process.env`, nunca hardcodeadas
 - Un commit por feature, mensaje descriptivo en español
 - Migraciones: escribirlas a mano en `prisma/migrations/`, `migrate dev` necesita
-  una TTY que no siempre está disponible
+  una TTY que no siempre está disponible. El nombre de la tabla sale del
+  `@@map` del modelo, no del nombre del modelo (`User` vive en `users`). Una
+  migración fallida bloquea **todos** los deploys siguientes con P3009 hasta
+  marcarla `rolled-back` a mano
 - Todos los `@types` van en `dependencies`, no en `devDependencies`: Railway
   instala con `NODE_ENV=production` y omite las dev
 
