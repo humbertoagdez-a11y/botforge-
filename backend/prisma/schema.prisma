@@ -500,10 +500,22 @@ model Chunk {
 }
 
 model Conversation {
-  id        String   @id @default(uuid())
+  id        String @id @default(uuid())
   botId     String
   channelId String
-  channel   String   @default("web")
+  channel   String @default("web")
+
+  /// Anuncio Click-to-WhatsApp que origino la conversacion, cuando vino de uno.
+  /// Meta manda el objeto "referral" SOLO en el primer mensaje de la
+  /// conversacion: si no se guarda ahi, se pierde para siempre.
+  adSourceId   String?
+  adSourceType String?
+  adSourceUrl  String?
+  adHeadline   String?
+  adBody       String?
+  /// Click id del anuncio. Es la clave con la que Meta reconcilia conversiones.
+  ctwaClid     String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -511,6 +523,7 @@ model Conversation {
   messages Message[]
 
   @@unique([botId, channelId])
+  @@index([adSourceId])
   @@map("conversations")
 }
 

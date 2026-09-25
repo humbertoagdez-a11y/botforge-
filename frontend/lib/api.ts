@@ -92,6 +92,16 @@ export interface ConversationSummary {
   bot: { name: string };
   messages: { content: string; role: 'USER' | 'ASSISTANT'; createdAt: string }[];
   _count: { messages: number };
+  /**
+   * Anuncio Click-to-WhatsApp que trajo esta conversacion. null cuando el
+   * cliente escribio por su cuenta.
+   */
+  adSourceId: string | null;
+  adSourceType: string | null;
+  adSourceUrl: string | null;
+  adHeadline: string | null;
+  adBody: string | null;
+  ctwaClid: string | null;
 }
 
 export interface ConversationDetail {
@@ -102,6 +112,16 @@ export interface ConversationDetail {
   createdAt: string;
   updatedAt: string;
   bot: { name: string };
+  /**
+   * Anuncio Click-to-WhatsApp que trajo esta conversacion. null cuando el
+   * cliente escribio por su cuenta.
+   */
+  adSourceId: string | null;
+  adSourceType: string | null;
+  adSourceUrl: string | null;
+  adHeadline: string | null;
+  adBody: string | null;
+  ctwaClid: string | null;
   messages: {
     id: string;
     role: 'USER' | 'ASSISTANT';

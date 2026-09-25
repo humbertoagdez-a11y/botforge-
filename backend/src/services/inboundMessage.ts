@@ -204,6 +204,22 @@ async function handleNpsReply(
   return null;
 }
 
+/**
+ * Anuncio Click-to-WhatsApp del que salio la conversacion.
+ *
+ * Meta lo manda solo en el primer mensaje, asi que si no se guarda ahi se
+ * pierde. Sin esto, pautar es tirar plata a ciegas: llegan conversaciones y no
+ * hay forma de saber cual anuncio las trajo.
+ */
+export interface AnuncioDeOrigen {
+  sourceId: string | null;
+  sourceType: string | null;
+  sourceUrl: string | null;
+  headline: string | null;
+  body: string | null;
+  ctwaClid: string | null;
+}
+
 /** Lo que hay que saber de una nota de voz, cuando el mensaje vino como audio. */
 export interface NotaDeVoz {
   /** true si el cliente la grabo; false si adjunto un archivo de audio */
@@ -224,6 +240,8 @@ export interface InboundParams {
   imageContext?: string;
   /** Presente solo cuando el mensaje entro como audio */
   audio?: NotaDeVoz;
+  /** Presente solo en el PRIMER mensaje de una conversacion que vino de un anuncio */
+  anuncio?: AnuncioDeOrigen;
 }
 
 /**
@@ -231,7 +249,7 @@ export interface InboundParams {
  * Persiste los mensajes y actualiza el contador del plan.
  */
 export async function processInboundMessage(params: InboundParams): Promise<InboundResult> {
-  const { bot, clientNumber, channelId, text, imageContext, audio } = params;
+  const { bot, clientNumber, channelId, text, imageContext, audio, anuncio } = params;
 
   // La encuesta se atiende antes que nada: no pasa por el agente, no gasta
   // tokens y no cuenta contra el cupo mensual del dueño
@@ -277,13 +295,40 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
     throw limitErr;
   }
 
+  // El anuncio de origen solo viaja en el primer mensaje, asi que se escribe
+  // al crear la conversacion. Si el cliente vuelve a escribir meses despues por
+  // otro anuncio, la conversacion ya existe y se actualiza: vale el ultimo
+  // anuncio que lo trajo de vuelta, que es el que esta pagando por ese contacto.
+  const datosDelAnuncio = anuncio
+    ? {
+        adSourceId: anuncio.sourceId,
+        adSourceType: anuncio.sourceType,
+        adSourceUrl: anuncio.sourceUrl,
+        adHeadline: anuncio.headline,
+        adBody: anuncio.body,
+        ctwaClid: anuncio.ctwaClid,
+      }
+    : {};
+
   let conversation = await prisma.conversation.findUnique({
     where: { botId_channelId: { botId: bot.id, channelId } },
   });
   if (!conversation) {
     conversation = await prisma.conversation.create({
-      data: { id: uuidv4(), botId: bot.id, channelId, channel: 'whatsapp' },
+      data: { id: uuidv4(), botId: bot.id, channelId, channel: 'whatsapp', ...datosDelAnuncio },
     });
+    if (anuncio) {
+      console.log(
+        `[anuncio] conversacion ${conversation.id} llego del anuncio ` +
+          `${anuncio.sourceId ?? 'sin id'} — "${anuncio.headline ?? 'sin titular'}"`,
+      );
+    }
+  } else if (anuncio) {
+    conversation = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: datosDelAnuncio,
+    });
+    console.log(`[anuncio] conversacion ${conversation.id} vuelve por el anuncio ${anuncio.sourceId ?? 'sin id'}`);
   }
 
   const recentMsgs = await prisma.message.findMany({

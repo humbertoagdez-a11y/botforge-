@@ -65,10 +65,29 @@ router.get('/webhook', (req: Request, res: Response) => {
 
 // ─── Tipos del payload entrante ───────────────────────────────────────────────
 
+/**
+ * Anuncio Click-to-WhatsApp que origino la conversacion.
+ *
+ * Meta lo manda SOLO en el primer mensaje: del segundo en adelante no viene
+ * mas. Por eso se guarda apenas llega, aunque el mensaje despues falle por
+ * cualquier otro motivo.
+ *
+ * Campos segun la referencia de webhooks de Meta (messages > referral).
+ */
+interface MetaReferral {
+  source_id?: string;
+  source_type?: string;
+  source_url?: string;
+  headline?: string;
+  body?: string;
+  ctwa_clid?: string;
+}
+
 interface MetaMessage {
   from?: string;
   id?: string;
   type?: string;
+  referral?: MetaReferral;
   text?: { body?: string };
   /**
    * `voice` es lo que separa una nota de voz grabada con el boton del microfono
@@ -291,6 +310,16 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
     text,
     imageContext: imageContext || undefined,
     audio: audio ? { esNota: audio.esNota, segundos: audio.segundos } : undefined,
+    anuncio: msg.referral
+      ? {
+          sourceId: msg.referral.source_id ?? null,
+          sourceType: msg.referral.source_type ?? null,
+          sourceUrl: msg.referral.source_url ?? null,
+          headline: msg.referral.headline ?? null,
+          body: msg.referral.body ?? null,
+          ctwaClid: msg.referral.ctwa_clid ?? null,
+        }
+      : undefined,
   });
 
   // La credencial del bot, no la global: el cliente espera la respuesta desde

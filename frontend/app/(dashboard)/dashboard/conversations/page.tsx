@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, MessageSquare, Mic, Smartphone } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, Megaphone, MessageSquare, Mic, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +65,9 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
             </div>
             {detail?.bot.name ?? 'Conversación'}
             {detail && <ChannelBadge channel={detail.channel} />}
+            {detail && (
+              <EtiquetaAnuncio headline={detail.adHeadline} sourceId={detail.adSourceId} />
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -130,6 +133,35 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * De que anuncio vino la conversacion.
+ *
+ * Se muestra porque es la unica forma de saber que trae cada anuncio: sin
+ * esto, pautar es mirar un numero de conversaciones sin saber cual campaña
+ * las genero.
+ */
+function EtiquetaAnuncio({
+  headline,
+  sourceId,
+  compacta = false,
+}: {
+  headline: string | null;
+  sourceId: string | null;
+  compacta?: boolean;
+}) {
+  if (!sourceId && !headline) return null;
+  const texto = headline?.trim() || 'Anuncio ' + sourceId;
+  return (
+    <span
+      className={'inline-flex max-w-full items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 font-medium text-cyan-300 ' + (compacta ? 'text-[10px]' : 'text-xs')}
+      title={sourceId ? 'Anuncio ' + sourceId : undefined}
+    >
+      <Megaphone className={compacta ? 'h-2.5 w-2.5 shrink-0' : 'h-3 w-3 shrink-0'} />
+      <span className="truncate">{texto}</span>
+    </span>
   );
 }
 
@@ -213,6 +245,7 @@ export default function ConversationsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-sm">{conv.bot.name}</span>
+                        <EtiquetaAnuncio headline={conv.adHeadline} sourceId={conv.adSourceId} compacta />
                         <div className="flex w-full items-center gap-2 md:contents">
                           <ChannelBadge channel={conv.channel} />
                           <span className="text-xs text-muted-foreground md:ml-auto">
