@@ -380,6 +380,9 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
     message: mensajeParaElAgente,
     clientId: clientNumber,
     channel: 'whatsapp',
+    // Hace falta para el aviso de lead: sin esto no se puede evitar el
+    // duplicado ni dar el link directo a la conversacion
+    conversationId: conversation.id,
   });
 
   const mensaje = await prisma.message.create({

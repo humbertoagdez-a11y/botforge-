@@ -87,6 +87,7 @@ router.post(
         message,
         clientId: `widget web (${conversation.id})`,
         channel: 'widget',
+        conversationId: conversation.id,
         stream: {
           onDelta: (text) => send({ type: 'delta', text }),
           onDiscard: () => send({ type: 'discard' }),

@@ -516,6 +516,11 @@ model Conversation {
   /// Click id del anuncio. Es la clave con la que Meta reconcilia conversiones.
   ctwaClid     String?
 
+  /// Cuando se le aviso al dueño que esta conversacion es un lead. Un solo
+  /// aviso por conversacion: el modelo puede marcarla varias veces y diez
+  /// emails por la misma persona hacen que el dueño deje de abrirlos.
+  leadAvisadoEn DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

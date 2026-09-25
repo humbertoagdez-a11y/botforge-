@@ -1,0 +1,12 @@
+-- Un solo aviso de lead por conversacion.
+--
+-- El modelo puede llamar a marcar_lead en varios mensajes seguidos: el cliente
+-- sigue mostrando interes y el bot sigue viendolo como lead. Diez emails por la
+-- misma persona hacen que el dueño deje de abrirlos, que es lo contrario de lo
+-- que buscamos.
+--
+-- La marca vive en la base y no en memoria para que sobreviva a un reinicio del
+-- proceso, que en Railway pasa en cada deploy.
+--
+-- La tabla es "conversations", del @@map del modelo Conversation.
+ALTER TABLE "conversations" ADD COLUMN "leadAvisadoEn" TIMESTAMP(3);

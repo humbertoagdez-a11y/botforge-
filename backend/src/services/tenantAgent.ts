@@ -107,6 +107,118 @@ Tenés estas imágenes cargadas. Cuando el cliente pida ver algo que coincida co
 ${lista}`;
 }
 
+/**
+ * Avisa al dueño que llego un cliente potencial con intencion real.
+ *
+ * UN solo aviso por conversacion. El modelo puede llamar a la herramienta en
+ * varios mensajes seguidos —el cliente sigue mostrando interes y el bot sigue
+ * viendolo como lead— y diez emails por la misma persona hacen que el dueño
+ * deje de abrirlos, que es justo lo contrario de lo que buscamos. La marca vive
+ * en la conversacion, no en memoria, asi sobrevive a un reinicio.
+ *
+ * El aviso va al email de la cuenta del dueño del bot. No usa notificationConfig
+ * como derivar_a_humano porque eso hay que configurarlo y un lead perdido por
+ * falta de configuracion es plata perdida: esto tiene que funcionar el dia uno.
+ *
+ * Nunca lanza: un fallo de email no puede tumbar la respuesta al cliente.
+ */
+async function avisarLead(
+  context: TenantAgentContext,
+  datos: { resumen: string; nombre: string; rubro: string },
+): Promise<Record<string, unknown>> {
+  const { conversationId } = context;
+
+  // Sin conversacion no se puede evitar el duplicado ni dar el link. Pasa en el
+  // Chat de prueba del panel, donde el dueño esta probando su propio bot: ahi
+  // avisarle de un lead que es el mismo no tiene sentido.
+  if (!conversationId) {
+    return {
+      avisado: false,
+      message: 'Anotado. Seguí la conversación normalmente.',
+    };
+  }
+
+  try {
+    // El where con leadAvisadoEn: null hace que solo gane el primero: si el
+    // modelo la llama dos veces, la segunda no actualiza ninguna fila.
+    const marcado = await prisma.conversation.updateMany({
+      where: { id: conversationId, leadAvisadoEn: null },
+      data: { leadAvisadoEn: new Date() },
+    });
+    if (marcado.count === 0) {
+      return {
+        avisado: true,
+        message: 'Ya avisamos antes en esta conversación. Seguí atendiendo normalmente.',
+      };
+    }
+
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: {
+        adSourceId: true,
+        adHeadline: true,
+        adSourceUrl: true,
+        bot: { select: { name: true, user: { select: { email: true, name: true } } } },
+      },
+    });
+    if (!conv) return { avisado: false };
+
+    const url = `${env.FRONTEND_URL}/dashboard/conversations`;
+    const fila = (k: string, v: string) =>
+      `<tr><td style="padding:6px 14px 6px 0;color:#666;white-space:nowrap;">${escaparHtml(k)}</td>` +
+      `<td style="padding:6px 0;"><strong>${escaparHtml(v)}</strong></td></tr>`;
+
+    await sendEmail(
+      conv.bot.user.email,
+      `Lead: ${datos.nombre || context.clientId}${datos.rubro ? ` — ${datos.rubro}` : ''}`,
+      `<!DOCTYPE html>
+<html lang="es">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
+    <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
+      <p style="font-size:20px;font-weight:bold;color:#7C3AED;margin:0 0 6px;">BotForge</p>
+      <p style="background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;font-size:14px;font-weight:bold;border-radius:8px;padding:10px 14px;margin:0 0 20px;">
+        Alguien con intención real le escribió a ${escaparHtml(conv.bot.name)}.
+      </p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;margin:0 0 20px;">
+        ${datos.nombre ? fila('Nombre', datos.nombre) : ''}
+        ${fila('Contacto', context.clientId)}
+        ${datos.rubro ? fila('Rubro', datos.rubro) : ''}
+        ${conv.adSourceId ? fila('Vino del anuncio', conv.adHeadline || conv.adSourceId) : ''}
+      </table>
+      <p style="font-size:13px;font-weight:bold;color:#666666;margin:0 0 6px;">QUÉ NECESITA</p>
+      <div style="border-left:3px solid #DDD6FE;background:#FAF9FF;padding:12px 16px;margin:0 0 24px;font-size:14px;line-height:1.6;color:#333333;white-space:pre-wrap;">${escaparHtml(datos.resumen)}</div>
+      <a href="${url}"
+         style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:0 0 24px;">
+        Ver la conversación
+      </a>
+      <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
+      <p style="font-size:12px;color:#888888;margin:0;">
+        Te avisamos una sola vez por conversación. Si la persona sigue escribiendo, lo vas a ver en el panel.
+      </p>
+    </div>
+  </body>
+</html>`,
+    );
+
+    console.log(
+      `[lead] bot ${context.botId} — ${context.clientId}` +
+        `${datos.rubro ? ` (${datos.rubro})` : ''}` +
+        `${conv.adSourceId ? ` · anuncio ${conv.adSourceId}` : ''}`,
+    );
+
+    return {
+      avisado: true,
+      message:
+        'Listo, ya le avisamos al equipo. Decile a la persona que alguien se va a contactar, ' +
+        'y seguí respondiendo lo que te pregunte mientras tanto.',
+    };
+  } catch (err) {
+    reportarError('tenant-lead', err, { botId: context.botId });
+    // El cliente no tiene por que enterarse de que fallo un email
+    return { avisado: false, message: 'Seguí la conversación normalmente.' };
+  }
+}
+
 /** Parte cacheable: todo lo que no depende del mensaje puntual */
 export function buildTenantStablePrompt(
   botName: string,
@@ -197,6 +309,27 @@ export const TENANT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'marcar_lead',
+    description:
+      'Avisale al dueño del negocio que esta persona es un cliente potencial con intención real. ' +
+      'Usala cuando pida precio para SU negocio, diga que quiere empezar o contratar, pida que lo ' +
+      'llamen, o deje su nombre, su teléfono o el rubro de su negocio. ' +
+      'NO la uses cuando solo pregunta por curiosidad, pide una definición, o todavía está mirando: ' +
+      'avisar por cada consulta hace que el dueño deje de mirar los avisos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        resumen: {
+          type: 'string',
+          description: 'Qué necesita esta persona y en qué quedaron, en dos o tres líneas',
+        },
+        nombre: { type: 'string', description: 'Nombre, si lo dio' },
+        rubro: { type: 'string', description: 'Rubro o tipo de negocio, si se sabe' },
+      },
+      required: ['resumen'],
+    },
+  },
+  {
     name: 'derivar_a_humano',
     description:
       'Avisa que un agente humano va a tomar la conversación. Usá esto cuando el cliente lo pida explícitamente, cuando la situación sea un reclamo serio, o cuando no puedas resolver lo que piden.',
@@ -232,10 +365,20 @@ export function buildTenantTools(opts: {
   tieneImagenes: boolean;
   driveActivo: boolean;
 }): Anthropic.Tool[] {
-  const tools = [TENANT_TOOLS[0]]; // buscar_en_documentos, siempre
-  if (opts.driveActivo) tools.push(TENANT_TOOLS[1]);
+  // Por nombre y no por posicion: agregar una herramienta en el medio del
+  // array corria los indices y cambiaba en silencio que ve cada bot.
+  const porNombre = (n: string): Anthropic.Tool => {
+    const t = TENANT_TOOLS.find((x) => x.name === n);
+    if (!t) throw new Error(`Herramienta desconocida: ${n}`);
+    return t;
+  };
+
+  const tools = [porNombre('buscar_en_documentos')]; // siempre
+  if (opts.driveActivo) tools.push(porNombre('buscar_archivos_drive'));
   if (opts.tieneImagenes) tools.push(TOOL_ENVIAR_IMAGEN);
-  tools.push(TENANT_TOOLS[2]); // derivar_a_humano, siempre al final
+  // Las dos que cierran la conversacion hacia una persona van siempre, al final
+  tools.push(porNombre('marcar_lead'));
+  tools.push(porNombre('derivar_a_humano'));
 
   // El cache_control va en la ÚLTIMA herramienta: marca el corte del bloque
   // entero de definiciones (Anthropic procesa tools → system → messages)
@@ -255,6 +398,11 @@ export interface TenantAgentContext {
   clientId: string;
   /** Canal por el que llegó el mensaje */
   channel: 'whatsapp' | 'web' | 'widget';
+  /**
+   * Conversación en curso. Hace falta para el link directo del aviso de lead y
+   * para no avisar dos veces de la misma persona.
+   */
+  conversationId?: string;
   /** Salida lateral: imagen lista para enviarle al cliente. El binario nunca
       viaja en el tool_result (reventaría el contexto del modelo); el canal la
       manda con su propio sendPendingImage. */
@@ -279,6 +427,7 @@ const toolSchemas = {
   buscar_en_documentos: { query: 'string' },
   buscar_archivos_drive: { query: 'string' },
   enviar_imagen: { imageId: 'string' },
+  marcar_lead: { resumen: 'string' },
   derivar_a_humano: { motivo: 'string' },
 } as const;
 
@@ -288,6 +437,12 @@ function readStringField(input: unknown, field: string): string {
     throw new Error(`Parámetro '${field}' inválido`);
   }
   return value.trim().slice(0, 500);
+}
+
+/** Igual que readStringField pero el campo puede no venir: devuelve ''. */
+function readOptionalStringField(input: unknown, field: string): string {
+  const value = (input as Record<string, unknown> | null)?.[field];
+  return typeof value === 'string' ? value.trim().slice(0, 200) : '';
 }
 
 export async function executeTenantTool(
@@ -374,6 +529,13 @@ export async function executeTenantTool(
         nombre: imagen.name,
         message: `La imagen "${imagen.name}" se envía junto con tu respuesta. No incluyas ningún link ni describas la imagen: el cliente la va a ver.`,
       };
+    }
+
+    case 'marcar_lead': {
+      const resumen = readStringField(input, 'resumen');
+      const nombre = readOptionalStringField(input, 'nombre');
+      const rubro = readOptionalStringField(input, 'rubro');
+      return await avisarLead(context, { resumen, nombre, rubro });
     }
 
     case 'derivar_a_humano': {
@@ -630,6 +792,9 @@ export interface TenantTurnParams {
   /** Numero de WhatsApp o etiqueta del canal, para las notificaciones */
   clientId: string;
   channel: 'whatsapp' | 'web' | 'widget';
+  /** Conversación en curso, para el aviso de lead. Sin esto el aviso igual sale,
+      pero sin link directo y sin poder evitar el duplicado. */
+  conversationId?: string;
   /** Si viene, la respuesta se entrega token a token */
   stream?: TenantStreamHooks;
 }
@@ -685,6 +850,7 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
     botName: bot.name,
     clientId,
     channel,
+    conversationId: params.conversationId,
   };
 
   const { content, tokensUsed } = await runTenantAgentLoop(
