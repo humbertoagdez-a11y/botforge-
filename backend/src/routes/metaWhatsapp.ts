@@ -3,7 +3,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
 import { reportarError } from '../lib/monitoring';
-import { transcribeAudio, analyzeImage } from '../services/inboundMedia';
+import { analyzeImage } from '../services/inboundMedia';
+import { MAX_SEGUNDOS, transcribirNotaDeVoz, type MotivoFallo } from '../services/transcripcion';
 import { credencialDeBot, credencialGlobal } from '../services/metaAuth';
 import {
   downloadMedia,
@@ -69,7 +70,11 @@ interface MetaMessage {
   id?: string;
   type?: string;
   text?: { body?: string };
-  audio?: { id?: string; mime_type?: string };
+  /**
+   * `voice` es lo que separa una nota de voz grabada con el boton del microfono
+   * de un archivo de audio adjuntado. Los dos llegan como type: 'audio'.
+   */
+  audio?: { id?: string; mime_type?: string; voice?: boolean };
   image?: { id?: string; mime_type?: string; caption?: string };
 }
 
@@ -105,6 +110,16 @@ function alreadyProcessed(messageId: string): boolean {
 
 // ─── Extraccion del contenido segun el tipo ───────────────────────────────────
 
+/** Lo que se pudo sacar de un mensaje entrante. */
+interface ContenidoEntrante {
+  text: string;
+  imageContext: string;
+  /** El tipo de mensaje no se sabe procesar (sticker, ubicacion, contacto...) */
+  unsupported: boolean;
+  /** Presente solo si el mensaje era un audio */
+  audio?: { esNota: boolean; segundos: number | null; fallo: MotivoFallo | null };
+}
+
 /**
  * Devuelve el texto del cliente y, si mando una imagen, su descripcion segun
  * Vision. `unsupported` marca los tipos que no sabemos procesar.
@@ -114,24 +129,37 @@ function alreadyProcessed(messageId: string): boolean {
  * token de ESE bot. Por eso el bot se resuelve antes de llamar aca: con un
  * token por cliente, el global no tiene acceso al media de una WABA ajena.
  */
-async function extractContent(
-  msg: MetaMessage,
-  token: string,
-): Promise<{ text: string; imageContext: string; unsupported: boolean }> {
+async function extractContent(msg: MetaMessage, token: string): Promise<ContenidoEntrante> {
   switch (msg.type) {
     case 'text':
       return { text: (msg.text?.body ?? '').trim(), imageContext: '', unsupported: false };
 
     case 'audio': {
       const mediaId = msg.audio?.id;
+      const esNota = msg.audio?.voice === true;
       if (!mediaId) return { text: '', imageContext: '', unsupported: true };
+
       try {
         const { buffer, mimeType } = await downloadMedia(mediaId, token);
-        const transcript = await transcribeAudio(buffer, msg.audio?.mime_type ?? mimeType);
-        return { text: transcript.trim(), imageContext: '', unsupported: false };
+        const r = await transcribirNotaDeVoz(
+          Buffer.from(buffer),
+          msg.audio?.mime_type ?? mimeType,
+        );
+        return {
+          text: r.texto,
+          imageContext: '',
+          unsupported: false,
+          audio: { esNota, segundos: r.segundos, fallo: r.fallo },
+        };
       } catch (err) {
+        // Fallo al BAJAR el media: ni se llego a intentar transcribir
         console.warn('[meta] Error bajando audio:', err);
-        return { text: '', imageContext: '', unsupported: false };
+        return {
+          text: '',
+          imageContext: '',
+          unsupported: false,
+          audio: { esNota, segundos: null, fallo: 'error-proveedor' },
+        };
       }
     }
 
@@ -155,6 +183,29 @@ async function extractContent(
 }
 
 // ─── Procesamiento de un mensaje ──────────────────────────────────────────────
+
+/**
+ * Que decirle al cliente cuando su audio no se pudo convertir en texto.
+ *
+ * Cada motivo pide algo distinto: si el audio era largo, cortarlo sirve; si no
+ * se entendio, no sirve y hay que pedirle que escriba. Un solo mensaje
+ * generico para los dos hace que el cliente reintente lo que no va a andar.
+ */
+function respuestaAFalloDeAudio(motivo: MotivoFallo): string {
+  const minutos = Math.round(MAX_SEGUNDOS / 60);
+  switch (motivo) {
+    case 'demasiado-largo':
+      return (
+        `Ese audio es un poco largo para mí — puedo escuchar hasta ${minutos} minutos. ` +
+        '¿Me lo mandás más cortito, o me lo escribís?'
+      );
+    case 'sin-proveedor':
+    case 'vacia':
+    case 'error-proveedor':
+    default:
+      return 'No pude escuchar bien el audio, ¿me lo podés escribir?';
+  }
+}
 
 async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<void> {
   const fromDigits = msg.from;
@@ -185,10 +236,19 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
   // la funcion nunca lanza, asi que no puede frenar el procesamiento.
   if (msg.id) await markAsReadAndTyping(credEntrante, msg.id);
 
-  const { text, imageContext, unsupported } = await extractContent(msg, credEntrante.token);
+  const { text, imageContext, unsupported, audio } = await extractContent(msg, credEntrante.token);
 
   if (unsupported) {
     await sendTextMessage(credEntrante, clientNumber, 'Por ahora puedo leer texto, audios e imágenes. ¿Me lo escribís?');
+    return;
+  }
+
+  // Un audio que no se pudo transcribir tiene su propia respuesta, distinta de
+  // la de tipo no soportado: el cliente SI mando algo que sabemos leer, lo que
+  // fallo fue escucharlo. Decirle "solo leo texto, audios e imagenes" cuando
+  // acaba de mandar un audio es confuso.
+  if (audio?.fallo) {
+    await sendTextMessage(credEntrante, clientNumber, respuestaAFalloDeAudio(audio.fallo));
     return;
   }
 
@@ -230,6 +290,7 @@ async function processMessage(msg: MetaMessage, phoneNumberId: string): Promise<
     channelId,
     text,
     imageContext: imageContext || undefined,
+    audio: audio ? { esNota: audio.esNota, segundos: audio.segundos } : undefined,
   });
 
   // La credencial del bot, no la global: el cliente espera la respuesta desde

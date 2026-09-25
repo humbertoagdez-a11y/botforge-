@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, MessageSquare, Smartphone } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, MessageSquare, Mic, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -96,6 +96,17 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
                             : 'rounded-bl-md bg-muted'
                       }`}
                     >
+                      {/* El dueño tiene que saber que esto no lo escribio el
+                          cliente: lo dicto, y la transcripcion puede traer una
+                          palabra cambiada. Sin la marca, una transcripcion rara
+                          se lee como un cliente que escribe raro. */}
+                      {msg.esNotaDeVoz && (
+                        <p className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-primary-foreground/70">
+                          <Mic className="h-3 w-3 shrink-0" />
+                          <span>Nota de voz{msg.audioSegundos ? ` · ${duracionTexto(msg.audioSegundos)}` : ''}</span>
+                          <span className="text-primary-foreground/50">· transcripción</span>
+                        </p>
+                      )}
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
                       {noEntregado && (
                         <p className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-400">
@@ -120,6 +131,18 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Duracion de una nota de voz como la muestra WhatsApp: 0:45, 1:20.
+ *
+ * Importa mostrarla porque es lo que explica una transcripcion pobre — ocho
+ * segundos entrecortados no se leen igual que noventa bien grabados.
+ */
+function duracionTexto(segundos: number): string {
+  const m = Math.floor(segundos / 60);
+  const s = Math.round(segundos % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 export default function ConversationsPage() {

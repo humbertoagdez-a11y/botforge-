@@ -108,6 +108,10 @@ export interface ConversationDetail {
     content: string;
     /** false si el envio al cliente fallo despues de reintentar */
     entregado: boolean;
+    /** true si el cliente dicto esto en una nota de voz en vez de escribirlo */
+    esNotaDeVoz: boolean;
+    /** Duracion del audio en segundos, cuando fue una nota de voz */
+    audioSegundos: number | null;
     createdAt: string;
   }[];
 }

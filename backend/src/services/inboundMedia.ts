@@ -4,36 +4,19 @@
  * de bajarlos como corresponda (Twilio con Basic auth, Meta con la Graph API).
  */
 import { env } from '../config/env';
+import { transcribirNotaDeVoz } from './transcripcion';
 
 /**
- * Transcribe un audio con Deepgram. Devuelve '' si Deepgram no esta
- * configurado o si falla: el mensaje sigue su curso sin transcripcion.
+ * Transcribe un audio. Lo usa el webhook de Twilio, que esta apagado con kill
+ * switch pero se mantiene funcionando.
+ *
+ * Delega en services/transcripcion.ts para no tener dos implementaciones de lo
+ * mismo: de paso Twilio hereda el timeout y el respaldo con Groq. Devuelve ''
+ * si no se pudo, que es el contrato que ese webhook ya esperaba.
  */
 export async function transcribeAudio(audio: ArrayBuffer, mimeType: string): Promise<string> {
-  if (!env.DEEPGRAM_API_KEY) return '';
-
-  try {
-    const dgRes = await fetch('https://api.deepgram.com/v1/listen?model=nova-3&language=es', {
-      method: 'POST',
-      headers: {
-        Authorization: `Token ${env.DEEPGRAM_API_KEY}`,
-        'Content-Type': mimeType,
-      },
-      body: audio,
-    });
-    const dgData = (await dgRes.json()) as {
-      results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string }> }> };
-    };
-    const transcript = dgData.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
-
-    if (transcript) {
-      console.log('[deepgram] Audio transcripto:', transcript.slice(0, 120));
-    }
-    return transcript;
-  } catch (err) {
-    console.warn('[deepgram] Error transcribiendo audio:', err);
-    return '';
-  }
+  const r = await transcribirNotaDeVoz(Buffer.from(audio), mimeType);
+  return r.texto;
 }
 
 /**

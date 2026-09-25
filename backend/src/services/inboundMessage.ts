@@ -204,6 +204,14 @@ async function handleNpsReply(
   return null;
 }
 
+/** Lo que hay que saber de una nota de voz, cuando el mensaje vino como audio. */
+export interface NotaDeVoz {
+  /** true si el cliente la grabo; false si adjunto un archivo de audio */
+  esNota: boolean;
+  /** Duracion real, o null si no se pudo leer del contenedor */
+  segundos: number | null;
+}
+
 export interface InboundParams {
   bot: Bot;
   /** Numero del cliente en formato +595... (para logs y notificaciones) */
@@ -214,6 +222,8 @@ export interface InboundParams {
   text: string;
   /** Descripcion de la imagen adjunta segun Vision, si la hubo */
   imageContext?: string;
+  /** Presente solo cuando el mensaje entro como audio */
+  audio?: NotaDeVoz;
 }
 
 /**
@@ -221,7 +231,7 @@ export interface InboundParams {
  * Persiste los mensajes y actualiza el contador del plan.
  */
 export async function processInboundMessage(params: InboundParams): Promise<InboundResult> {
-  const { bot, clientNumber, channelId, text, imageContext } = params;
+  const { bot, clientNumber, channelId, text, imageContext, audio } = params;
 
   // La encuesta se atiende antes que nada: no pasa por el agente, no gasta
   // tokens y no cuenta contra el cupo mensual del dueño
@@ -285,8 +295,27 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
   // El contexto de la imagen (si hubo) enriquece el mensaje para el RAG
   const finalMessage = imageContext ? `${imageContext}\n\nMensaje del cliente: ${text}` : text;
 
+  // Al agente se le avisa que el texto salio de un audio.
+  //
+  // Importa porque una transcripcion puede traer una palabra mal y el bot
+  // tiene que poder repreguntar en vez de contestar cualquier cosa con
+  // seguridad. La marca va SOLO al agente: lo que se guarda en la base es la
+  // transcripcion limpia, que es lo que el dueño quiere leer en el panel.
+  const mensajeParaElAgente = audio
+    ? `[El cliente mandó una nota de voz. Esto es la transcripción automática, ` +
+      `puede tener palabras mal. Si algo no se entiende o cambia el sentido de lo ` +
+      `que pide, preguntale amablemente en vez de suponer.]\n\n${finalMessage}`
+    : finalMessage;
+
   await prisma.message.create({
-    data: { id: uuidv4(), conversationId: conversation.id, role: 'USER', content: finalMessage },
+    data: {
+      id: uuidv4(),
+      conversationId: conversation.id,
+      role: 'USER',
+      content: finalMessage,
+      esNotaDeVoz: audio?.esNota ?? false,
+      audioSegundos: audio?.segundos != null ? Math.round(audio.segundos) : null,
+    },
   });
 
   // Notificacion por email si el cliente pide hablar con una persona
@@ -303,7 +332,7 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
   const { content, tokensUsed, pendingImage } = await runTenantTurn({
     bot,
     history,
-    message: finalMessage,
+    message: mensajeParaElAgente,
     clientId: clientNumber,
     channel: 'whatsapp',
   });

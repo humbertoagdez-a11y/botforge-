@@ -525,6 +525,13 @@ model Message {
   /// Default true: los mensajes web y del widget se entregan en la respuesta
   /// HTTP misma, y los historicos se dan por entregados.
   entregado      Boolean     @default(true)
+  /// true cuando el cliente mando una nota de voz y esto es su transcripcion.
+  /// El panel lo muestra con un indicador, para que el dueño sepa que lo que
+  /// lee no lo escribio el cliente sino que lo dicto.
+  esNotaDeVoz    Boolean     @default(false)
+  /// Duracion del audio en segundos. Es lo que explica una transcripcion
+  /// pobre: 8 segundos entrecortados no se leen igual que 90.
+  audioSegundos  Int?
   createdAt      DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

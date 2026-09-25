@@ -67,6 +67,12 @@ const envSchema = z.object({
   TAVILY_API_KEY: z.string().optional().default(''),
   FIRECRAWL_API_KEY: z.string().optional().default(''),
   DEEPGRAM_API_KEY: z.string().optional().default(''),
+  // Respaldo de transcripcion de notas de voz. OPCIONAL: sin esta variable
+  // se usa solo Deepgram, que es lo que ya venia funcionando. Cargarla
+  // agrega una segunda oportunidad cuando Deepgram falla — en la practica,
+  // cuando se agota su credito. El nivel gratuito de Groq se renueva todos
+  // los dias (8 horas de audio) y no pide tarjeta.
+  GROQ_API_KEY: z.string().optional().default(''),
   GOOGLE_VISION_API_KEY: z.string().optional().default(''),
   GOOGLE_CLIENT_ID: z.string().optional().default(''),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
