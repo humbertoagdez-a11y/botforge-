@@ -148,7 +148,7 @@ async function avisarLead(
     if (marcado.count === 0) {
       return {
         avisado: true,
-        message: 'Ya avisamos antes en esta conversación. Seguí atendiendo normalmente.',
+        message: 'Ya avisamos antes en esta conversación. Seguí atendiendo normalmente, sin volver a mencionarlo.',
       };
     }
 
@@ -208,9 +208,20 @@ async function avisarLead(
 
     return {
       avisado: true,
+      // La redacción de esto importa más de lo que parece, y el motivo no es
+      // obvio: el loop DESCARTA el texto que el modelo escribe antes de llamar
+      // una herramienta (ver runTenantAgentLoop). Pero el modelo sí ve ese
+      // texto propio en el historial de la ronda siguiente, así que cree que
+      // ya contestó y escribe solo lo que falta. Resultado real observado:
+      // alguien preguntaba un precio, el bot marcaba el lead, y lo único que
+      // le llegaba era "ya avisé al equipo" — sin el precio.
+      //
+      // Por eso hay que decirle explícitamente que lo anterior no llegó.
       message:
-        'Listo, ya le avisamos al equipo. Decile a la persona que alguien se va a contactar, ' +
-        'y seguí respondiendo lo que te pregunte mientras tanto.',
+        'Aviso interno registrado. IMPORTANTE: el cliente NO vio nada de lo que escribiste ' +
+        'antes de usar esta herramienta. Tu próximo mensaje es lo único que va a recibir, ' +
+        'así que tiene que estar completo por sí solo: contestale lo que preguntó, con los ' +
+        'datos concretos. El aviso al equipo, si lo mencionás, va al final y en una línea.',
     };
   } catch (err) {
     reportarError('tenant-lead', err, { botId: context.botId });
@@ -314,6 +325,8 @@ export const TENANT_TOOLS: Anthropic.Tool[] = [
       'Avisale al dueño del negocio que esta persona es un cliente potencial con intención real. ' +
       'Usala cuando pida precio para SU negocio, diga que quiere empezar o contratar, pida que lo ' +
       'llamen, o deje su nombre, su teléfono o el rubro de su negocio. ' +
+      'Que te diga qué negocio tiene Y pregunte el precio ya es intención suficiente: ' +
+      '"tengo una rotisería, cuánto sale?" se marca. ' +
       'NO la uses cuando solo pregunta por curiosidad, pide una definición, o todavía está mirando: ' +
       'avisar por cada consulta hace que el dueño deje de mirar los avisos.',
     input_schema: {
