@@ -17,9 +17,24 @@ const createBotSchema = z.object({
   language: z.enum(['es', 'en', 'pt']).default('es'),
 });
 
+/**
+ * Celular del dueño para los avisos de pedido.
+ *
+ * Se exige formato internacional porque Meta lo exige: un "0981555444" local
+ * no le llega a nadie, y el aviso fallaria recien al llegar el primer pedido,
+ * que es el peor momento para enterarse. Cadena vacia = borrar el numero.
+ */
+const celularAviso = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{7,14}$/, 'Poné el celular con código de país, por ejemplo +595981123456')
+  .or(z.literal(''));
+
 const updateBotSchema = createBotSchema.partial().extend({
   isActive: z.boolean().optional(),
   npsEnabled: z.boolean().optional(),
+  avisoCelular: celularAviso.optional(),
+  avisoCanal: z.enum(['email', 'whatsapp', 'ambos']).nullable().optional(),
 });
 
 /**
@@ -49,6 +64,8 @@ const CAMPOS_PUBLICOS = {
   metaConectadoEn: true,
   metaEstado: true,
   npsEnabled: true,
+  avisoCelular: true,
+  avisoCanal: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
@@ -127,9 +144,15 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
       }
     }
 
+    // Cadena vacia desde el formulario significa "borra el numero", no
+    // "guarda un numero vacio": con '' cargado, canalesDeAviso lo trataria
+    // como celular presente y el aviso intentaria mandarse a la nada.
+    const data =
+      body.avisoCelular === '' ? { ...body, avisoCelular: null } : body;
+
     const updated = await prisma.bot.update({
       where: { id: req.params.id },
-      data: body,
+      data,
       select: CAMPOS_PUBLICOS,
     });
     res.json({ data: updated, error: null, meta: null });

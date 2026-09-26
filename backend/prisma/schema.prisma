@@ -241,6 +241,15 @@ model Bot {
   /// Explicito y no inferido del token: el cliente puede revocar el acceso
   /// desde Business Manager y nos enteramos recien cuando falla un envio.
   metaEstado          String?
+  /// Celular del dueño (+595...) para recibir los avisos de pedido por
+  /// WhatsApp. Es el numero de quien atiende el negocio, que no tiene por que
+  /// ser el mismo con el que se registro en BotForge.
+  avisoCelular        String?
+  /// 'email' | 'whatsapp' | 'ambos'. En null decide el celular: si hay uno
+  /// cargado el aviso va por WhatsApp, si no por email. No tiene default fijo
+  /// a proposito — cargar el celular YA es elegir WhatsApp, y un default
+  /// 'email' obligaria a elegir dos veces.
+  avisoCanal          String?
   /// Encuesta de satisfaccion al cerrar la conversacion. Apagada por defecto:
   /// nadie empieza a encuestar a sus clientes sin haberlo decidido.
   npsEnabled          Boolean   @default(false)
@@ -550,9 +559,13 @@ model PedidoAviso {
   resumen        String
   nombreCliente  String?
   contacto       String?
-  /// false si el email no salio. El pedido queda igual: el panel es la red de
-  /// contencion cuando falla el correo.
+  /// false si no salio por ningun canal. El pedido queda igual: el panel es la
+  /// red de contencion cuando falla el aviso.
   avisado        Boolean  @default(false)
+  /// Por que canal salio: 'whatsapp', 'email' o 'whatsapp+email'. Null = no
+  /// salio. Sin esto, ante un "no me llego" no se puede saber si se intento
+  /// WhatsApp y cayo a email o si nunca salio nada.
+  canal          String?
   createdAt      DateTime @default(now())
 
   bot          Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)

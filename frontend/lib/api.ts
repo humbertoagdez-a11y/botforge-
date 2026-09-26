@@ -29,6 +29,10 @@ export interface Bot {
   isActive: boolean;
   /** Encuesta de satisfacción al cliente final. Apagada por defecto. */
   npsEnabled?: boolean;
+  /** Celular del dueño para los avisos de pedido, en formato +595... */
+  avisoCelular?: string | null;
+  /** 'email' | 'whatsapp' | 'ambos'. Null = lo decide si hay celular cargado */
+  avisoCanal?: 'email' | 'whatsapp' | 'ambos' | null;
   createdAt: string;
   updatedAt: string;
   _count?: { documents: number; conversations: number };
@@ -629,7 +633,18 @@ export const api = {
     get: (id: string) => request<Bot>(`/api/v1/bots/${id}`),
     create: (data: { name: string; personality?: string; language: string }) =>
       request<Bot>('/api/v1/bots', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: Partial<{ name: string; personality: string; language: string; isActive: boolean; npsEnabled: boolean }>) =>
+    update: (
+      id: string,
+      data: Partial<{
+        name: string;
+        personality: string;
+        language: string;
+        isActive: boolean;
+        npsEnabled: boolean;
+        avisoCelular: string;
+        avisoCanal: 'email' | 'whatsapp' | 'ambos';
+      }>,
+    ) =>
       request<Bot>(`/api/v1/bots/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<{ ok: boolean }>(`/api/v1/bots/${id}`, { method: 'DELETE' }),

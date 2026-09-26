@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, Bot, FileText, IdCard, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { ArrowLeft, BellRing, Bot, FileText, IdCard, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
 // Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -228,6 +228,123 @@ function NpsCard({
             </p>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
+/**
+ * Donde recibe el dueño los avisos cuando un cliente concreta un pedido.
+ *
+ * El canal por defecto lo decide el celular y no un valor guardado: cargar el
+ * celular ya es elegir WhatsApp. Si se pidiera elegir aparte, el resultado
+ * previsible es gente con el celular cargado que igual recibe todo por mail.
+ */
+function AvisosCard({ bot, onUpdate }: { bot: BotType; onUpdate: (b: BotType) => void }) {
+  const [celular, setCelular] = useState(bot.avisoCelular ?? '');
+  const [canal, setCanal] = useState<'email' | 'whatsapp' | 'ambos'>(
+    bot.avisoCanal ?? (bot.avisoCelular ? 'whatsapp' : 'email'),
+  );
+  const [guardando, setGuardando] = useState(false);
+
+  const sinCelular = celular.trim() === '';
+  // Elegir WhatsApp sin numero cargado no avisaria a nadie, asi que el
+  // formulario no deja llegar a ese estado.
+  const canalEfectivo = sinCelular && canal !== 'email' ? 'email' : canal;
+
+  async function guardar() {
+    setGuardando(true);
+    try {
+      const actualizado = await api.bots.update(bot.id, {
+        avisoCelular: celular.trim(),
+        avisoCanal: canalEfectivo,
+      });
+      onUpdate(actualizado);
+      toast.success('Listo, así te vamos a avisar');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'No se pudo guardar');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  const OPCIONES = [
+    { id: 'whatsapp' as const, texto: 'WhatsApp' },
+    { id: 'email' as const, texto: 'Email' },
+    { id: 'ambos' as const, texto: 'Los dos' },
+  ];
+
+  return (
+    <Card className="max-w-xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BellRing className="h-4 w-4 text-primary" />
+          Avisos cuando entra un pedido
+        </CardTitle>
+        <CardDescription className="mt-1">
+          Cuando un cliente confirma un pedido, pide un turno o deja sus datos, te avisamos
+          al toque con qué pidió y cómo contactarlo.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <label htmlFor="aviso-celular" className="mb-1.5 block text-sm font-medium">
+            Tu celular
+          </label>
+          <Input
+            id="aviso-celular"
+            value={celular}
+            onChange={(e) => setCelular(e.target.value)}
+            placeholder="+595981123456"
+            inputMode="tel"
+          />
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Con el código de país. Puede ser distinto del número con el que te registraste.
+          </p>
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-sm font-medium">Dónde te avisamos</p>
+          <div className="flex flex-wrap gap-2">
+            {OPCIONES.map((o) => {
+              const deshabilitada = sinCelular && o.id !== 'email';
+              const elegida = canalEfectivo === o.id;
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  disabled={deshabilitada}
+                  onClick={() => setCanal(o.id)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                    elegida
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-white/15 text-foreground hover:bg-white/5'
+                  }`}
+                >
+                  {o.texto}
+                </button>
+              );
+            })}
+          </div>
+          {sinCelular && (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Cargá tu celular para recibirlos por WhatsApp.
+            </p>
+          )}
+        </div>
+
+        <Button onClick={() => void guardar()} disabled={guardando} size="sm">
+          {guardando ? 'Guardando...' : 'Guardar'}
+        </Button>
+
+        <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
+          <p className="text-xs leading-relaxed text-amber-200/90">
+            Los avisos por WhatsApp salen del número de BotForge y dependen de una plantilla
+            que Meta tiene que aprobar. Hasta que esté aprobada te llegan por email, sin que
+            tengas que hacer nada.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
@@ -515,10 +632,11 @@ export default function BotDetailPage() {
           </Card>
 
           <div className="mt-4">
-            <NpsCard bot={bot} plan={user?.plan ?? 'FREE'} onUpdate={setBot} />
+            <AvisosCard bot={bot} onUpdate={setBot} />
           </div>
 
           <div className="mt-4">
+            <NpsCard bot={bot} plan={user?.plan ?? 'FREE'} onUpdate={setBot} />
           </div>
         </TabsContent>
 

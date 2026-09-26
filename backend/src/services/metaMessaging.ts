@@ -83,8 +83,27 @@ async function describeError(res: Response): Promise<DetalleError> {
  */
 const CODIGOS_CREDENCIAL_MUERTA = new Set([10, 102, 190, 200, 299]);
 
+/**
+ * La plantilla no se puede usar todavia.
+ *
+ * Meta agrupa en 132xxx todo lo que le pasa a una plantilla: que no exista en
+ * ese idioma (132001), que este pausada por mala calidad (132015), deshabilitada
+ * (132016), o que los parametros no cuadren (132000, 132012). Importa
+ * distinguirlo de un fallo de red: ninguno de estos mejora reintentando, y
+ * todos tienen la misma salida sensata, que es avisar por email.
+ *
+ * Se trata el rango entero y no una lista cerrada porque el costo de
+ * equivocarse es asimetrico: un codigo 132xxx nuevo que no contemplemos haria
+ * que el aviso se pierda, mientras que tratar de mas uno raro solo manda un
+ * email que igual queriamos mandar.
+ */
+function esProblemaDePlantilla(codigo: number | null): boolean {
+  return codigo !== null && codigo >= 132000 && codigo < 133000;
+}
+
 export class ErrorEnvioMeta extends Error {
   readonly credencialInvalida: boolean;
+  readonly plantillaNoUsable: boolean;
   readonly codigo: number | null;
 
   constructor(mensaje: string, detalle: DetalleError | null, status: number) {
@@ -96,6 +115,7 @@ export class ErrorEnvioMeta extends Error {
       (detalle?.codigo !== null &&
         detalle?.codigo !== undefined &&
         CODIGOS_CREDENCIAL_MUERTA.has(detalle.codigo));
+    this.plantillaNoUsable = esProblemaDePlantilla(this.codigo);
   }
 }
 
@@ -187,6 +207,53 @@ export async function sendTextMessage(
     to: toMetaNumber(to),
     type: 'text',
     text: { body },
+  });
+}
+
+/**
+ * Meta rechaza un parametro de plantilla con saltos de linea, tabs o mas de
+ * cuatro espacios seguidos (error 132012), y rechaza uno vacio. El resumen de
+ * un pedido lo escribe el modelo y perfectamente puede traer un salto de
+ * linea, asi que sanear no es defensivo de mas: es la diferencia entre que el
+ * aviso salga o no.
+ */
+export function limpiarParametro(valor: string, siVacio: string): string {
+  const limpio = valor.replace(/\s+/g, ' ').trim();
+  return limpio.length > 0 ? limpio : siVacio;
+}
+
+/**
+ * Manda una plantilla aprobada.
+ *
+ * Es la unica forma de escribirle a alguien fuera de la ventana de 24 horas,
+ * que es justo el caso del dueño del negocio: el no le escribio al bot, asi
+ * que nunca hay ventana abierta y un mensaje de texto suelto no llegaria.
+ *
+ * Lanza ErrorEnvioMeta con plantillaNoUsable en true si la plantilla todavia
+ * no esta aprobada, para que el llamador caiga a email.
+ */
+export async function sendTemplateMessage(
+  cred: CredencialMeta,
+  to: string,
+  plantilla: string,
+  idioma: string,
+  parametros: string[],
+): Promise<void> {
+  await postMessage(cred, {
+    to: toMetaNumber(to),
+    type: 'template',
+    template: {
+      name: plantilla,
+      language: { code: idioma },
+      components: parametros.length
+        ? [
+            {
+              type: 'body',
+              parameters: parametros.map((text) => ({ type: 'text', text })),
+            },
+          ]
+        : [],
+    },
   });
 }
 

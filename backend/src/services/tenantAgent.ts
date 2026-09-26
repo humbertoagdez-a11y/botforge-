@@ -5,6 +5,7 @@
  * BotForge controla las reglas de calidad (baseRules); el dueño controla la voz.
  */
 import { randomUUID } from 'crypto';
+import { avisarPorWhatsApp, canalesDeAviso } from './avisoWhatsApp';
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
@@ -199,8 +200,13 @@ const UMBRAL_MISMO_PEDIDO = 0.6;
  * tambien hay que avisarlo. Lo unico que se bloquea es que el modelo repita el
  * mismo pedido en la misma media hora.
  *
- * El pedido se guarda SIEMPRE, aunque el email falle: el panel es la red de
- * contencion. Nunca lanza.
+ * El aviso sale por donde el dueño eligio (ver canalesDeAviso). WhatsApp se
+ * intenta primero y, si la plantilla todavia no esta aprobada o Meta falla,
+ * cae a email aunque el dueño haya elegido solo WhatsApp: un pedido perdido
+ * cuesta mas que un email de mas.
+ *
+ * El pedido se guarda SIEMPRE, aunque no salga ningun aviso: el panel es la
+ * red de contencion. Nunca lanza.
  */
 async function avisarPedido(
   context: TenantAgentContext,
@@ -239,7 +245,17 @@ async function avisarPedido(
 
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { bot: { select: { id: true, name: true, user: { select: { email: true, name: true } } } } },
+      select: {
+        bot: {
+          select: {
+            id: true,
+            name: true,
+            avisoCelular: true,
+            avisoCanal: true,
+            user: { select: { email: true, name: true } },
+          },
+        },
+      },
     });
     if (!conv) return { registrado: false };
 
@@ -257,11 +273,30 @@ async function avisarPedido(
 
     const etiqueta = ETIQUETA_PEDIDO[tipo] ?? 'Pedido';
     const url = `${env.FRONTEND_URL}/dashboard/conversations`;
+    const canales = canalesDeAviso(conv.bot);
+    const salidas: string[] = [];
+
+    if (canales.whatsapp && canales.celular) {
+      const wa = await avisarPorWhatsApp(canales.celular, {
+        tipo,
+        etiqueta,
+        negocio: conv.bot.name,
+        resumen: datos.resumen,
+        nombre: datos.nombre,
+        contacto: datos.contacto || context.clientId,
+      });
+      if (wa.enviado) salidas.push('whatsapp');
+    }
+
+    // El email sale si el dueño lo eligio, o si eligio solo WhatsApp y no
+    // salio. Eso es lo que hace que la feature funcione desde el dia uno,
+    // antes de que Meta apruebe la plantilla.
+    const mandarEmail = canales.email || salidas.length === 0;
     const fila = (k: string, v: string) =>
       `<tr><td style="padding:6px 14px 6px 0;color:#666;white-space:nowrap;">${escaparHtml(k)}</td>` +
       `<td style="padding:6px 0;"><strong>${escaparHtml(v)}</strong></td></tr>`;
 
-    const ok = await sendEmail(
+    const ok = mandarEmail && await sendEmail(
       conv.bot.user.email,
       `${etiqueta}: ${datos.nombre || context.clientId}`,
       `<!DOCTYPE html>
@@ -292,13 +327,18 @@ async function avisarPedido(
 </html>`,
     );
 
-    if (ok) {
-      await prisma.pedidoAviso.update({ where: { id: pedido.id }, data: { avisado: true } });
+    if (ok) salidas.push('email');
+
+    if (salidas.length > 0) {
+      await prisma.pedidoAviso.update({
+        where: { id: pedido.id },
+        data: { avisado: true, canal: salidas.join('+') },
+      });
     }
 
     console.log(
       `[pedido] bot ${context.botId} — ${tipo} de ${context.clientId}` +
-        `${datos.nombre ? ` (${datos.nombre})` : ''} · email=${ok ? 'enviado' : 'no salio'}`,
+        `${datos.nombre ? ` (${datos.nombre})` : ''} · aviso=${salidas.join('+') || 'no salio'}`,
     );
 
     return {
