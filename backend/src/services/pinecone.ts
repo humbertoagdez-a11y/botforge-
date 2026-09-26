@@ -55,3 +55,50 @@ export async function deleteChunksByIds(pineconeIds: string[]): Promise<void> {
     await index.deleteMany(pineconeIds.slice(i, i + batchSize));
   }
 }
+
+/**
+ * Todos los ids que hay en el indice, paginando hasta el final.
+ *
+ * Solo lo usa el script de huerfanos. En el camino normal nunca hace falta
+ * recorrer el indice entero: las consultas van siempre filtradas por botId.
+ */
+export async function listarTodosLosIds(): Promise<string[]> {
+  const index = getClient().index(env.PINECONE_INDEX);
+  const ids: string[] = [];
+  let token: string | undefined;
+
+  do {
+    const pagina = await index.listPaginated(token ? { paginationToken: token } : {});
+    for (const v of pagina.vectors ?? []) {
+      if (v.id) ids.push(v.id);
+    }
+    token = pagina.pagination?.next;
+  } while (token);
+
+  return ids;
+}
+
+/**
+ * La metadata de un grupo de vectores, para saber de que bot era cada uno.
+ *
+ * Se pide de a 100 porque fetch los manda en la URL y con listas largas el
+ * request se pasa de tamaño.
+ */
+export async function traerMetadataDeVectores(
+  ids: string[],
+): Promise<Map<string, { botId?: string; documentId?: string }>> {
+  const index = getClient().index(env.PINECONE_INDEX);
+  const out = new Map<string, { botId?: string; documentId?: string }>();
+
+  for (let i = 0; i < ids.length; i += 100) {
+    const res = await index.fetch(ids.slice(i, i + 100));
+    for (const [id, vec] of Object.entries(res.records ?? {})) {
+      out.set(id, {
+        botId: vec.metadata?.botId as string | undefined,
+        documentId: vec.metadata?.documentId as string | undefined,
+      });
+    }
+  }
+
+  return out;
+}

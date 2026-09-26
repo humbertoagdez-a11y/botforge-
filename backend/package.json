@@ -17,6 +17,7 @@
     "reporte:muestra": "tsx src/scripts/reporteDeMuestra.ts tmp",
     "verificar:planes": "tsx src/scripts/verificarPlanes.ts",
     "probar:pedidos": "tsx src/scripts/probarPedidos.ts",
+    "vectores:huerfanos": "tsx src/scripts/vectoresHuerfanos.ts",
     "instructivo:ventas": "tsx src/scripts/instructivoVentas.ts"
   },
   "dependencies": {

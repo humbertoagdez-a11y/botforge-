@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { checkBotLimit, effectivePlan, LIMITS, PLAN_LIMIT_CODE } from '../middleware/planLimits';
 import { generateInstructivo } from '../services/ai';
+import { limpiarRastroDelBot } from '../services/limpiezaBot';
 
 const router = Router();
 
@@ -164,7 +165,20 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await getOwnedBot(req.params.id, req.user!.userId);
+
+    // Antes de borrar la fila: Postgres se limpia con los onDelete: Cascade,
+    // pero Pinecone y Cloudinary no se enteran de nada. Y tiene que ser ANTES,
+    // porque las filas que dicen QUE borrar afuera se van en la cascada.
+    const limpieza = await limpiarRastroDelBot(req.params.id);
+
     await prisma.bot.delete({ where: { id: req.params.id } });
+
+    console.log(
+      `[bots] borrado ${req.params.id} — ${limpieza.vectores} vectores, ` +
+        `${limpieza.documentos} documentos y ${limpieza.imagenes} imagenes` +
+        `${limpieza.fallas.length ? ` · quedaron huerfanos: ${limpieza.fallas.join(', ')}` : ''}`,
+    );
+
     res.json({ data: { ok: true }, error: null, meta: null });
   } catch (err) {
     next(err);

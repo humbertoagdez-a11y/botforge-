@@ -77,6 +77,7 @@ Business.
 | `npm run reporte:muestra` | PDFs de informe de ejemplo en `backend/tmp/` |
 | `npm run verificar:planes` | Chequear que los planes del frontend y del backend coincidan |
 | `npm run probar:pedidos` | Prueba de punta a punta de `avisar_pedido` con RAG real. Crea un bot descartable y lo borra. Cuesta plata: se corre a mano |
+| `npm run vectores:huerfanos` | Listar vectores de Pinecone sin dueño. Solo informa; con `-- --borrar` los borra |
 | `curl <backend>/health` | Ver qué commit está desplegado |
 
 ## Reglas de código
