@@ -76,6 +76,7 @@ Business.
 | `docker-compose up -d` | PostgreSQL y Redis locales |
 | `npm run reporte:muestra` | PDFs de informe de ejemplo en `backend/tmp/` |
 | `npm run verificar:planes` | Chequear que los planes del frontend y del backend coincidan |
+| `npm run probar:pedidos` | Prueba de punta a punta de `avisar_pedido` con RAG real. Crea un bot descartable y lo borra. Cuesta plata: se corre a mano |
 | `curl <backend>/health` | Ver qué commit está desplegado |
 
 ## Reglas de código
