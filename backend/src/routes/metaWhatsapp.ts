@@ -367,8 +367,26 @@ async function revisarSiRevocaron(
   await marcarRevocado(bot.id, `envio rechazado con codigo ${err.codigo ?? 'sin codigo'}`);
 }
 
+/**
+ * WABAs de las que ya avisamos en este proceso.
+ *
+ * El id de la WABA solo llega por webhook (entry[].id) y no hay forma de
+ * pedirselo a la API: el System User token puede ENVIAR desde el numero pero
+ * sus granular_scopes vienen sin target_ids, asi que no lista cuentas. Sin
+ * este log, crear o revisar una plantilla obliga a ir a buscar el id a mano a
+ * Business Manager.
+ *
+ * Se loguea una sola vez por WABA para no ensuciar: no es un evento, es un
+ * dato de configuracion que uno quiere poder encontrar.
+ */
+const wabasVistas = new Set<string>();
+
 async function processWebhookBody(body: MetaWebhookBody): Promise<void> {
   for (const entry of body.entry ?? []) {
+    if (entry.id && !wabasVistas.has(entry.id)) {
+      wabasVistas.add(entry.id);
+      console.log(`[meta] WABA que nos manda webhooks: ${entry.id}`);
+    }
     for (const change of entry.changes ?? []) {
       const value = change.value;
       const phoneNumberId = value?.metadata?.phone_number_id;
