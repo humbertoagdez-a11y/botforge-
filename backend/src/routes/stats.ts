@@ -128,9 +128,18 @@ router.get('/conversations', async (req: Request, res: Response, next: NextFunct
     const limit = 20;
     const skip = (page - 1) * limit;
 
+    // ?soloPedidos=1 filtra las conversaciones donde el cliente concreto algo.
+    // Es el filtro que importa: en una lista larga, los pedidos son lo unico
+    // que el dueño tiene que atender si o si.
+    const soloPedidos = req.query.soloPedidos === '1';
+    const where = {
+      bot: { userId: req.user!.userId },
+      ...(soloPedidos ? { pedidos: { some: {} } } : {}),
+    };
+
     const [conversations, total] = await Promise.all([
       prisma.conversation.findMany({
-        where: { bot: { userId: req.user!.userId } },
+        where,
         orderBy: { updatedAt: 'desc' },
         skip,
         take: limit,
@@ -141,10 +150,14 @@ router.get('/conversations', async (req: Request, res: Response, next: NextFunct
             take: 1,
             select: { content: true, role: true, createdAt: true },
           },
+          pedidos: {
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, tipo: true, resumen: true, nombreCliente: true, contacto: true, avisado: true, createdAt: true },
+          },
           _count: { select: { messages: true } },
         },
       }),
-      prisma.conversation.count({ where: { bot: { userId: req.user!.userId } } }),
+      prisma.conversation.count({ where }),
     ]);
 
     res.json({
@@ -164,6 +177,10 @@ router.get('/conversations/:id', async (req: Request, res: Response, next: NextF
       where: { id: req.params.id },
       include: {
         bot: { select: { name: true, userId: true } },
+        pedidos: {
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, tipo: true, resumen: true, nombreCliente: true, contacto: true, avisado: true, createdAt: true },
+        },
         messages: {
           orderBy: { createdAt: 'asc' },
           select: {

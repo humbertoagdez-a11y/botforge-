@@ -4,6 +4,7 @@
  * Personalidad dinámica: la define el dueño en bot.personality (instructivo).
  * BotForge controla las reglas de calidad (baseRules); el dueño controla la voz.
  */
+import { randomUUID } from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
@@ -105,6 +106,218 @@ function bloqueImagenes(imagenes: ImagenDisponible[]): string {
 IMÁGENES QUE PODÉS ENVIAR:
 Tenés estas imágenes cargadas. Cuando el cliente pida ver algo que coincida con una de estas descripciones, mandásela con la herramienta enviar_imagen usando su id. No inventes ids ni prometas imágenes que no estén en esta lista.
 ${lista}`;
+}
+
+/** Como se llama cada tipo de cierre cuando hay que mostrarselo a una persona */
+const ETIQUETA_PEDIDO: Record<string, string> = {
+  pedido: 'Pedido',
+  turno: 'Turno',
+  contacto: 'Dejó sus datos',
+};
+
+/** Ventana para no repetir el MISMO pedido si el modelo llama dos veces */
+const VENTANA_DUPLICADO_MS = 30 * 60 * 1000;
+
+/**
+ * Palabras de relleno que aparecen en cualquier resumen de pedido.
+ *
+ * Sacarlas no es cosmetico: son las que hacen que dos pedidos DISTINTOS del
+ * mismo cliente ("2 milanesas" y despues "un pollo entero") se parezcan, porque
+ * el modelo arranca los dos con "Cliente pide". Lo que distingue un pedido de
+ * otro son los productos, las cantidades y la direccion.
+ */
+const RELLENO_RESUMEN = new Set([
+  'cliente', 'pide', 'pidio', 'quiere', 'para', 'con', 'una', 'uno', 'del',
+  'los', 'las', 'que', 'por', 'sus', 'esta', 'este', 'dejo', 'mando',
+  'solicita', 'pedido', 'turno', 'reserva', 'horario', 'tarde', 'manana',
+]);
+
+/** Las palabras con contenido de un resumen, sin tildes ni puntuacion */
+function palabrasDeResumen(texto: string): Set<string> {
+  return new Set(
+    texto
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .split(/\s+/)
+      .filter((p) => p.length > 2 && !RELLENO_RESUMEN.has(p)),
+  );
+}
+
+/**
+ * Cuanto del resumen mas corto esta contenido en el mas largo, de 0 a 1.
+ *
+ * Comparar el texto exacto no alcanzaba: el modelo redacta el mismo pedido
+ * distinto cada vez. En la prueba escribio "Cliente pide 2 milanesas completas
+ * con delivery a Cerro Cora 1234" y despues "2 milanesas completas para Cerro
+ * Cora 1234", y con igualdad exacta eso mandaba dos emails por un pedido.
+ *
+ * Se usa contencion y no Jaccard porque un resumen suele ser mas verboso que el
+ * otro, y Jaccard castiga esa diferencia de largo: ese par real daba 0.50, o
+ * sea pasaba como pedido nuevo. Medido contra el mas corto da 0.86. Sobre los
+ * pares de prueba la separacion queda amplia: 0.86 a 1.00 el mismo pedido
+ * redactado de otra forma, 0.00 a 0.40 un pedido realmente distinto.
+ */
+function similitud(a: string, b: string): number {
+  const pa = palabrasDeResumen(a);
+  const pb = palabrasDeResumen(b);
+  const chico = pa.size < pb.size ? pa : pb;
+  const grande = pa.size < pb.size ? pb : pa;
+  if (chico.size === 0) return 0;
+  let comunes = 0;
+  for (const p of chico) if (grande.has(p)) comunes++;
+  return comunes / chico.size;
+}
+
+/**
+ * A partir de aca se considera el mismo pedido.
+ *
+ * Cae en el hueco entre los dos grupos de la prueba, no pegado a ninguno.
+ *
+ * Queda un limite conocido: si el cliente AGREGA algo a lo que ya pidio
+ * ("y sumame una gaseosa"), el resumen da 0.86 y el agregado no dispara un
+ * segundo email. Se acepta a proposito, porque el error contrario es el caro:
+ * diez avisos por un pedido hacen que el dueño deje de abrirlos, y ahi se
+ * pierden los que importan. El agregado igual queda en la conversacion, y el
+ * email enlaza justo ahi.
+ */
+const UMBRAL_MISMO_PEDIDO = 0.6;
+
+/**
+ * Avisa al dueño del negocio que un cliente concreto algo: un pedido, un
+ * turno, o sus datos para que lo llamen.
+ *
+ * Es distinto de marcar_lead. marcar_lead es del bot de ventas de BotForge y
+ * avisa que alguien quiere comprar BotForge. Esto avisa que el cliente FINAL
+ * de un negocio cualquiera le compro algo a ESE negocio. Mezclarlas obligaria
+ * a que la descripcion sirva para las dos cosas, y una descripcion que sirve
+ * para todo no le dice al modelo cuando usarla.
+ *
+ * Un aviso por PEDIDO, no por conversacion: en la misma conversacion un
+ * cliente pide hoy y vuelve a pedir la semana que viene, y ese segundo pedido
+ * tambien hay que avisarlo. Lo unico que se bloquea es que el modelo repita el
+ * mismo pedido en la misma media hora.
+ *
+ * El pedido se guarda SIEMPRE, aunque el email falle: el panel es la red de
+ * contencion. Nunca lanza.
+ */
+async function avisarPedido(
+  context: TenantAgentContext,
+  datos: { tipo: string; resumen: string; nombre: string; contacto: string },
+): Promise<Record<string, unknown>> {
+  const { conversationId } = context;
+
+  // Sin conversacion es el Chat de prueba del panel: el dueño esta probando su
+  // propio bot y no tiene sentido mandarle un pedido de si mismo.
+  if (!conversationId) {
+    return {
+      registrado: false,
+      message:
+        'Estás en el Chat de prueba, así que no se avisó a nadie. ' +
+        'Confirmale al cliente igual, como lo harías en una conversación real.',
+    };
+  }
+
+  const tipo = ['pedido', 'turno', 'contacto'].includes(datos.tipo) ? datos.tipo : 'pedido';
+
+  try {
+    // ¿Es el mismo pedido que ya avisamos recien?
+    const recientes = await prisma.pedidoAviso.findMany({
+      where: {
+        conversationId,
+        createdAt: { gte: new Date(Date.now() - VENTANA_DUPLICADO_MS) },
+      },
+      select: { resumen: true },
+    });
+    if (recientes.some((r) => similitud(r.resumen, datos.resumen) >= UMBRAL_MISMO_PEDIDO)) {
+      return {
+        registrado: true,
+        message: 'Ese pedido ya quedó avisado. Seguí atendiendo normalmente, sin volver a mencionarlo.',
+      };
+    }
+
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { bot: { select: { id: true, name: true, user: { select: { email: true, name: true } } } } },
+    });
+    if (!conv) return { registrado: false };
+
+    const pedido = await prisma.pedidoAviso.create({
+      data: {
+        id: randomUUID(),
+        botId: conv.bot.id,
+        conversationId,
+        tipo,
+        resumen: datos.resumen,
+        nombreCliente: datos.nombre || null,
+        contacto: datos.contacto || null,
+      },
+    });
+
+    const etiqueta = ETIQUETA_PEDIDO[tipo] ?? 'Pedido';
+    const url = `${env.FRONTEND_URL}/dashboard/conversations`;
+    const fila = (k: string, v: string) =>
+      `<tr><td style="padding:6px 14px 6px 0;color:#666;white-space:nowrap;">${escaparHtml(k)}</td>` +
+      `<td style="padding:6px 0;"><strong>${escaparHtml(v)}</strong></td></tr>`;
+
+    const ok = await sendEmail(
+      conv.bot.user.email,
+      `${etiqueta}: ${datos.nombre || context.clientId}`,
+      `<!DOCTYPE html>
+<html lang="es">
+  <body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111111;">
+    <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
+      <p style="font-size:20px;font-weight:bold;color:#7C3AED;margin:0 0 6px;">BotForge</p>
+      <p style="background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;font-size:15px;font-weight:bold;border-radius:8px;padding:12px 14px;margin:0 0 20px;">
+        ${escaparHtml(etiqueta)} nuevo en ${escaparHtml(conv.bot.name)}
+      </p>
+      <p style="font-size:13px;font-weight:bold;color:#666666;margin:0 0 6px;">QUÉ PIDIÓ</p>
+      <div style="border-left:3px solid #A7F3D0;background:#F6FFFB;padding:14px 16px;margin:0 0 20px;font-size:15px;line-height:1.6;color:#222;white-space:pre-wrap;">${escaparHtml(datos.resumen)}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;margin:0 0 20px;">
+        ${datos.nombre ? fila('Cliente', datos.nombre) : ''}
+        ${fila('WhatsApp', context.clientId)}
+        ${datos.contacto ? fila('Dejó', datos.contacto) : ''}
+      </table>
+      <a href="${url}"
+         style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 28px;border-radius:8px;margin:0 0 24px;">
+        Ver la conversación
+      </a>
+      <hr style="border:none;border-top:1px solid #eeeeee;margin:0 0 16px;" />
+      <p style="font-size:12px;color:#888888;margin:0;">
+        Te avisamos una vez por pedido. Si el cliente pide otra cosa más tarde, te llega otro aviso.
+      </p>
+    </div>
+  </body>
+</html>`,
+    );
+
+    if (ok) {
+      await prisma.pedidoAviso.update({ where: { id: pedido.id }, data: { avisado: true } });
+    }
+
+    console.log(
+      `[pedido] bot ${context.botId} — ${tipo} de ${context.clientId}` +
+        `${datos.nombre ? ` (${datos.nombre})` : ''} · email=${ok ? 'enviado' : 'no salio'}`,
+    );
+
+    return {
+      registrado: true,
+      // Mismo motivo que en avisarLead: el loop descarta el texto que el modelo
+      // escribio antes de la herramienta, y el modelo cree que ya lo dijo.
+      message:
+        'Pedido registrado y avisado al negocio. IMPORTANTE: el cliente NO vio nada de lo que ' +
+        'escribiste antes de usar esta herramienta. Tu próximo mensaje es lo único que va a ' +
+        'recibir: confirmale lo que pidió con los datos concretos (qué, cuánto sale, cuándo), ' +
+        'y avisale que el negocio ya lo tiene.',
+    };
+  } catch (err) {
+    reportarError('tenant-pedido', err, { botId: context.botId });
+    return {
+      registrado: false,
+      message: 'Confirmale el pedido al cliente igual y seguí la conversación.',
+    };
+  }
 }
 
 /**
@@ -320,6 +533,39 @@ export const TENANT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'avisar_pedido',
+    description:
+      'Avisale al dueño del negocio que este cliente CONCRETÓ algo. Usala cuando el cliente ' +
+      'confirma un pedido y te dice qué quiere, cuando pide coordinar un turno, una reserva o una ' +
+      'visita, o cuando te deja su nombre y su teléfono para que lo contacten. ' +
+      'La señal es que pasó de preguntar a pedir: "mandame dos", "quiero reservar para el sábado", ' +
+      '"anotame para el viernes a las 10", "llamame al 0981...". ' +
+      'NO la uses cuando solo pregunta un precio, un horario o si tenés algo: eso es una consulta, ' +
+      'y avisar por cada consulta hace que el dueño deje de mirar los avisos. ' +
+      'Tampoco la uses dos veces por el mismo pedido.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tipo: {
+          type: 'string',
+          enum: ['pedido', 'turno', 'contacto'],
+          description:
+            'pedido: quiere comprar o encargar algo concreto. turno: quiere coordinar una cita, ' +
+            'reserva o visita. contacto: dejó sus datos para que lo llamen.',
+        },
+        resumen: {
+          type: 'string',
+          description:
+            'Qué pidió exactamente, con cantidades, productos, día y hora si los dijo. ' +
+            'Escribilo como se lo contarías al dueño por teléfono.',
+        },
+        nombre: { type: 'string', description: 'Nombre del cliente, si lo dio' },
+        contacto: { type: 'string', description: 'Teléfono o dirección que haya dejado, si dio alguno' },
+      },
+      required: ['tipo', 'resumen'],
+    },
+  },
+  {
     name: 'marcar_lead',
     description:
       'Avisale al dueño del negocio que esta persona es un cliente potencial con intención real. ' +
@@ -389,7 +635,8 @@ export function buildTenantTools(opts: {
   const tools = [porNombre('buscar_en_documentos')]; // siempre
   if (opts.driveActivo) tools.push(porNombre('buscar_archivos_drive'));
   if (opts.tieneImagenes) tools.push(TOOL_ENVIAR_IMAGEN);
-  // Las dos que cierran la conversacion hacia una persona van siempre, al final
+  // Las que cierran la conversacion hacia una persona van siempre, al final
+  tools.push(porNombre('avisar_pedido'));
   tools.push(porNombre('marcar_lead'));
   tools.push(porNombre('derivar_a_humano'));
 
@@ -440,6 +687,7 @@ const toolSchemas = {
   buscar_en_documentos: { query: 'string' },
   buscar_archivos_drive: { query: 'string' },
   enviar_imagen: { imageId: 'string' },
+  avisar_pedido: { tipo: 'string', resumen: 'string' },
   marcar_lead: { resumen: 'string' },
   derivar_a_humano: { motivo: 'string' },
 } as const;
@@ -542,6 +790,14 @@ export async function executeTenantTool(
         nombre: imagen.name,
         message: `La imagen "${imagen.name}" se envía junto con tu respuesta. No incluyas ningún link ni describas la imagen: el cliente la va a ver.`,
       };
+    }
+
+    case 'avisar_pedido': {
+      const tipo = readStringField(input, 'tipo');
+      const resumen = readStringField(input, 'resumen');
+      const nombre = readOptionalStringField(input, 'nombre');
+      const contacto = readOptionalStringField(input, 'contacto');
+      return await avisarPedido(context, { tipo, resumen, nombre, contacto });
     }
 
     case 'marcar_lead': {

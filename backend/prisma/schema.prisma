@@ -253,6 +253,7 @@ model Bot {
   conversations       Conversation[]
   whatsappConnections WhatsAppConnection[]
   notificationConfigs NotificationConfig[]
+  pedidoAvisos        PedidoAviso[]
   driveConnection     DriveConnection?
   supportTickets      SupportTicket[]
   npsResponses        NpsResponse[]
@@ -524,12 +525,42 @@ model Conversation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bot      Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  bot      Bot           @relation(fields: [botId], references: [id], onDelete: Cascade)
   messages Message[]
+  pedidos  PedidoAviso[]
 
   @@unique([botId, channelId])
   @@index([adSourceId])
   @@map("conversations")
+}
+
+/// Pedido concreto que dejo un cliente final: un pedido de comida, un turno,
+/// una reserva, o sus datos para que lo contacten.
+///
+/// Es una tabla y no una marca en la conversacion porque en una misma
+/// conversacion se puede pedir mas de una vez, con dias de diferencia. Con un
+/// booleano el segundo pedido no avisaria — justo la venta que se pierde.
+model PedidoAviso {
+  id             String   @id @default(uuid())
+  botId          String
+  conversationId String
+  /// 'pedido' | 'turno' | 'contacto'. Texto y no enum: si aparece otro tipo de
+  /// cierre no hace falta una migracion para admitirlo.
+  tipo           String
+  resumen        String
+  nombreCliente  String?
+  contacto       String?
+  /// false si el email no salio. El pedido queda igual: el panel es la red de
+  /// contencion cuando falla el correo.
+  avisado        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  bot          Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([botId, createdAt])
+  @@index([conversationId])
+  @@map("pedido_avisos")
 }
 
 model Message {

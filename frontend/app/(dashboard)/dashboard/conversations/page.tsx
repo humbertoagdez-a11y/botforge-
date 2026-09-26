@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, Megaphone, MessageSquare, Mic, Smartphone } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, Megaphone, MessageSquare, Mic, ShoppingBag, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +65,7 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
             </div>
             {detail?.bot.name ?? 'Conversación'}
             {detail && <ChannelBadge channel={detail.channel} />}
+            {detail && <EtiquetaPedido pedidos={detail.pedidos} />}
             {detail && (
               <EtiquetaAnuncio headline={detail.adHeadline} sourceId={detail.adSourceId} />
             )}
@@ -77,6 +78,34 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
           </div>
         ) : detail ? (
           <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+            {/* Lo que pidió, arriba del hilo: es el dato accionable, y buscarlo
+                leyendo veinte mensajes es justo lo que hace que se pierda. */}
+            {detail.pedidos?.map((p) => (
+              <div
+                key={p.id}
+                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3"
+              >
+                <p className="flex flex-wrap items-center gap-2 text-xs font-semibold text-emerald-300">
+                  <ShoppingBag className="h-3.5 w-3.5 shrink-0" />
+                  {TIPO_PEDIDO[p.tipo] ?? 'Pedido'}
+                  <span className="font-normal text-emerald-400/70">{formatTime(p.createdAt)}</span>
+                  {!p.avisado && (
+                    <span className="font-normal text-amber-400">· el email no salió</span>
+                  )}
+                </p>
+                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                  {p.resumen}
+                </p>
+                {(p.nombreCliente || p.contacto) && (
+                  // text-muted-foreground sobre el verde de la tarjeta da 4.47 de
+                  // contraste, apenas abajo del minimo legible, y justo en el
+                  // renglon del nombre y el telefono, que es el dato accionable.
+                  <p className="mt-1.5 text-xs text-emerald-100/80">
+                    {[p.nombreCliente, p.contacto].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+            ))}
             {detail.messages.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">
                 Esta conversación no tiene mensajes
@@ -136,6 +165,43 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
   );
 }
 
+const TIPO_PEDIDO: Record<string, string> = {
+  pedido: 'Pedido',
+  turno: 'Turno',
+  contacto: 'Dejó sus datos',
+};
+
+/**
+ * Marca que en esta conversación el cliente concretó algo.
+ *
+ * Va en verde y no en violeta como el resto: en una lista larga, lo que el
+ * dueño tiene que atender sí o sí son los pedidos, y tiene que saltarle a la
+ * vista sin leer.
+ */
+function EtiquetaPedido({
+  pedidos,
+  compacta = false,
+}: {
+  pedidos: ConversationSummary['pedidos'];
+  compacta?: boolean;
+}) {
+  if (!pedidos || pedidos.length === 0) return null;
+  const texto =
+    pedidos.length === 1
+      ? TIPO_PEDIDO[pedidos[0].tipo] ?? 'Pedido'
+      : `${pedidos.length} pedidos`;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 font-semibold text-emerald-300 ${
+        compacta ? 'text-[10px]' : 'text-xs'
+      }`}
+    >
+      <ShoppingBag className={compacta ? 'h-2.5 w-2.5 shrink-0' : 'h-3 w-3 shrink-0'} />
+      {texto}
+    </span>
+  );
+}
+
 /**
  * De que anuncio vino la conversacion.
  *
@@ -183,11 +249,12 @@ export default function ConversationsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [soloPedidos, setSoloPedidos] = useState(false);
 
-  async function load(p: number) {
+  async function load(p: number, filtrar = soloPedidos) {
     setLoading(true);
     try {
-      const { data, meta } = await api.stats.conversations(p);
+      const { data, meta } = await api.stats.conversations(p, filtrar);
       setConversations(data);
       setTotalPages(Math.max(1, meta.pages));
       setPage(p);
@@ -204,11 +271,29 @@ export default function ConversationsPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Conversaciones</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Historial de todos los chats de tus bots. Hacé clic en una para ver el hilo completo.
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold">Conversaciones</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Historial de todos los chats de tus bots. Hacé clic en una para ver el hilo completo.
+          </p>
+        </div>
+        {/* El filtro que importa: en una lista larga, los pedidos son lo único
+            que hay que atender sí o sí. */}
+        <Button
+          type="button"
+          variant={soloPedidos ? 'default' : 'outline'}
+          size="sm"
+          className="shrink-0 gap-1.5"
+          onClick={() => {
+            const nuevo = !soloPedidos;
+            setSoloPedidos(nuevo);
+            void load(1, nuevo);
+          }}
+        >
+          <ShoppingBag className="h-3.5 w-3.5" />
+          {soloPedidos ? 'Viendo solo pedidos' : 'Ver solo pedidos'}
+        </Button>
       </div>
 
       {loading ? (
@@ -245,6 +330,7 @@ export default function ConversationsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-sm">{conv.bot.name}</span>
+                        <EtiquetaPedido pedidos={conv.pedidos} compacta />
                         <EtiquetaAnuncio headline={conv.adHeadline} sourceId={conv.adSourceId} compacta />
                         <div className="flex w-full items-center gap-2 md:contents">
                           <ChannelBadge channel={conv.channel} />

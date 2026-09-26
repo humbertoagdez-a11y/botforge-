@@ -93,6 +93,20 @@ export interface ConversationSummary {
   messages: { content: string; role: 'USER' | 'ASSISTANT'; createdAt: string }[];
   _count: { messages: number };
   /**
+   * Pedidos concretos que dejo el cliente en esta conversacion: un pedido, un
+   * turno, o sus datos para que lo llamen.
+   */
+  pedidos: {
+    id: string;
+    tipo: 'pedido' | 'turno' | 'contacto';
+    resumen: string;
+    nombreCliente: string | null;
+    contacto: string | null;
+    /** false si el email al dueño no salio; el pedido igual quedo guardado */
+    avisado: boolean;
+    createdAt: string;
+  }[];
+  /**
    * Anuncio Click-to-WhatsApp que trajo esta conversacion. null cuando el
    * cliente escribio por su cuenta.
    */
@@ -122,6 +136,20 @@ export interface ConversationDetail {
   adHeadline: string | null;
   adBody: string | null;
   ctwaClid: string | null;
+  /**
+   * Pedidos concretos que dejo el cliente en esta conversacion: un pedido, un
+   * turno, o sus datos para que lo llamen.
+   */
+  pedidos: {
+    id: string;
+    tipo: 'pedido' | 'turno' | 'contacto';
+    resumen: string;
+    nombreCliente: string | null;
+    contacto: string | null;
+    /** false si el email al dueño no salio; el pedido igual quedo guardado */
+    avisado: boolean;
+    createdAt: string;
+  }[];
   messages: {
     id: string;
     role: 'USER' | 'ASSISTANT';
@@ -663,9 +691,9 @@ export const api = {
 
   stats: {
     get: () => request<AccountStats>('/api/v1/stats'),
-    conversations: (page: number) =>
+    conversations: (page: number, soloPedidos = false) =>
       requestWithMeta<ConversationSummary[], { total: number; page: number; pages: number }>(
-        `/api/v1/stats/conversations?page=${page}`,
+        `/api/v1/stats/conversations?page=${page}${soloPedidos ? '&soloPedidos=1' : ''}`,
       ),
     conversation: (id: string) =>
       request<ConversationDetail>(`/api/v1/stats/conversations/${id}`),
