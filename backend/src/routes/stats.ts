@@ -152,7 +152,7 @@ router.get('/conversations', async (req: Request, res: Response, next: NextFunct
           },
           pedidos: {
             orderBy: { createdAt: 'desc' },
-            select: { id: true, tipo: true, resumen: true, nombreCliente: true, contacto: true, avisado: true, createdAt: true },
+            select: { id: true, tipo: true, resumen: true, nombreCliente: true, contacto: true, avisado: true, total: true, createdAt: true },
           },
           _count: { select: { messages: true } },
         },
@@ -179,7 +179,7 @@ router.get('/conversations/:id', async (req: Request, res: Response, next: NextF
         bot: { select: { name: true, userId: true } },
         pedidos: {
           orderBy: { createdAt: 'desc' },
-          select: { id: true, tipo: true, resumen: true, nombreCliente: true, contacto: true, avisado: true, createdAt: true },
+          select: { id: true, tipo: true, resumen: true, nombreCliente: true, contacto: true, avisado: true, total: true, createdAt: true },
         },
         messages: {
           orderBy: { createdAt: 'asc' },

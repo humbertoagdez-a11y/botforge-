@@ -44,7 +44,7 @@ Entrá a tu panel de BotForge para ver la conversación completa y responderle.
 |---|---|
 | `{{1}}` | `pedido` |
 | `{{2}}` | `Rotisería Doña Elba` |
-| `{{3}}` | `2 milanesas completas con delivery a Cerro Corá 1234, Lambaré` |
+| `{{3}}` | `2 milanesas completas con delivery a Cerro Corá 1234, Lambaré — Total: 121.000` |
 | `{{4}}` | `Carla Ramírez` |
 | `{{5}}` | `0981 555 444` |
 
@@ -55,6 +55,9 @@ Si cambiás una coma del cuerpo, hay que volver a aprobarla y hay que cambiar
 
 - **El cuerpo no puede empezar ni terminar con una variable.** Por eso arranca
   con "Hola," y cierra con la línea del panel.
+- **El total viaja dentro de `{{3}}`**, no como una variable propia. Cuantos
+  menos parámetros tenga la plantilla, más simple es la aprobación, y el total
+  no siempre existe: un turno o unos datos de contacto no tienen total.
 - **Un parámetro no puede ir vacío, ni traer saltos de línea, tabs, ni más de
   cuatro espacios seguidos** (error 132012). El resumen lo escribe el modelo y
   perfectamente puede traer un salto de línea, así que

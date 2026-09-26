@@ -185,6 +185,129 @@ function similitud(a: string, b: string): number {
  */
 const UMBRAL_MISMO_PEDIDO = 0.6;
 
+/** Separador de miles del guarani, para que el detalle se lea como se escribe */
+function formatearGuaranies(n: number): string {
+  return n.toLocaleString('es-PY', { maximumFractionDigits: 0 });
+}
+
+/**
+ * Convierte a numero lo que el modelo haya mandado.
+ *
+ * Acepta un numero pelado, que es lo que pide el schema. Si viene una cadena,
+ * admite el separador de miles del guarani ("45.000" y "45,000" son 45000) y
+ * NADA mas: cualquier otra cosa se rechaza en vez de adivinarse. Adivinar es
+ * peor que fallar — un "12.50" interpretado como 1250 cobra cien veces de mas
+ * y nadie se entera hasta que el cliente reclama.
+ */
+function aNumero(valor: unknown): number | null {
+  if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
+  if (typeof valor !== 'string') return null;
+
+  const limpio = valor.trim().replace(/\s/g, '');
+  // Solo digitos, con puntos o comas cada tres, y un signo opcional
+  if (!/^-?\d{1,3}([.,]\d{3})*$/.test(limpio) && !/^-?\d+$/.test(limpio)) return null;
+  const n = Number(limpio.replace(/[.,]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Cuantos items como maximo. Un pedido real no tiene cincuenta lineas. */
+const MAX_LINEAS_PEDIDO = 40;
+
+/**
+ * Suma el pedido en codigo, no en la cabeza del modelo.
+ *
+ * Existe porque el bot daba totales mal. En una prueba, dos milanesas de
+ * 45.000 mas una gaseosa de 16.000 mas 15.000 de envio le dieron 122.000 en
+ * vez de 121.000. Un total mal dado es plata perdida o una discusion con el
+ * cliente en la puerta, y pedirle al modelo que "sume con cuidado" no es una
+ * garantia: es una sugerencia.
+ *
+ * Trabaja con enteros. Los precios del proyecto son guaranies, que no tienen
+ * centavos, igual que PagoparOrder.montoTotal. Un precio con decimales se
+ * rechaza en vez de redondearse en silencio.
+ */
+function calcularTotal(input: unknown, context: TenantAgentContext): Record<string, unknown> {
+  const datos = input as { items?: unknown; cargos?: unknown } | null;
+  const items = Array.isArray(datos?.items) ? datos.items : [];
+  const cargos = Array.isArray(datos?.cargos) ? datos.cargos : [];
+
+  if (items.length === 0) {
+    return { error: 'Mandá al menos un item, con nombre, cantidad y precio_unitario.' };
+  }
+  if (items.length + cargos.length > MAX_LINEAS_PEDIDO) {
+    return { error: `Son demasiadas líneas (máximo ${MAX_LINEAS_PEDIDO}). Agrupá los repetidos.` };
+  }
+
+  const lineas: Array<{ concepto: string; subtotal: number }> = [];
+  let total = 0;
+
+  for (const crudo of items) {
+    const it = crudo as { nombre?: unknown; cantidad?: unknown; precio_unitario?: unknown };
+    const nombre = typeof it?.nombre === 'string' ? it.nombre.trim().slice(0, 80) : '';
+    const cantidad = aNumero(it?.cantidad);
+    const precio = aNumero(it?.precio_unitario);
+
+    if (!nombre || cantidad === null || precio === null) {
+      return {
+        error:
+          'Cada item necesita nombre, cantidad y precio_unitario, y los números van pelados: ' +
+          '45000, no "45.000 Gs". Mandalos de nuevo así.',
+      };
+    }
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      return { error: `La cantidad de "${nombre}" tiene que ser un entero mayor que cero.` };
+    }
+    if (!Number.isInteger(precio) || precio < 0) {
+      return {
+        error:
+          `El precio de "${nombre}" tiene que ser un entero en guaraníes, sin centavos ni decimales.`,
+      };
+    }
+
+    const subtotal = cantidad * precio;
+    total += subtotal;
+    lineas.push({
+      concepto: `${cantidad} x ${nombre} a ${formatearGuaranies(precio)}`,
+      subtotal,
+    });
+  }
+
+  for (const crudo of cargos) {
+    const c = crudo as { nombre?: unknown; monto?: unknown };
+    const nombre = typeof c?.nombre === 'string' ? c.nombre.trim().slice(0, 80) : '';
+    const monto = aNumero(c?.monto);
+    if (!nombre || monto === null || !Number.isInteger(monto)) {
+      return { error: 'Cada cargo necesita nombre y un monto entero. Un descuento va negativo.' };
+    }
+    total += monto;
+    lineas.push({ concepto: nombre, subtotal: monto });
+  }
+
+  if (total < 0) {
+    return { error: 'El total dio negativo. Revisá los descuentos antes de seguir.' };
+  }
+
+  // Se separa con punto medio y el total va aparte: encadenar todo con '=' daba
+  // "... = 90.000 + ... = 16.000 + ... = 121.000", con tres iguales en una
+  // linea y sin quedar claro cual es el total.
+  const detalle =
+    `${lineas.map((l) => `${l.concepto} = ${formatearGuaranies(l.subtotal)}`).join(' · ')}` +
+    ` → Total ${formatearGuaranies(total)}`;
+
+  // Se guarda en el contexto para que avisar_pedido use ESTE numero y no uno
+  // que el modelo vuelva a escribir a mano.
+  context.ultimoTotal = { total, detalle };
+
+  return {
+    total,
+    total_formateado: formatearGuaranies(total),
+    detalle,
+    message:
+      `El total exacto es ${formatearGuaranies(total)}. Decíselo al cliente con ese número, ` +
+      'tal cual, sin recalcularlo.',
+  };
+}
+
 /**
  * Avisa al dueño del negocio que un cliente concreto algo: un pedido, un
  * turno, o sus datos para que lo llamen.
@@ -259,6 +382,11 @@ async function avisarPedido(
     });
     if (!conv) return { registrado: false };
 
+    // El total sale de calcular_total, nunca del texto del modelo. Si no corrio,
+    // queda en null: un turno o unos datos de contacto no tienen total, y un
+    // pedido sin total es preferible a un total inventado.
+    const total = context.ultimoTotal?.total ?? null;
+
     const pedido = await prisma.pedidoAviso.create({
       data: {
         id: randomUUID(),
@@ -268,6 +396,7 @@ async function avisarPedido(
         resumen: datos.resumen,
         nombreCliente: datos.nombre || null,
         contacto: datos.contacto || null,
+        total,
       },
     });
 
@@ -281,7 +410,10 @@ async function avisarPedido(
         tipo,
         etiqueta,
         negocio: conv.bot.name,
-        resumen: datos.resumen,
+        // El total va pegado al resumen y no como parametro aparte para no
+        // sumarle una variable a la plantilla: cuantos menos parametros, mas
+        // simple la aprobacion en Meta.
+        resumen: total !== null ? `${datos.resumen} — Total: ${formatearGuaranies(total)}` : datos.resumen,
         nombre: datos.nombre,
         contacto: datos.contacto || context.clientId,
       });
@@ -309,6 +441,13 @@ async function avisarPedido(
       </p>
       <p style="font-size:13px;font-weight:bold;color:#666666;margin:0 0 6px;">QUÉ PIDIÓ</p>
       <div style="border-left:3px solid #A7F3D0;background:#F6FFFB;padding:14px 16px;margin:0 0 20px;font-size:15px;line-height:1.6;color:#222;white-space:pre-wrap;">${escaparHtml(datos.resumen)}</div>
+      ${
+        total !== null
+          ? `<p style="font-size:13px;font-weight:bold;color:#666666;margin:0 0 6px;">TOTAL</p>
+      <p style="font-size:22px;font-weight:bold;color:#065F46;margin:0 0 4px;">${escaparHtml(formatearGuaranies(total))}</p>
+      <p style="font-size:12px;color:#888888;margin:0 0 20px;">${escaparHtml(context.ultimoTotal?.detalle ?? '')}</p>`
+          : ''
+      }
       <table style="width:100%;border-collapse:collapse;font-size:14px;color:#333333;margin:0 0 20px;">
         ${datos.nombre ? fila('Cliente', datos.nombre) : ''}
         ${fila('WhatsApp', context.clientId)}
@@ -349,7 +488,11 @@ async function avisarPedido(
         'Pedido registrado y avisado al negocio. IMPORTANTE: el cliente NO vio nada de lo que ' +
         'escribiste antes de usar esta herramienta. Tu próximo mensaje es lo único que va a ' +
         'recibir: confirmale lo que pidió con los datos concretos (qué, cuánto sale, cuándo), ' +
-        'y avisale que el negocio ya lo tiene.',
+        'y avisale que el negocio ya lo tiene.' +
+        (tipo === 'pedido' && total === null
+          ? ' Ojo: este pedido quedó SIN total porque no usaste calcular_total. ' +
+            'Usala ahora y pasale el total al cliente.'
+          : ''),
     };
   } catch (err) {
     reportarError('tenant-pedido', err, { botId: context.botId });
@@ -519,7 +662,7 @@ Si el cliente confirma un pedido, pide un turno o te deja sus datos para que lo 
 
 PRECIOS Y TOTALES:
 Todo precio sale del instructivo, nunca de tu memoria ni de una estimación.
-Cuando des un total, escribí primero cada ítem con su precio y recién después la suma, en una sola línea: "2 milanesas 90.000 + gaseosa 16.000 + envío 15.000 = 121.000". Sumar de cabeza sin desglosar es como se termina cobrando de más o de menos, y un total mal dado es una discusión con el cliente en la puerta.
+NUNCA sumes vos. Antes de decir un total —y siempre antes de usar avisar_pedido— usá calcular_total con los ítems y el envío. El número que te devuelve es el que le pasás al cliente, tal cual, sin recalcularlo ni redondearlo. Aunque la cuenta te parezca obvia: es justo ahí donde se cuela el error.
 Si un precio no figura en el instructivo, no lo inventes: decile que se lo confirmás.
 
 SALUDO:
@@ -578,6 +721,49 @@ export const TENANT_TOOLS: Anthropic.Tool[] = [
         query: { type: 'string', description: 'Qué producto o archivo buscar' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'calcular_total',
+    description:
+      'Calcula el total exacto de un pedido. Usala SIEMPRE antes de decirle un total al cliente ' +
+      'y SIEMPRE antes de usar avisar_pedido. No sumes de cabeza: una suma mal hecha es plata ' +
+      'cobrada de menos o una discusión con el cliente en la puerta. ' +
+      'Los precios los sacás del instructivo, uno por unidad, sin puntos de miles. ' +
+      'El envío y cualquier recargo van en cargos; un descuento va como cargo con monto negativo.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        items: {
+          type: 'array',
+          description: 'Cada producto que pidió el cliente, con su cantidad',
+          items: {
+            type: 'object',
+            properties: {
+              nombre: { type: 'string', description: 'El producto, como figura en el instructivo' },
+              cantidad: { type: 'number', description: 'Cuántas unidades' },
+              precio_unitario: {
+                type: 'number',
+                description: 'Precio de UNA unidad, como número pelado: 45000, no "45.000"',
+              },
+            },
+            required: ['nombre', 'cantidad', 'precio_unitario'],
+          },
+        },
+        cargos: {
+          type: 'array',
+          description: 'Cargos aparte: envío, recargo. Para un descuento, monto negativo.',
+          items: {
+            type: 'object',
+            properties: {
+              nombre: { type: 'string', description: 'Qué es: envío, recargo, descuento' },
+              monto: { type: 'number', description: 'Número pelado. Negativo si descuenta.' },
+            },
+            required: ['nombre', 'monto'],
+          },
+        },
+      },
+      required: ['items'],
     },
   },
   {
@@ -683,7 +869,9 @@ export function buildTenantTools(opts: {
   const tools = [porNombre('buscar_en_documentos')]; // siempre
   if (opts.driveActivo) tools.push(porNombre('buscar_archivos_drive'));
   if (opts.tieneImagenes) tools.push(TOOL_ENVIAR_IMAGEN);
-  // Las que cierran la conversacion hacia una persona van siempre, al final
+  // Las que cierran la conversacion hacia una persona van siempre, al final.
+  // calcular_total va antes que avisar_pedido porque es su paso previo.
+  tools.push(porNombre('calcular_total'));
   tools.push(porNombre('avisar_pedido'));
   tools.push(porNombre('marcar_lead'));
   tools.push(porNombre('derivar_a_humano'));
@@ -715,6 +903,14 @@ export interface TenantAgentContext {
       viaja en el tool_result (reventaría el contexto del modelo); el canal la
       manda con su propio sendPendingImage. */
   pendingImage?: PendingImage;
+  /**
+   * Lo último que devolvió calcular_total en este turno.
+   *
+   * Existe para que el total del aviso salga de la ARITMÉTICA y no del texto
+   * del modelo. Si avisar_pedido leyera el total de un parámetro, volveríamos
+   * al mismo problema: el modelo escribiría un número y nadie lo verificaría.
+   */
+  ultimoTotal?: { total: number; detalle: string };
 }
 
 /**
@@ -735,6 +931,9 @@ const toolSchemas = {
   buscar_en_documentos: { query: 'string' },
   buscar_archivos_drive: { query: 'string' },
   enviar_imagen: { imageId: 'string' },
+  // Sin campos de texto arriba: los items son objetos y los valida calcularTotal,
+  // que tiene que poder devolverle el error al modelo en vez de lanzar.
+  calcular_total: {},
   avisar_pedido: { tipo: 'string', resumen: 'string' },
   marcar_lead: { resumen: 'string' },
   derivar_a_humano: { motivo: 'string' },
@@ -839,6 +1038,9 @@ export async function executeTenantTool(
         message: `La imagen "${imagen.name}" se envía junto con tu respuesta. No incluyas ningún link ni describas la imagen: el cliente la va a ver.`,
       };
     }
+
+    case 'calcular_total':
+      return calcularTotal(input, context);
 
     case 'avisar_pedido': {
       const tipo = readStringField(input, 'tipo');

@@ -108,6 +108,8 @@ export interface ConversationSummary {
     contacto: string | null;
     /** false si el email al dueño no salio; el pedido igual quedo guardado */
     avisado: boolean;
+    /** Total exacto en guaranies, calculado por la herramienta. Null si no aplica */
+    total: number | null;
     createdAt: string;
   }[];
   /**
@@ -152,6 +154,8 @@ export interface ConversationDetail {
     contacto: string | null;
     /** false si el email al dueño no salio; el pedido igual quedo guardado */
     avisado: boolean;
+    /** Total exacto en guaranies, calculado por la herramienta. Null si no aplica */
+    total: number | null;
     createdAt: string;
   }[];
   messages: {

@@ -1,0 +1,13 @@
+-- El total exacto del pedido, calculado por la herramienta calcular_total.
+--
+-- Nace de un bug real: el bot sumaba de memoria y daba totales mal. Dos
+-- milanesas de 45.000 mas una gaseosa de 16.000 mas 15.000 de envio le dieron
+-- 122.000 en vez de 121.000. El numero que se guarda aca sale de la
+-- aritmetica, nunca del texto del modelo.
+--
+-- INTEGER y no NUMERIC porque los precios del proyecto son guaranies, que no
+-- tienen centavos — la misma decision que pagopar_orders."montoTotal".
+--
+-- NULL es un estado legitimo: un turno o unos datos de contacto no tienen
+-- total, y un pedido sin total es preferible a un total inventado.
+ALTER TABLE "pedido_avisos" ADD COLUMN "total" INTEGER;

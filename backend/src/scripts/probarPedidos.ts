@@ -74,6 +74,8 @@ interface Turno {
   esperaPedido: boolean;
   /** Datos que TIENEN que salir del instructivo, no de la imaginación del modelo */
   debeDecir: RegExp[];
+  /** El total exacto que tiene que quedar GUARDADO en el aviso, calculado por la herramienta */
+  totalEsperado?: number;
 }
 
 const TURNOS: Turno[] = [
@@ -84,14 +86,16 @@ const TURNOS: Turno[] = [
     debeDecir: [/45[.,]?000/, /15[.,]?000/],
   },
   {
-    nombre: 'confirma el pedido',
-    texto: 'Perfecto, mandame dos milanesas completas y una gaseosa de 2,25 a Cerro Cora 1234, Lambare',
+    nombre: 'amplía a un pedido grande',
+    texto:
+      'Perfecto, entonces mandame dos milanesas completas, una gaseosa de 2,25, ' +
+      'doce empanadas de carne y un pollo al horno entero, a Cerro Cora 1234, Lambare',
     esperaPedido: true,
-    // El TOTAL, no un precio suelto: 2x45.000 + 16.000 + 15.000 = 121.000. Que
-    // le dé bien obliga a que los tres precios hayan salido del instructivo.
-    // Buscar "16.000" sería más débil, porque "2,25" lo dijo el cliente y el
-    // modelo puede repetirlo sin haber leído nada.
-    debeDecir: [/121[.,]?000/],
+    // 2x45.000 + 16.000 + 12x8.000 + 75.000 + 15.000 de envio = 292.000.
+    // Cuatro items con cantidades distintas: es donde una suma de cabeza se
+    // rompe, y obliga a que los cinco precios hayan salido del instructivo.
+    debeDecir: [/292[.,]?000/],
+    totalEsperado: 292000,
   },
 ];
 
@@ -229,6 +233,17 @@ async function main(): Promise<void> {
           console.log(`      tipo: ${p.tipo} · canal: ${p.canal ?? 'no salió'}`);
           console.log(`      resumen: ${p.resumen}`);
           chequeo(`${t.nombre}: el resumen dice qué pidió`, /milanesa/i.test(p.resumen), p.resumen);
+          // Lo que separa esta prueba de la anterior: el total guardado sale
+          // de calcular_total, no del texto del modelo. Si el bot escribe un
+          // numero lindo pero la herramienta no corrio, esto falla.
+          if (t.totalEsperado !== undefined) {
+            console.log(`      total guardado: ${p.total ?? 'null'}`);
+            chequeo(
+              `${t.nombre}: el aviso guarda el total exacto`,
+              p.total === t.totalEsperado,
+              `esperaba ${t.totalEsperado}, quedo ${p.total ?? 'null'}`,
+            );
+          }
         }
       } else {
         chequeo(`${t.nombre}: NO avisa`, pedidos.length === 0, `${pedidos.length} avisos`);

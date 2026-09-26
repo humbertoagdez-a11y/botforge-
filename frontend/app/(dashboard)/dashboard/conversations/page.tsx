@@ -96,6 +96,14 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
                 <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
                   {p.resumen}
                 </p>
+                {/* El total va grande y aparte: es lo que el dueño mira primero
+                    para saber si le conviene salir a repartir. Sale de
+                    calcular_total, no del texto del bot. */}
+                {p.total !== null && (
+                  <p className="mt-2 text-lg font-bold text-emerald-300">
+                    Gs. {p.total.toLocaleString('es-PY')}
+                  </p>
+                )}
                 {(p.nombreCliente || p.contacto) && (
                   // text-muted-foreground sobre el verde de la tarjeta da 4.47 de
                   // contraste, apenas abajo del minimo legible, y justo en el

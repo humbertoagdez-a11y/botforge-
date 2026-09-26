@@ -562,6 +562,11 @@ model PedidoAviso {
   /// false si no salio por ningun canal. El pedido queda igual: el panel es la
   /// red de contencion cuando falla el aviso.
   avisado        Boolean  @default(false)
+  /// Total exacto en guaranies, calculado por calcular_total — nunca escrito
+  /// por el modelo. Null es legitimo: un turno no tiene total, y un pedido sin
+  /// total es preferible a uno inventado. Int y no Decimal porque el guarani
+  /// no tiene centavos, igual que PagoparOrder.montoTotal.
+  total          Int?
   /// Por que canal salio: 'whatsapp', 'email' o 'whatsapp+email'. Null = no
   /// salio. Sin esto, ante un "no me llego" no se puede saber si se intento
   /// WhatsApp y cayo a email o si nunca salio nada.
