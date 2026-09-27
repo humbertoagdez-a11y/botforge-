@@ -18,8 +18,33 @@ import { credencialGlobal } from './metaAuth';
  * docs/07-AVISOS-AL-DUENO.md — si se cambia una coma alla, hay que volver a
  * aprobarla aca.
  */
-export const PLANTILLA_AVISO = 'aviso_pedido';
+/**
+ * v2 y no 'aviso_pedido' a secas: la primera version salio APPROVED pero Meta
+ * la reclasifico de UTILITY a MARKETING, y la categoria de una plantilla
+ * aprobada no se puede cambiar ("No puedes actualizar una categoria de
+ * plantilla aprobada", subcodigo 3835031). La unica salida es una plantilla
+ * nueva con un texto que no dispare el clasificador.
+ *
+ * Marketing importa por dos motivos: cuesta bastante mas por mensaje que
+ * utility, y esta sujeta a limites de marketing por usuario — o sea que el
+ * aviso de un pedido real podria no salir por tope de promociones.
+ */
+export const PLANTILLA_AVISO = 'aviso_pedido_v2';
 export const IDIOMA_PLANTILLA = 'es';
+
+/**
+ * La plantilla en uso esta clasificada como MARKETING por Meta.
+ *
+ * Mientras sea true, el aviso sale SIEMPRE tambien por email, aunque el dueño
+ * haya elegido solo WhatsApp. Un mensaje de marketing puede no entregarse por
+ * el tope de promociones que Meta le aplica a cada persona, y un pedido que no
+ * llega es una venta perdida: el email cuesta cero y cubre ese hueco.
+ *
+ * Se pone en false cuando alguna version quede UTILITY — sea porque prospere
+ * la apelacion de v1/v2, sea porque una version nueva pase asi. Ahi el aviso
+ * vuelve a respetar lo que el dueño eligio.
+ */
+export const PLANTILLA_ES_MARKETING = true;
 
 /** Lo que se pone en un parametro que el cliente no dejo. Meta rechaza vacios. */
 const SIN_DATO = 'no lo dijo';

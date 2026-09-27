@@ -21,17 +21,27 @@ import { PLANTILLA_AVISO, IDIOMA_PLANTILLA } from '../services/avisoWhatsApp';
 const GRAPH = 'https://graph.facebook.com/v23.0';
 
 /**
- * El cuerpo. Reglas de Meta que estan metidas en esta forma concreta:
- * no puede empezar ni terminar con una variable (por eso "Hola," al principio
- * y la linea del panel al final), y no puede haber dos variables pegadas.
+ * El cuerpo. Reglas de Meta metidas en esta forma concreta:
+ *
+ * - No puede empezar NI TERMINAR con una variable. Por eso arranca con
+ *   "Nuevo " y por eso hay una linea final: "Contacto: {{5}}" al final seria
+ *   rechazado de entrada.
+ * - Esa linea final es un hecho, no una invitacion. Las dos versiones
+ *   anteriores terminaban mandando al panel y Meta las clasifico MARKETING:
+ *   v1 decia "Hola, tenes un {{1}} nuevo ... Entra a tu panel de BotForge",
+ *   v2 le saco el saludo y la marca pero dejo "Entra a tu panel para ver la
+ *   conversacion y responder". Lo unico que quedaba pareciendose a un llamado
+ *   a la accion era esa linea, asi que v3 la reemplaza por una constatacion.
+ * - El total viaja dentro de {{3}}, no como variable propia: un turno o unos
+ *   datos de contacto no tienen total, y Meta rechaza un parametro vacio.
  */
-const CUERPO = `Hola, tenés un {{1}} nuevo en {{2}}.
+const CUERPO = `Nuevo {{1}} recibido en {{2}}.
 
-Qué pidió: {{3}}
+Detalle: {{3}}
 Cliente: {{4}}
 Contacto: {{5}}
 
-Entrá a tu panel de BotForge para ver la conversación completa y responderle.`;
+Aviso automático generado al recibir el mensaje del cliente.`;
 
 /** Meta pide un ejemplo por variable para poder revisarla. */
 const EJEMPLOS = [
@@ -82,10 +92,13 @@ async function estado(token: string, waba: string): Promise<void> {
     return;
   }
   const todas = (r.body.data ?? []) as Array<Record<string, string>>;
-  const mias = todas.filter((t) => t.name === PLANTILLA_AVISO);
-  console.log(`plantillas en la WABA: ${todas.length} · con el nombre ${PLANTILLA_AVISO}: ${mias.length}`);
+  // Todas las versiones, no solo la que usa el codigo: lo que interesa mirar
+  // es cual quedo UTILITY, y esa puede no ser la que esta en uso.
+  const mias = todas.filter((t) => t.name.startsWith('aviso_pedido'));
+  console.log(`plantillas en la WABA: ${todas.length} · versiones de aviso_pedido: ${mias.length}`);
   for (const t of mias) {
-    console.log(`  ${t.language}  ${t.status}  categoría ${t.category}`);
+    const enUso = t.name === PLANTILLA_AVISO ? '  <- la que usa el codigo' : '';
+    console.log(`  ${t.name.padEnd(18)} ${t.language}  ${t.status.padEnd(9)} ${t.category}${enUso}`);
     if (t.rejected_reason && t.rejected_reason !== 'NONE') {
       console.log(`     motivo del rechazo: ${t.rejected_reason}`);
     }
@@ -111,11 +124,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`creando la plantilla ${PLANTILLA_AVISO} (${IDIOMA_PLANTILLA}, UTILITY)...`);
+  // --nombre permite probar una version nueva sin que el codigo de produccion
+  // empiece a usarla: recien se cambia PLANTILLA_AVISO si Meta la deja UTILITY.
+  const nombre = argumento('nombre') ?? PLANTILLA_AVISO;
+  console.log(`creando la plantilla ${nombre} (${IDIOMA_PLANTILLA}, UTILITY)...`);
   const r = await graph(token, `/${waba}/message_templates`, {
     method: 'POST',
     body: {
-      name: PLANTILLA_AVISO,
+      name: nombre,
       language: IDIOMA_PLANTILLA,
       category: 'UTILITY',
       components: [

@@ -5,7 +5,7 @@
  * BotForge controla las reglas de calidad (baseRules); el dueño controla la voz.
  */
 import { randomUUID } from 'crypto';
-import { avisarPorWhatsApp, canalesDeAviso } from './avisoWhatsApp';
+import { avisarPorWhatsApp, canalesDeAviso, PLANTILLA_ES_MARKETING } from './avisoWhatsApp';
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '../config/env';
 import { prisma } from '../lib/prisma';
@@ -423,7 +423,13 @@ async function avisarPedido(
     // El email sale si el dueño lo eligio, o si eligio solo WhatsApp y no
     // salio. Eso es lo que hace que la feature funcione desde el dia uno,
     // antes de que Meta apruebe la plantilla.
-    const mandarEmail = canales.email || salidas.length === 0;
+    //
+    // Y sale igual mientras la plantilla este clasificada como MARKETING:
+    // Meta puede no entregar un mensaje de marketing por el tope de
+    // promociones de cada persona, sin avisar que lo bloqueo. El WhatsApp
+    // igual se intenta — llega al bolsillo, que es el punto — pero no puede
+    // quedar como unica via.
+    const mandarEmail = canales.email || salidas.length === 0 || PLANTILLA_ES_MARKETING;
     const fila = (k: string, v: string) =>
       `<tr><td style="padding:6px 14px 6px 0;color:#666;white-space:nowrap;">${escaparHtml(k)}</td>` +
       `<td style="padding:6px 0;"><strong>${escaparHtml(v)}</strong></td></tr>`;
