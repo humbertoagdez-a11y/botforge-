@@ -75,16 +75,24 @@ export function buildTenantSystemBlocks(
   language: string,
   documentsContent: string,
   imagenes: ImagenDisponible[] = [],
+  /**
+   * Algo que solo vale para ESTE mensaje: hoy, quien esta escribiendo.
+   *
+   * Va en el bloque de contexto y nunca en el estable. El estable se cachea, y
+   * cachear algo que cambia segun quien escribe seria pagar el caché sin
+   * acertar nunca — y peor, arriesgarse a contestarle a uno con el dato de otro.
+   */
+  contextoDelTurno = '',
 ): TenantSystemBlocks {
   const franja = `MOMENTO DEL DÍA EN PARAGUAY AHORA: ${franjaHorariaParaguay()}. Si tenés que saludar, usá esa.`;
+  const partes = [franja];
+  if (contextoDelTurno) partes.push(contextoDelTurno);
+  if (documentsContent) {
+    partes.push(`INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:\n${documentsContent}`);
+  }
   return {
     stable: buildTenantStablePrompt(botName, personality, language, imagenes),
-    context: documentsContent
-      ? `${franja}
-
-INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:
-${documentsContent}`
-      : franja,
+    context: partes.join('\n\n'),
   };
 }
 
@@ -863,6 +871,8 @@ export const TENANT_TOOLS: Anthropic.Tool[] = [
 export function buildTenantTools(opts: {
   tieneImagenes: boolean;
   driveActivo: boolean;
+  /** La linea de avisos no vende: sin marcar_lead */
+  sinVentas?: boolean;
 }): Anthropic.Tool[] {
   // Por nombre y no por posicion: agregar una herramienta en el medio del
   // array corria los indices y cambiaba en silencio que ve cada bot.
@@ -879,7 +889,11 @@ export function buildTenantTools(opts: {
   // calcular_total va antes que avisar_pedido porque es su paso previo.
   tools.push(porNombre('calcular_total'));
   tools.push(porNombre('avisar_pedido'));
-  tools.push(porNombre('marcar_lead'));
+  // La linea de avisos no vende: marcarle un lead a alguien que escribio a un
+  // numero de notificaciones genera un aviso de venta que nadie pidio. Se le
+  // saca la herramienta en vez de pedirle por instructivo que no la use, que
+  // es una sugerencia y no una garantia.
+  if (!opts.sinVentas) tools.push(porNombre('marcar_lead'));
   tools.push(porNombre('derivar_a_humano'));
 
   // El cache_control va en la ÚLTIMA herramienta: marca el corte del bloque
@@ -1372,6 +1386,51 @@ export interface TenantTurnResult {
  * Lo unico que NO hace es persistir mensajes ni tocar el cupo del plan: eso
  * depende del canal y lo resuelve cada llamador.
  */
+/**
+ * Quien esta escribiendole a la linea de avisos.
+ *
+ * El numero se busca contra Bot.avisoCelular, que es el celular que cada dueño
+ * cargo para recibir sus avisos de pedidos. Es el unico identificador
+ * telefonico que existe: User no guarda telefono, solo email.
+ *
+ * Se resuelve en codigo y no con una herramienta que el modelo decida llamar,
+ * porque de esto depende COMO arranca la respuesta. Una herramienta la puede
+ * no usar, y ahi le hablaria a un cliente como si fuera un desconocido.
+ *
+ * Nunca lanza: si la consulta falla, la persona queda como desconocida, que es
+ * el camino seguro — se la deriva a ventas en vez de darle por buenos los
+ * datos de una cuenta que no se pudo confirmar.
+ */
+async function quienEscribe(clientId: string): Promise<string> {
+  const numero = clientId.replace('whatsapp:', '').trim();
+  if (!numero) return '';
+
+  try {
+    const bots = await prisma.bot.findMany({
+      where: { avisoCelular: numero },
+      select: { name: true, user: { select: { email: true, name: true } } },
+    });
+
+    if (bots.length === 0) {
+      return (
+        'QUIEN TE ESCRIBE: un número que NO está registrado en BotForge. ' +
+        'No es cliente: no le des información de ninguna cuenta ni des por hecho que tiene un bot.'
+      );
+    }
+
+    const duenio = bots[0].user;
+    const nombres = bots.map((b) => `"${b.name}"`).join(', ');
+    return (
+      `QUIEN TE ESCRIBE: ${duenio.name ?? 'un cliente'}, dueño registrado en BotForge ` +
+      `(cuenta ${duenio.email}). Tiene ${bots.length === 1 ? 'el bot' : 'los bots'} ${nombres}. ` +
+      'Tratalo como cliente: ya sabe qué es BotForge, no se lo expliques ni le ofrezcas planes.'
+    );
+  } catch (err) {
+    reportarError('tenant-quien-escribe', err, { clientId: numero });
+    return '';
+  }
+}
+
 export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTurnResult> {
   const { bot, history, message, clientId, channel, stream } = params;
 
@@ -1388,13 +1447,18 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
     }),
   ]);
 
+  const esLineaDeAvisos = Boolean(env.BOT_AVISOS_ID) && bot.id === env.BOT_AVISOS_ID;
+  const contextoDelTurno = esLineaDeAvisos ? await quienEscribe(clientId) : '';
+
   // Bloques partidos: reglas, personalidad e imágenes se cachean; el RAG no
   const systemPrompt = buildTenantSystemBlocks(
     bot.name, bot.personality, bot.language, chunks.join('\n\n'), imagenes,
+    contextoDelTurno,
   );
   const tools = buildTenantTools({
     tieneImagenes: imagenes.length > 0,
     driveActivo: Boolean(drive?.isActive),
+    sinVentas: esLineaDeAvisos,
   });
 
   const context: TenantAgentContext = {

@@ -32,6 +32,16 @@ const envSchema = z.object({
   // las instrucciones de conexion, el que corresponde a META_PHONE_NUMBER_ID.
   // No confundir con META_PHONE_NUMBER_ID, que es el id interno de Meta.
   META_WHATSAPP_DISPLAY_NUMBER: z.string().optional().default('+595991820602'),
+  // El bot que solo manda avisos de pedidos y no vende (+595991820602).
+  //
+  // Va por variable y no por una columna en Bot porque es una particularidad
+  // de las dos lineas propias de BotForge, no un concepto del producto: a
+  // ningun cliente se le ofrece un bot que no puede vender. Misma convencion
+  // que BOT_VENTAS_ID, que ya se usa para el script del instructivo.
+  //
+  // Sin cargar, ese bot se comporta como cualquier otro: el unico efecto de
+  // la variable es apagarle marcar_lead y decirle quien le esta escribiendo.
+  BOT_AVISOS_ID: z.string().optional().default(''),
   // Cuenta de WhatsApp Business (WABA) de BotForge: la duena del numero de
   // META_PHONE_NUMBER_ID. Hace falta para administrar plantillas, que viven
   // dentro de la WABA y no del numero.

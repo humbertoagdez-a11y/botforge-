@@ -18,10 +18,12 @@
     "verificar:planes": "tsx src/scripts/verificarPlanes.ts",
     "probar:pedidos": "tsx src/scripts/probarPedidos.ts",
     "probar:ventas": "tsx src/scripts/probarVentas.ts",
+    "probar:avisos": "tsx src/scripts/probarAvisos.ts",
     "vectores:huerfanos": "tsx src/scripts/vectoresHuerfanos.ts",
     "plantilla:aviso": "tsx src/scripts/plantillaAviso.ts",
     "backfill:fechas": "tsx src/scripts/backfillFechaConversacion.ts",
-    "instructivo:ventas": "tsx src/scripts/instructivoVentas.ts"
+    "instructivo:ventas": "tsx src/scripts/instructivoVentas.ts",
+    "instructivo:avisos": "tsx src/scripts/instructivoAvisos.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.0",
