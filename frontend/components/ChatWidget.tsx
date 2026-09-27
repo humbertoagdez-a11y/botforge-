@@ -47,7 +47,7 @@ interface UIMessage {
   content: string;
   streaming?: boolean;
   /** Imagen que el bot adjuntó a esta respuesta */
-  attachment?: { caption: string; url: string | null };
+  attachment?: { nombre: string; url: string | null };
 }
 
 /** Lo que el bot está haciendo, para mostrarlo mientras usa una herramienta */
@@ -73,7 +73,7 @@ type SseEvent =
        * cual las recibe el cliente; las de Drive vienen sin url (llegan como
        * binario) y solo se anuncian.
        */
-      imagen?: { caption: string; url: string | null } | null;
+      imagen?: { nombre: string; url: string | null } | null;
     }
   | { type: 'error'; message: string };
 
@@ -269,7 +269,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={msg.attachment.url}
-                      alt={msg.attachment.caption}
+                      alt={msg.attachment.nombre}
                       className="max-h-56 w-full rounded-lg object-contain"
                       loading="lazy"
                     />
@@ -277,8 +277,8 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
                   <p className="mt-1.5 flex items-center gap-1.5 text-xs opacity-70">
                     <ImageIcon className="h-3.5 w-3.5 shrink-0" />
                     {msg.attachment.url
-                      ? `Se envía adjunta: ${msg.attachment.caption}`
-                      : `En WhatsApp se envía adjunta la imagen ${msg.attachment.caption}`}
+                      ? `Se envía adjunta: ${msg.attachment.nombre}`
+                      : `En WhatsApp se envía adjunta la imagen ${msg.attachment.nombre}`}
                   </p>
                 </div>
               )}

@@ -314,7 +314,10 @@ export async function sendImageByUrl(
   await postMessage(cred, {
     to: toMetaNumber(to),
     type: 'image',
-    image: { link: imageUrl, caption },
+    // Sin caption se omite el campo en vez de mandarlo vacio: Meta lo acepta,
+    // pero un `caption: ''` explicito es justo la clase de cosa que algun dia
+    // se renderiza como una linea en blanco bajo la imagen.
+    image: { link: imageUrl, ...(caption ? { caption } : {}) },
   });
 }
 

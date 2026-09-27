@@ -914,6 +914,22 @@ export interface TenantAgentContext {
 }
 
 /**
+ * Lo que va escrito sobre la imagen que recibe el cliente: nada.
+ *
+ * Antes iba el `name` de la BotImage, que es la etiqueta del panel. El
+ * formulario de carga la autocompleta con el nombre del archivo, asi que la
+ * primera prueba real le llego al cliente una foto con "1000377424" escrito
+ * encima — el nombre que le pone la galeria de Android. Un identificador
+ * interno en el mensaje de un cliente no se arregla pidiendole al dueño que
+ * ponga nombres lindos: no tiene por que enterarse de que ese campo sale del
+ * negocio.
+ *
+ * Vacio y no una frase generada: el bot ya manda su texto justo antes, y un
+ * pie ademas seria el mismo mensaje dos veces.
+ */
+const CAPTION_AL_CLIENTE = '';
+
+/**
  * Imagen que el agente decidió mandarle al cliente.
  *
  * Dos origenes con el mismo destino: las que el dueño subio al panel ya viven
@@ -922,8 +938,8 @@ export interface TenantAgentContext {
  * usar; ninguno de los dos caminos duplica el envio.
  */
 export type PendingImage =
-  | { source: 'url'; url: string; caption: string }
-  | { source: 'base64'; imageBase64: string; mimeType: string; caption: string };
+  | { source: 'url'; url: string; caption: string; nombre: string }
+  | { source: 'base64'; imageBase64: string; mimeType: string; caption: string; nombre: string };
 
 // ─── EXECUTOR DE TOOLS ────────────────────────────────────────────────────────
 
@@ -1000,7 +1016,13 @@ export async function executeTenantTool(
         if (!isCloudinaryConfigured()) {
           return { found: false, message: 'El envío de imágenes no está disponible en este momento.' };
         }
-        context.pendingImage = { source: 'base64', imageBase64: data, mimeType, caption: match.name };
+        context.pendingImage = {
+          source: 'base64',
+          imageBase64: data,
+          mimeType,
+          caption: CAPTION_AL_CLIENTE,
+          nombre: match.name,
+        };
 
         return {
           found: true,
@@ -1030,7 +1052,12 @@ export async function executeTenantTool(
 
       // El canal la manda al entregar la respuesta, con el mismo mecanismo que
       // ya usaba Drive. La URL de Cloudinary va directo: no se vuelve a subir.
-      context.pendingImage = { source: 'url', url: imagen.url, caption: imagen.name };
+      context.pendingImage = {
+        source: 'url',
+        url: imagen.url,
+        caption: CAPTION_AL_CLIENTE,
+        nombre: imagen.name,
+      };
 
       return {
         enviada: true,

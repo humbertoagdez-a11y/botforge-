@@ -142,10 +142,13 @@ router.post('/stream', async (req: Request, res: Response, next: NextFunction) =
           // prueba puede mostrar exactamente la misma que recibiría el cliente.
           // Las de Drive llegan como binario y no se suben acá solo para la
           // vista previa: de esas se avisa el nombre.
+          // Va el NOMBRE y no el caption: el caption es lo que ve el cliente
+          // (vacio), y acá el que mira es el dueño, que necesita saber cuál de
+          // sus imágenes eligió el bot.
           imagen: pendingImage
             ? pendingImage.source === 'url'
-              ? { caption: pendingImage.caption, url: pendingImage.url }
-              : { caption: pendingImage.caption, url: null }
+              ? { nombre: pendingImage.nombre, url: pendingImage.url }
+              : { nombre: pendingImage.nombre, url: null }
             : null,
         });
       }
