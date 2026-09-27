@@ -35,7 +35,17 @@ Lo hace **antes de aprobar**: la categoría que muestra una plantilla en
 |---|---|---|---|---|
 | `aviso_pedido` | `964341106027336` | APPROVED | **MARKETING** | La original: "Hola, tenés un {{1}} nuevo en {{2}} … Entrá a tu panel de BotForge" |
 | `aviso_pedido_v2` | `2079337949615232` | APPROVED | **MARKETING** | Sin saludo y sin la marca, pero seguía cerrando con "Entrá a tu panel para ver la conversación y responder" |
-| `aviso_pedido_v3` | `2442074942982481` | ver abajo | ver abajo | Sin nada que parezca llamado a la acción: cierra con "Aviso automático generado al recibir el mensaje del cliente" |
+| `aviso_pedido_v3` | `2442074942982481` | APPROVED | **UTILITY** ✅ | Sin nada que parezca llamado a la acción: cierra con "Aviso automático generado al recibir el mensaje del cliente" |
+
+**El disparador era el llamado a la acción, no la marca.** v2 ya no decía
+"Hola" ni nombraba a BotForge y quedó MARKETING igual; lo único que le quedaba
+era mandar al panel. Sacar esa línea alcanzó. Antes de "mejorar" este texto:
+cualquier frase que invite a hacer algo lo devuelve a marketing.
+
+Otra cosa aprendida: **la categoría que muestra una plantilla en `PENDING` no
+es definitiva.** v1 estuvo en `PENDING / UTILITY` y se aprobó como MARKETING.
+v2 mostró MARKETING ya en `PENDING`. O sea que ver UTILITY mientras está
+pendiente no garantiza nada; hay que esperar a `APPROVED`.
 
 `PLANTILLA_AVISO` en `backend/src/services/avisoWhatsApp.ts` dice cuál se usa.
 
@@ -50,10 +60,12 @@ No es solo el precio. Un mensaje de marketing:
 - el destinatario puede **darse de baja de marketing** y cortarse sus propios
   avisos de pedido sin darse cuenta.
 
-Por eso, mientras `PLANTILLA_ES_MARKETING` esté en `true`, el aviso sale
-**además por email siempre**, aunque el dueño haya elegido solo WhatsApp. El
-email cuesta cero y cubre el hueco. Cuando alguna versión quede UTILITY se
-pone esa bandera en `false` y el aviso vuelve a respetar lo que el dueño eligió.
+Por eso existe `PLANTILLA_ES_MARKETING`: mientras esté en `true`, el aviso sale
+**además por email siempre**, aunque el dueño haya elegido solo WhatsApp.
+
+Hoy está en `false`, porque v3 quedó UTILITY y no tiene ese tope: el aviso
+respeta lo que el dueño eligió. Si alguna vez hay que volver a una plantilla
+de marketing, se vuelve a poner en `true`.
 
 ### La apelación
 
@@ -153,10 +165,11 @@ Tarifas de ese grupo (fuentes de terceros, ver abajo):
 | Authentication | USD 0,0220 | 1,8× |
 | **Marketing** | **USD 0,0618** | **5,15×** |
 
-O sea: con la plantilla clasificada como MARKETING, cada aviso cuesta unas
-**cinco veces** lo que costaría como UTILITY. A 100 pedidos por mes son USD 6,18
-en vez de USD 1,20 — poco en plata, pero la diferencia real no es esa sino el
-tope de marketing, que puede impedir que el mensaje llegue.
+La plantilla en uso (v3) es **UTILITY**, así que aplica la primera fila: unos
+USD 0,0120 por aviso, o sea USD 1,20 cada 100 pedidos. Con las versiones
+anteriores, clasificadas como MARKETING, hubiera sido USD 6,18 — poco en plata,
+pero la diferencia real no era esa sino el tope de marketing, que puede impedir
+que el mensaje llegue.
 
 **Las plantillas de utilidad dentro de una ventana de atención abierta son
 gratis** (Meta las marca `type: free_customer_service`). No aplica a nuestro
