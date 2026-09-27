@@ -18,6 +18,13 @@ La línea de avisos reconoce a un dueño registrado por su número, contra
 `Bot.avisoCelular` — el único identificador telefónico que existe, porque
 `User` guarda email y no teléfono. A quien no reconoce lo deriva a ventas.
 
+Los dos perfiles de WhatsApp comparten estado, descripción, categoría
+(`PROF_SERVICES`), sitio (`https://mibotforge.com`), foto y el email de
+contacto `verificacion@mibotforge.com`. La dirección va vacía a propósito en
+los dos: no hay local al que ir. Se editan con la credencial de CADA bot —
+el número de ventas pertenece a la WABA del cliente y con el token global
+responde `(#10) Application does not have permission for this action`.
+
 ## Por qué WhatsApp y no solo email
 
 Un pedido de rotisería tiene minutos de vida útil. El dueño está en el local,
