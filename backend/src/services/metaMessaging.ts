@@ -395,7 +395,17 @@ export async function sendPendingImage(
 ): Promise<void> {
   if (img.source === 'url') {
     await sendImageByUrl(cred, to, img.url, img.caption);
-    return;
+  } else {
+    await sendImageMessage(cred, to, img.imageBase64, img.mimeType, img.caption);
   }
-  await sendImageMessage(cred, to, img.imageBase64, img.mimeType, img.caption);
+
+  // Loguear que salio, y CON QUE. Hasta ahora una imagen solo dejaba rastro
+  // cuando fallaba, asi que despues del bug del caption con el nombre del
+  // archivo no habia forma de confirmar por log que el arreglo funcionaba:
+  // la unica evidencia era mirar el telefono. El numero del bot va porque el
+  // otro sintoma posible era que la imagen saliera por el numero equivocado.
+  console.log(
+    `[whatsapp] imagen enviada a ${to} desde ${cred.phoneNumberId} (${img.source}) · ` +
+      (img.caption ? `CON caption: ${JSON.stringify(img.caption)}` : 'sin caption'),
+  );
 }
