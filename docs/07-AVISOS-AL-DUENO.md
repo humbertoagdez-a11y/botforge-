@@ -11,10 +11,26 @@ Un pedido de rotisería tiene minutos de vida útil. El dueño está en el local
 no mirando el correo. El email queda como red de contención y como canal por
 defecto mientras no haya un celular cargado.
 
+## Los ids que hacen falta
+
+| Dato | Valor | Dónde vive |
+|---|---|---|
+| WABA de BotForge | `1988990908418096` | `META_WABA_ID` en Railway |
+| Número que envía | `+595 991 820602` | `META_PHONE_NUMBER_ID` |
+| Plantilla creada | `964341106027336` | la WABA de arriba |
+
+El WABA **no se puede descubrir por API** con el token que tenemos:
+`/me/businesses` necesita `business_management`, que Meta retiró. Crear y
+consultar plantillas solo necesita `whatsapp_business_management`, que el
+System User sí tiene. Por eso el id se carga a mano en `META_WABA_ID`; el
+webhook también lo loguea (`entry[].id`) como red de contención.
+
 ## La plantilla que hay que aprobar
 
-Se crea en **WhatsApp Manager → Herramientas de la cuenta → Plantillas de
-mensajes → Crear plantilla**, en la WABA de BotForge (no en la del cliente,
+Se crea sola con `npm run plantilla:aviso -- --waba 1988990908418096`, que la
+manda por API con este mismo texto. Con `--estado` se consulta en qué quedó.
+También se puede a mano en **WhatsApp Manager → Herramientas de la cuenta →
+Plantillas de mensajes**, siempre en la WABA de BotForge (no en la del cliente,
 ver más abajo por qué).
 
 | Campo | Valor |

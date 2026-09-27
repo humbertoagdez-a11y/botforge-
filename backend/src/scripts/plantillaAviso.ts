@@ -15,6 +15,7 @@
  * El texto de abajo tiene que coincidir letra por letra con
  * docs/07-AVISOS-AL-DUENO.md. Si cambia uno, cambia el otro.
  */
+import { env } from '../config/env';
 import { PLANTILLA_AVISO, IDIOMA_PLANTILLA } from '../services/avisoWhatsApp';
 
 const GRAPH = 'https://graph.facebook.com/v23.0';
@@ -93,7 +94,7 @@ async function estado(token: string, waba: string): Promise<void> {
 
 async function main(): Promise<void> {
   const token = process.env.META_WHATSAPP_TOKEN;
-  const waba = argumento('waba') ?? process.env.META_WABA_ID ?? null;
+  const waba = argumento('waba') ?? env.META_WABA_ID ?? null;
 
   if (!token) {
     console.log('falta META_WHATSAPP_TOKEN. Corré con: railway run --service botforge- -- ...');

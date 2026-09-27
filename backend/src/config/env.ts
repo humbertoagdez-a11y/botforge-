@@ -32,6 +32,16 @@ const envSchema = z.object({
   // las instrucciones de conexion, el que corresponde a META_PHONE_NUMBER_ID.
   // No confundir con META_PHONE_NUMBER_ID, que es el id interno de Meta.
   META_WHATSAPP_DISPLAY_NUMBER: z.string().optional().default('+595991820602'),
+  // Cuenta de WhatsApp Business (WABA) de BotForge: la duena del numero de
+  // META_PHONE_NUMBER_ID. Hace falta para administrar plantillas, que viven
+  // dentro de la WABA y no del numero.
+  //
+  // Se carga a mano porque no se puede descubrir: el System User token puede
+  // enviar mensajes y administrar plantillas, pero /me/businesses necesita
+  // business_management, que se retiro. El unico otro lado que lo expone es
+  // entry[].id de los webhooks, y depender de un log para un dato de
+  // configuracion es como se pierden dos horas la proxima vez.
+  META_WABA_ID: z.string().optional().default(''),
   // App ID de Meta. Solo hace falta para la Resumable Upload API, que es el
   // unico camino para cambiar la foto del perfil de negocio: el resto del
   // perfil se edita sin el. Sin esta variable la feature de foto avisa y el
