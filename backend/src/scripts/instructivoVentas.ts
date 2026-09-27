@@ -15,9 +15,15 @@
  *   npm run instructivo:ventas            imprime el texto
  *   npm run instructivo:ventas -- --subir  lo sube al bot de ventas
  *
- * El `--subir` reemplaza el documento anterior del bot y deja el nuevo
- * procesándose en la cola. Pide confirmación del id del bot por variable de
- * entorno para que no se pueda apuntar al bot equivocado por accidente.
+ * El `--subir` agrega el documento y lo procesa EN LÍNEA: extrae, trocea,
+ * calcula los embeddings y los sube a Pinecone, sin pasar por la cola de Bull.
+ * La cola sirve para las subidas del panel, donde el worker corre en el mismo
+ * deploy que recibió el archivo; este script se corre desde una laptop y el
+ * job terminaría en el worker de producción, buscando un archivo que allá no
+ * existe. Los documentos viejos NO se borran solos.
+ *
+ * Pide el id del bot por variable de entorno para que no se pueda apuntar al
+ * bot equivocado por accidente.
  */
 import { LIMITS } from '../middleware/planLimits';
 import {
@@ -208,28 +214,26 @@ async function main(): Promise<void> {
   const botId = process.env.BOT_VENTAS_ID;
   if (!botId) {
     console.error('Falta BOT_VENTAS_ID. Ejemplo:');
-    console.error('  BOT_VENTAS_ID=dbab8033-... npm run instructivo:ventas -- --subir');
+    console.error('  BOT_VENTAS_ID=225e2778-... npm run instructivo:ventas -- --subir');
     process.exit(1);
   }
 
   const { prisma } = await import('../lib/prisma');
-  const { documentQueue } = await import('../lib/queue');
   const { v4: uuidv4 } = await import('uuid');
-  const { writeFileSync, mkdirSync } = await import('fs');
-  const { join, resolve } = await import('path');
+  const { extractAndChunk } = await import('../services/documentProcessor');
+  const { getEmbedding } = await import('../services/embeddings');
+  const { upsertChunks } = await import('../services/pinecone');
+  const { cloudinary, isCloudinaryConfigured } = await import('../config/cloudinary');
 
   const bot = await prisma.bot.findUnique({ where: { id: botId }, select: { id: true, name: true } });
   if (!bot) {
     console.error(`No existe el bot ${botId}`);
     process.exit(1);
   }
+  console.log(`bot: "${bot.name}" (${bot.id})`);
 
-  // El archivo tiene que existir en disco: processDocument lo lee de ahí
-  const dir = resolve(process.env.UPLOADS_DIR ?? './uploads');
-  mkdirSync(dir, { recursive: true });
   const nombre = 'instructivo-ventas-botforge.txt';
-  const ruta = join(dir, `${Date.now()}-${nombre}`);
-  writeFileSync(ruta, texto, 'utf8');
+  const buffer = Buffer.from(texto, 'utf8');
 
   const doc = await prisma.document.create({
     data: {
@@ -237,16 +241,71 @@ async function main(): Promise<void> {
       botId: bot.id,
       name: nombre,
       mimeType: 'text/plain',
-      filePath: ruta,
-      fileSize: Buffer.byteLength(texto, 'utf8'),
-      status: 'PENDING',
+      // Sin archivo en disco: este documento se procesa acá mismo. Se deja
+      // marcado para que nadie lo busque en /uploads al reprocesarlo.
+      filePath: '(generado por instructivoVentas.ts)',
+      fileSize: buffer.length,
+      status: 'PROCESSING',
     },
   });
-  await documentQueue.add({ documentId: doc.id });
 
-  console.log(`Instructivo subido al bot "${bot.name}" (${bot.id})`);
-  console.log(`  documento ${doc.id} — ${texto.length} caracteres, encolado para procesar`);
-  console.log('  Los documentos anteriores NO se borran: revisalos en el panel.');
+  // Se sube a Cloudinary igual que un documento del panel, para que exista de
+  // donde releerlo si algun dia hay que reprocesarlo desde el servidor.
+  if (isCloudinaryConfigured()) {
+    try {
+      const subida = await cloudinary.uploader.upload(
+        `data:text/plain;base64,${buffer.toString('base64')}`,
+        { folder: 'botforge/documents', public_id: `doc_${doc.id}`, resource_type: 'raw' },
+      );
+      await prisma.document.update({ where: { id: doc.id }, data: { url: subida.secure_url } });
+      console.log('  archivo guardado en Cloudinary');
+    } catch (err) {
+      // No es motivo para abortar: lo que hace funcionar al bot son los
+      // vectores, no el archivo.
+      console.warn(`  no se pudo subir a Cloudinary: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // Se procesa EN LINEA y no por la cola de Bull. La cola existe para las
+  // subidas del panel, donde el worker corre en el mismo deploy que recibio el
+  // archivo. Este script se corre desde una laptop: el job iria a parar al
+  // worker de produccion, que buscaria el archivo en SU disco y no lo
+  // encontraria. Procesarlo aca son las mismas funciones, en el mismo orden.
+  const trozos = await extractAndChunk(buffer, 'text/plain');
+  console.log(`  ${trozos.length} chunks`);
+
+  const vectores = [];
+  for (const trozo of trozos) {
+    const chunkId = uuidv4();
+    const embedding = await getEmbedding(trozo.content);
+    await prisma.chunk.create({
+      data: {
+        id: chunkId,
+        documentId: doc.id,
+        botId: bot.id,
+        content: trozo.content,
+        tokenCount: trozo.tokenCount,
+        chunkIndex: trozo.chunkIndex,
+        pineconeId: chunkId,
+      },
+    });
+    vectores.push({
+      id: chunkId,
+      values: embedding,
+      metadata: {
+        botId: bot.id,
+        documentId: doc.id,
+        chunkId,
+        content: trozo.content,
+        chunkIndex: trozo.chunkIndex,
+      },
+    });
+  }
+  await upsertChunks(vectores);
+  await prisma.document.update({ where: { id: doc.id }, data: { status: 'READY' } });
+
+  console.log(`\nListo. Documento ${doc.id} — ${texto.length} caracteres, ${vectores.length} vectores, READY.`);
+  console.log('Los documentos anteriores NO se borran: revisalos en el panel.');
   await prisma.$disconnect();
 }
 

@@ -17,6 +17,7 @@
     "reporte:muestra": "tsx src/scripts/reporteDeMuestra.ts tmp",
     "verificar:planes": "tsx src/scripts/verificarPlanes.ts",
     "probar:pedidos": "tsx src/scripts/probarPedidos.ts",
+    "probar:ventas": "tsx src/scripts/probarVentas.ts",
     "vectores:huerfanos": "tsx src/scripts/vectoresHuerfanos.ts",
     "plantilla:aviso": "tsx src/scripts/plantillaAviso.ts",
     "backfill:fechas": "tsx src/scripts/backfillFechaConversacion.ts",
