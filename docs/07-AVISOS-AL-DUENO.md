@@ -5,6 +5,19 @@ el bot llama a `avisar_pedido` y hay que avisarle al dueño. Este documento es
 la plantilla de WhatsApp que hay que aprobar en Meta y lo que se sabe del
 costo.
 
+## Las dos líneas de BotForge
+
+Desde el 2026-09-27 los dos números propios tienen roles separados:
+
+| Número | Bot | Rol |
+|---|---|---|
+| **+595992199207** | `225e2778` — "BotForge — Ventas" | Línea comercial. Recibe el tráfico de los anuncios Click-to-WhatsApp. |
+| **+595991820602** | `dbab8033` — "BotForge — Avisos" | Manda los avisos de pedidos. **No vende**: se le saca `marcar_lead` por `BOT_AVISOS_ID`. |
+
+La línea de avisos reconoce a un dueño registrado por su número, contra
+`Bot.avisoCelular` — el único identificador telefónico que existe, porque
+`User` guarda email y no teléfono. A quien no reconoce lo deriva a ventas.
+
 ## Por qué WhatsApp y no solo email
 
 Un pedido de rotisería tiene minutos de vida útil. El dueño está en el local,
