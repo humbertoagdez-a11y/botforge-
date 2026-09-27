@@ -15,7 +15,7 @@ import { searchFileByName, downloadFileAsBase64, getValidAccessToken } from './g
 import { isCloudinaryConfigured } from '../config/cloudinary';
 import { logCacheUsage } from '../lib/cacheUsage';
 import { reportarError, reportarAviso } from '../lib/monitoring';
-import { sinBloquesDeRazonamiento } from '../lib/anthropicBlocks';
+import { sinTextoNiRazonamiento } from '../lib/anthropicBlocks';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -1319,9 +1319,14 @@ export async function runTenantAgentLoop(
 
       currentMessages = [
         ...currentMessages,
-        // Sin los bloques de razonamiento: finalMessage() los devuelve
-        // mutilados y la API rechaza la ronda siguiente. Ver anthropicBlocks.ts
-        { role: 'assistant', content: sinBloquesDeRazonamiento(response.content) },
+        // Sin razonamiento Y SIN EL TEXTO. Lo del razonamiento es porque
+        // finalMessage() devuelve esos bloques mutilados y la API rechaza la
+        // ronda siguiente (ver anthropicBlocks.ts). Lo del texto es lo que
+        // arregla que el bot se coma el precio: ese parrafo se descarto arriba
+        // y el cliente no lo vio, asi que el modelo tampoco tiene que verlo —
+        // si lo lee, da por dicho algo que no se dijo. Los tool_use quedan,
+        // que son los que la API exige para aceptar el tool_result.
+        { role: 'assistant', content: sinTextoNiRazonamiento(response.content) },
         { role: 'user', content: toolResults },
       ];
       continue;

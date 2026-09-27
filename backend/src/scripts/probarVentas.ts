@@ -40,6 +40,13 @@ interface Caso {
   noDebeDecir?: RegExp[];
   /** Si tiene que haber quedado marcado como lead */
   esperaLead?: boolean;
+  /**
+   * Cuantas veces correr el caso.
+   *
+   * Para los defectos intermitentes: el bot se comia el precio en 9 de cada
+   * 20 conversaciones, asi que una sola corrida verde no descartaba nada.
+   */
+  repeticiones?: number;
   /** Chequeos extra sobre el texto completo de la conversacion */
   extra?: (todo: string) => void;
 }
@@ -53,6 +60,16 @@ const CASOS: Caso[] = [
     // Los precios reales del catálogo, no de la memoria del modelo
     debeDecir: [comoNumero(150000)],
     noDebeDecir: [/\b(200|250|300)[.,]000/],
+  },
+  {
+    // El caso que fallaba 9 de cada 20 antes del arreglo del loop. No alcanza
+    // con correrlo una vez: el defecto era intermitente y una sola corrida
+    // verde no probaba nada. Se repite dentro de la misma prueba para que una
+    // regresion salte aca y no en una conversacion real con un cliente.
+    nombre: '1 bis. Pregunta el precio, repetido (era 9/20 sin precio)',
+    repeticiones: 5,
+    turnos: ['Buenas, tengo una panadería en Asunción. Cuánto me sale el servicio?'],
+    debeDecir: [comoNumero(150000)],
   },
   {
     nombre: '2. Pregunta si funciona con WhatsApp',
@@ -126,7 +143,9 @@ async function main(): Promise<void> {
 
   try {
     for (const caso of CASOS) {
-      console.log(`${'='.repeat(78)}\n${caso.nombre}`);
+     const veces = caso.repeticiones ?? 1;
+     for (let intento = 1; intento <= veces; intento++) {
+      console.log(`${'='.repeat(78)}\n${caso.nombre}${veces > 1 ? ` (${intento}/${veces})` : ''}`);
       const conv = await prisma.conversation.create({
         data: {
           id: randomUUID(),
@@ -177,6 +196,7 @@ async function main(): Promise<void> {
       }
       caso.extra?.(todo);
       console.log();
+     }
     }
   } finally {
     for (const id of creadas) {
