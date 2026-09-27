@@ -33,9 +33,14 @@ Lo hace **antes de aprobar**: la categoría que muestra una plantilla en
 
 | Versión | Id | Estado | Categoría | Qué cambió |
 |---|---|---|---|---|
-| `aviso_pedido` | `964341106027336` | APPROVED | **MARKETING** | La original: "Hola, tenés un {{1}} nuevo en {{2}} … Entrá a tu panel de BotForge" |
-| `aviso_pedido_v2` | `2079337949615232` | APPROVED | **MARKETING** | Sin saludo y sin la marca, pero seguía cerrando con "Entrá a tu panel para ver la conversación y responder" |
+| `aviso_pedido` | `964341106027336` | **borrada** | MARKETING | La original: "Hola, tenés un {{1}} nuevo en {{2}} … Entrá a tu panel de BotForge" |
+| `aviso_pedido_v2` | `2079337949615232` | **borrada** | MARKETING | Sin saludo y sin la marca, pero seguía cerrando con "Entrá a tu panel para ver la conversación y responder" |
 | `aviso_pedido_v3` | `2442074942982481` | APPROVED | **UTILITY** ✅ | Sin nada que parezca llamado a la acción: cierra con "Aviso automático generado al recibir el mensaje del cliente" |
+
+Las dos primeras se borraron de la WABA una vez que v3 quedó aprobada
+(`DELETE /{waba_id}/message_templates?name=...`). Se dejan en esta tabla
+porque lo que enseñan —qué texto dispara la reclasificación— es justamente
+lo que hay que recordar antes de tocar el cuerpo.
 
 **El disparador era el llamado a la acción, no la marca.** v2 ya no decía
 "Hola" ni nombraba a BotForge y quedó MARKETING igual; lo único que le quedaba
@@ -90,7 +95,7 @@ ver más abajo por qué).
 
 | Campo | Valor |
 |---|---|
-| **Nombre** | `aviso_pedido` |
+| **Nombre** | `aviso_pedido_v3` |
 | **Categoría** | Utilidad (*Utility*) |
 | **Idioma** | Español (`es`) |
 | **Encabezado** | ninguno |
@@ -100,13 +105,13 @@ ver más abajo por qué).
 **Cuerpo**, exactamente este texto:
 
 ```
-Hola, tenés un {{1}} nuevo en {{2}}.
+Nuevo {{1}} recibido en {{2}}.
 
-Qué pidió: {{3}}
+Detalle: {{3}}
 Cliente: {{4}}
 Contacto: {{5}}
 
-Entrá a tu panel de BotForge para ver la conversación completa y responderle.
+Aviso automático generado al recibir el mensaje del cliente.
 ```
 
 **Ejemplos** que Meta pide para aprobar (los pide para cada variable):
