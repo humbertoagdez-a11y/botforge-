@@ -44,7 +44,7 @@ export function isPagoparConfigured(): boolean {
 
 function assertConfigured(): void {
   if (!isPagoparConfigured()) {
-    throw new AppError(503, 'Los pagos todavía no están habilitados', 'PAGOPAR_NOT_CONFIGURED');
+    throw new AppError(503, 'Los pagos no están disponibles en este momento', 'PAGOPAR_NOT_CONFIGURED');
   }
 }
 

@@ -830,16 +830,3 @@ export default function LandingPage() {
   );
 }
 
-/*
-PENDIENTES PARA PRODUCCION:
-[ ] Agregar NEXT_PUBLIC_API_URL (o BACKEND_URL) en las variables Railway del frontend
-    apuntando a https://botforge-production-b16f.up.railway.app
-[ ] Verificar que ANTHROPIC_API_KEY este en las variables del backend Railway
-[ ] Reemplazar los contadores estaticos de metricas (1.247 / 43 / 2 seg) por datos
-    reales de la base de datos cuando haya usuarios reales
-[ ] Agregar Google Analytics o Vercel Analytics para tracking de conversiones
-[ ] Configurar dominio propio y actualizar FRONTEND_URL en el backend Railway
-[ ] Agregar meta tags OG para compartir en redes sociales (layout.tsx)
-[ ] Configurar Stripe con price IDs reales de los planes Basico/Profesional/Agencia
-[ ] Ajustar el rate limit de /api/v1/assistant/chat segun trafico real
-*/

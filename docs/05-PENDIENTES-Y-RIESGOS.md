@@ -19,6 +19,7 @@ por relación valor/esfuerzo.
 | 6 | **Reintento con backoff para Resend** | Un email fallido es best-effort y se pierde. Para verificación de cuenta y recuperación de contraseña, perderlo **bloquea al usuario** | Mediano |
 | ~~7~~ | ~~**Sincronizar límites de planes por endpoint**~~ | **Resuelto el 2026-09-23.** Eran siete espejos manuales, no cuatro. Ahora hay una sola fuente por lado: `services/planCatalog.ts` (deriva de `LIMITS` + `PLAN_MONTOS`, sin números a mano) y `frontend/lib/planes.ts`. `npm run verificar:planes` compara los once campos de cada plan y sale con código 1 si difieren | — |
 | 8 | **Tests automatizados de los caminos críticos** | Todo lo verificado en las últimas sesiones fue con scripts temporales que se borraron. Auth, pago y límites deberían tener tests permanentes en Jest | Grande |
+| 9 | **Métricas inventadas en la landing** | `MetricsSection` (`frontend/app/page.tsx`) muestra "1.247 mensajes respondidos hoy" y "43 bots activos" como números fijos. Son afirmaciones falsas ante un cliente real: o salen de la base, o se sacan | Chico |
 
 ## Lo que se corrigió en la auditoría del 2026-09-23
 
@@ -82,11 +83,10 @@ queda cifrado y las filas viejas se siguen leyendo, así que no hay que migrar
 nada de golpe. Si la clave se pierde, cada cliente tiene que reconectar su
 WhatsApp.
 
-**Pagopar no verifica el monto pagado.** `activarPlan` confía en el campo
-`pagado` de la notificación y no compara `monto` contra `order.montoTotal`. La
-firma liga la notificación al pedido, así que el monto no lo elige el
-comprador; el hueco sería un pago parcial que Pagopar reporte como pagado. No
-se tocó porque cualquier cambio acá es cambio en el flujo de pagos.
+**~~Pagopar no verifica el monto pagado~~ — resuelto (commit `e6f778e`).**
+`activarPlan` compara el monto informado contra `order.montoTotal` antes de
+tocar la base. Si difiere no activa nada y avisa por email al admin; si el
+campo no vino, activa igual (dejar sin plan a quien pagó es peor).
 
 **Next.js 14.2.35 tiene un aviso crítico sin aplicar.** `npm audit` marca
 DoS por el Image Optimizer y deserialización de peticiones HTTP, y aplica

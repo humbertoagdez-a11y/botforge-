@@ -79,7 +79,7 @@ export default function PlanesGrid({ publica = false, renovar = null }: Props) {
         // El user del store puede estar desactualizado: el backend manda
         setPlanPendiente(planId);
       } else if (code === 'PAGOPAR_NOT_CONFIGURED') {
-        toast.info('Los pagos estarán disponibles pronto');
+        toast.error('Los pagos no están disponibles en este momento. Probá de nuevo en unos minutos.');
       } else {
         toast.error(err instanceof Error ? err.message : 'Error al procesar el pago');
       }
