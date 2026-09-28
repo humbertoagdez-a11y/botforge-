@@ -17,6 +17,7 @@ import { logCacheUsage } from '../lib/cacheUsage';
 import { reportarError, reportarAviso } from '../lib/monitoring';
 import { sinTextoNiRazonamiento } from '../lib/anthropicBlocks';
 import { esFallaDeCuenta, avisarFallaDeCuenta, marcarIAFuncionando } from './alertaIA';
+import { CATALOGO_TEXTO } from './planCatalog';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -76,6 +77,8 @@ export function buildTenantSystemBlocks(
   language: string,
   documentsContent: string,
   imagenes: ImagenDisponible[] = [],
+  /** Bloque fijo propio de este bot: hoy, el catalogo del bot de ventas */
+  bloqueEstableExtra = '',
   /**
    * Algo que solo vale para ESTE mensaje: hoy, quien esta escribiendo.
    *
@@ -92,7 +95,7 @@ export function buildTenantSystemBlocks(
     partes.push(`INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:\n${documentsContent}`);
   }
   return {
-    stable: buildTenantStablePrompt(botName, personality, language, imagenes),
+    stable: buildTenantStablePrompt(botName, personality, language, imagenes, bloqueEstableExtra),
     context: partes.join('\n\n'),
   };
 }
@@ -641,14 +644,42 @@ async function avisarLead(
   }
 }
 
+/**
+ * Los planes de BotForge, para el prompt del bot de ventas.
+ *
+ * POR QUE EN EL PROMPT Y NO SOLO EN EL RAG: medido, el RAG traia el precio
+ * SIEMPRE —los 4 chunks del instructivo, 8.002 caracteres, el precio en tres
+ * de ellos— y aun asi el bot contestaba a veces "el precio depende de como lo
+ * armamos", que ademas es falso. O sea que el dato estaba y el modelo lo
+ * pasaba por alto. Tenerlo en el bloque estable lo pone donde no se puede
+ * ignorar, y de paso sale mas barato: el bloque se cachea, mientras que el RAG
+ * reenvia esos 8.000 caracteres en cada mensaje.
+ *
+ * Sale de CATALOGO_TEXTO, que deriva de LIMITS y PLAN_MONTOS. Aca no se
+ * escribe ningun precio a mano: el instructivo viejo decia "hasta 5 imagenes"
+ * cuando eran 8, y nadie lo noto en meses.
+ *
+ * Es estatico, asi que no rompe el cacheo del bloque.
+ */
+export const BLOQUE_PLANES_VENTAS = `
+
+PLANES Y PRECIOS DE BOTFORGE (esto es la fuente oficial, tenelo siempre a mano):
+${CATALOGO_TEXTO}
+
+Los precios son FIJOS y publicos. Si te preguntan cuanto sale, deci el numero del plan que corresponde antes que ninguna otra cosa, en el primer mensaje.
+Nunca digas que el precio "depende", que hay que armar una propuesta a medida, ni que necesitas mas datos para dar un numero: es falso, y la persona que pregunto un precio y no lo recibio se va.
+Si no tenes claro que plan le sirve, deci el del Basico y aclara que despues se puede cambiar.`;
+
 /** Parte cacheable: todo lo que no depende del mensaje puntual */
 export function buildTenantStablePrompt(
   botName: string,
   personality: string,
   language: string,
   imagenes: ImagenDisponible[] = [],
+  /** Bloque extra fijo de ESTE bot. Hoy lo usa solo el de ventas. */
+  bloqueExtra = '',
 ): string {
-  return `${buildTenantSystemPrompt(botName, personality, language, '')}${bloqueImagenes(imagenes)}`;
+  return `${buildTenantSystemPrompt(botName, personality, language, '')}${bloqueImagenes(imagenes)}${bloqueExtra}`;
 }
 
 export function buildTenantSystemPrompt(
@@ -1472,9 +1503,14 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
   const esLineaDeAvisos = Boolean(env.BOT_AVISOS_ID) && bot.id === env.BOT_AVISOS_ID;
   const contextoDelTurno = esLineaDeAvisos ? await quienEscribe(clientId) : '';
 
+  // Solo el bot de ventas lleva nuestros planes en el prompt: a un bot de
+  // cliente no le sirve de nada tener los precios de BotForge en contexto.
+  const esBotDeVentas = Boolean(env.BOT_VENTAS_ID) && bot.id === env.BOT_VENTAS_ID;
+
   // Bloques partidos: reglas, personalidad e imágenes se cachean; el RAG no
   const systemPrompt = buildTenantSystemBlocks(
     bot.name, bot.personality, bot.language, chunks.join('\n\n'), imagenes,
+    esBotDeVentas ? BLOQUE_PLANES_VENTAS : '',
     contextoDelTurno,
   );
   const tools = buildTenantTools({

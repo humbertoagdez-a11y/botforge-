@@ -32,6 +32,12 @@ const envSchema = z.object({
   // las instrucciones de conexion, el que corresponde a META_PHONE_NUMBER_ID.
   // No confundir con META_PHONE_NUMBER_ID, que es el id interno de Meta.
   META_WHATSAPP_DISPLAY_NUMBER: z.string().optional().default('+595991820602'),
+  // El bot comercial de BotForge (+595992199207).
+  //
+  // Lo unico que cambia es que lleva el catalogo de planes en el prompt
+  // estable: es el unico bot que vende BotForge, y a ninguno de clientes le
+  // sirve tener nuestros precios en contexto.
+  BOT_VENTAS_ID: z.string().optional().default(''),
   // El bot que solo manda avisos de pedidos y no vende (+595991820602).
   //
   // Va por variable y no por una columna en Bot porque es una particularidad
