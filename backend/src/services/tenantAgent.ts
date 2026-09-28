@@ -16,6 +16,7 @@ import { isCloudinaryConfigured } from '../config/cloudinary';
 import { logCacheUsage } from '../lib/cacheUsage';
 import { reportarError, reportarAviso } from '../lib/monitoring';
 import { sinTextoNiRazonamiento } from '../lib/anthropicBlocks';
+import { esFallaDeCuenta, avisarFallaDeCuenta, marcarIAFuncionando } from './alertaIA';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -1275,7 +1276,23 @@ export async function runTenantAgentLoop(
   const systemBlocks = toSystemBlocks(systemPrompt);
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const { response, emitioTexto } = await runRound(systemBlocks, currentMessages, tools, stream);
+    let response: Anthropic.Message;
+    let emitioTexto: boolean;
+    try {
+      // Se envuelve solo la llamada a la API, no el turno entero: lo que
+      // interesa detectar es que la CUENTA dejo de funcionar, no que se haya
+      // caido una herramienta.
+      ({ response, emitioTexto } = await runRound(systemBlocks, currentMessages, tools, stream));
+      marcarIAFuncionando();
+    } catch (err) {
+      const { esFalla, motivo } = esFallaDeCuenta(err);
+      if (esFalla) {
+        // Aca y no en el canal: asi avisa venga el mensaje de WhatsApp, del
+        // widget o del chat de prueba. El aviso se deduplica solo.
+        await avisarFallaDeCuenta(motivo, { botId: context.botId, canal: context.channel });
+      }
+      throw err;
+    }
     tokensUsed += response.usage.input_tokens + response.usage.output_tokens;
     logCacheUsage('tenant', response.usage);
 

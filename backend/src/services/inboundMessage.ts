@@ -19,6 +19,7 @@ import {
   LIMITS,
 } from '../middleware/planLimits';
 import { runTenantTurn, type PendingImage } from './tenantAgent';
+import { esFallaDeCuenta, MENSAJE_MIENTRAS_ESTA_CAIDO } from './alertaIA';
 import { escaparHtml, sendEmail } from './email';
 import { getNpsState, npsFollowUp, parseNpsReply, saveComment, saveScore } from './nps';
 
@@ -374,16 +375,27 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
 
   // Agente Tipo B: RAG como contexto inicial + loop de tools nativo. Mismo
   // motor que el Chat de prueba del panel y que el widget publico.
-  const { content, tokensUsed, pendingImage } = await runTenantTurn({
-    bot,
-    history,
-    message: mensajeParaElAgente,
-    clientId: clientNumber,
-    channel: 'whatsapp',
-    // Hace falta para el aviso de lead: sin esto no se puede evitar el
-    // duplicado ni dar el link directo a la conversacion
-    conversationId: conversation.id,
-  });
+  let content: string;
+  let tokensUsed: number;
+  let pendingImage;
+  try {
+    ({ content, tokensUsed, pendingImage } = await runTenantTurn({
+      bot,
+      history,
+      message: mensajeParaElAgente,
+      clientId: clientNumber,
+      channel: 'whatsapp',
+      // Hace falta para el aviso de lead: sin esto no se puede evitar el
+      // duplicado ni dar el link directo a la conversacion
+      conversationId: conversation.id,
+    }));
+  } catch (err) {
+    if (!esFallaDeCuenta(err).esFalla) throw err;
+    // isNotice: no se guarda como mensaje del bot ni se le descuenta el cupo
+    // al dueño. Cobrarle por una disculpa que encima es culpa nuestra seria
+    // el colmo. El aviso al admin ya lo disparo el loop.
+    return { text: MENSAJE_MIENTRAS_ESTA_CAIDO, isNotice: true };
+  }
 
   const mensaje = await prisma.message.create({
     data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content, tokensUsed },
