@@ -94,6 +94,78 @@ En **Settings → Notifications** confirmá que tu email esté verificado y que
 > **Importante**: elegí *new issue*, no *every event*. Un bot que falla 200
 > veces en una hora te mandaría 200 emails y dejarías de leerlos.
 
+## Cuando la IA deja de responder
+
+Sentry avisa de los errores que revientan. Esto cubre el otro caso, que es
+peor: la cuenta de Anthropic deja de funcionar y **nada se rompe**. Los bots
+siguen levantados, el webhook sigue contestando 200, y desde afuera se ve
+igual que un bot lento.
+
+Pasó de verdad: se acabó el crédito de la API, los bots dejaron de contestar,
+al cliente final le llegaba "Hubo un problema, intentá de nuevo" —que además
+es un mal consejo, porque reintentar no arregla una cuenta sin saldo— y nadie
+se enteró hasta probarlo a mano.
+
+Lo maneja `backend/src/services/alertaIA.ts`. Ante un error de cuenta (sin
+crédito, clave inválida, sin permiso):
+
+| | |
+|---|---|
+| **Al admin** | Email a `ADMIN_EMAIL` **y** WhatsApp a `ADMIN_CELULAR` (por defecto +595981679869) |
+| **Al cliente final** | "Perdón, en un momento te respondemos". Va como `isNotice`: no se guarda como mensaje del bot ni se le descuenta el cupo al dueño |
+| **En los logs** | `[alerta-ia] LA IA NO RESPONDE`, con el motivo, el bot y el canal |
+
+**Un aviso por incidente, no por mensaje.** Con la cuenta caída cada mensaje
+que entra dispara el mismo error; sin deduplicar, el admin recibiría un aviso
+por cada cliente que escriba, justo cuando lo último que necesita es que le
+tapen la casilla. El incidente se cierra solo cuando una respuesta vuelve a
+salir bien. El log, en cambio, sale **siempre**: ahí sí se quiere ver cada
+ocurrencia, para saber cuántos clientes quedaron sin respuesta.
+
+La detección vive en el loop del agente y no en el canal, así avisa venga el
+mensaje de WhatsApp, del widget o del chat de prueba.
+
+### Qué NO dispara la alerta
+
+Un 429 (rate limit), un 529 (Anthropic saturado) y un `ECONNRESET` se
+reintentan solos: no son problemas de la cuenta y no avisan nada.
+
+### La plantilla de WhatsApp
+
+El admin casi nunca va a tener una ventana de 24 horas abierta con el número
+—si algo se rompe de madrugada, hace rato que no le escribió— y fuera de esa
+ventana Meta solo acepta plantillas aprobadas.
+
+| Dato | Valor |
+|---|---|
+| Nombre | `alerta_bots_caidos` |
+| Id | `1091557877136212` |
+| Estado | APPROVED · **UTILITY** |
+
+```
+Los bots no están respondiendo.
+
+Motivo: {{1}}
+Detectado: {{2}}
+
+Aviso automático generado al detectar la falla.
+```
+
+Sin llamado a la acción y sin nombrar el producto, que son las dos cosas que
+empujaron a MARKETING las primeras versiones de `aviso_pedido` (el detalle
+está en `07-AVISOS-AL-DUENO.md`). Acá la marca además no aporta: el único que
+recibe esta alerta es el admin, que sabe de qué sistema se trata.
+
+Si la plantilla no estuviera disponible, la alerta cae a texto libre, que
+llega solo con la ventana abierta. El email es la vía que siempre funciona.
+
+Se crea y se consulta con:
+
+```
+npm run plantilla:aviso -- --plantilla alerta
+npm run plantilla:aviso -- --estado
+```
+
 ## Límites del plan gratuito
 
 | Recurso | Free (Developer) |
