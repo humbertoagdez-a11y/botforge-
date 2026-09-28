@@ -17,40 +17,72 @@
  */
 import { env } from '../config/env';
 import { PLANTILLA_AVISO, IDIOMA_PLANTILLA } from '../services/avisoWhatsApp';
+import { PLANTILLA_ALERTA } from '../services/alertaIA';
 
 const GRAPH = 'https://graph.facebook.com/v23.0';
 
 /**
- * El cuerpo. Reglas de Meta metidas en esta forma concreta:
+ * Las plantillas que BotForge tiene que tener aprobadas en su WABA.
  *
- * - No puede empezar NI TERMINAR con una variable. Por eso arranca con
- *   "Nuevo " y por eso hay una linea final: "Contacto: {{5}}" al final seria
- *   rechazado de entrada.
- * - Esa linea final es un hecho, no una invitacion. Las dos versiones
- *   anteriores terminaban mandando al panel y Meta las clasifico MARKETING:
- *   v1 decia "Hola, tenes un {{1}} nuevo ... Entra a tu panel de BotForge",
- *   v2 le saco el saludo y la marca pero dejo "Entra a tu panel para ver la
- *   conversacion y responder". Lo unico que quedaba pareciendose a un llamado
- *   a la accion era esa linea, asi que v3 la reemplaza por una constatacion.
- * - El total viaja dentro de {{3}}, no como variable propia: un turno o unos
- *   datos de contacto no tienen total, y Meta rechaza un parametro vacio.
+ * REGLAS DE META que estan metidas en la forma de estos textos, todas
+ * aprendidas rebotando:
+ *
+ * - El cuerpo no puede empezar NI TERMINAR con una variable. Por eso ninguno
+ *   arranca con {{1}} y todos cierran con una linea de texto.
+ * - Esa linea final es un HECHO, no una invitacion. aviso_pedido v1 cerraba
+ *   con "Entra a tu panel de BotForge" y Meta la clasifico MARKETING; v2 le
+ *   saco el saludo y la marca pero mantuvo "Entra a tu panel para ver la
+ *   conversacion" y quedo MARKETING igual. Recien v3, cerrando con una
+ *   constatacion, quedo UTILITY. El disparador era el llamado a la accion.
+ * - Marketing no es solo mas caro (unas 5 veces): esta sujeto al tope de
+ *   promociones por persona, asi que un aviso real puede no entregarse.
+ * - Un parametro no puede ir vacio ni traer saltos de linea (error 132012).
+ * - La categoria de una plantilla APROBADA no se puede cambiar: un cambio de
+ *   texto significa una version nueva con otro nombre.
  */
-const CUERPO = `Nuevo {{1}} recibido en {{2}}.
+interface DefinicionDePlantilla {
+  nombre: string;
+  cuerpo: string;
+  /** Meta pide un ejemplo por variable para poder revisarla */
+  ejemplos: string[];
+}
+
+const PLANTILLAS: Record<string, DefinicionDePlantilla> = {
+  // El aviso de que un cliente final concreto algo
+  pedido: {
+    nombre: PLANTILLA_AVISO,
+    cuerpo: `Nuevo {{1}} recibido en {{2}}.
 
 Detalle: {{3}}
 Cliente: {{4}}
 Contacto: {{5}}
 
-Aviso automático generado al recibir el mensaje del cliente.`;
+Aviso automático generado al recibir el mensaje del cliente.`,
+    ejemplos: [
+      'pedido',
+      'Rotisería Doña Elba',
+      '2 milanesas completas con delivery a Cerro Corá 1234, Lambaré — Total: 121.000',
+      'Carla Ramírez',
+      '0981 555 444',
+    ],
+  },
 
-/** Meta pide un ejemplo por variable para poder revisarla. */
-const EJEMPLOS = [
-  'pedido',
-  'Rotisería Doña Elba',
-  '2 milanesas completas con delivery a Cerro Corá 1234, Lambaré — Total: 121.000',
-  'Carla Ramírez',
-  '0981 555 444',
-];
+  // La alerta al admin de que la IA dejo de responder.
+  //
+  // Sin el nombre del producto a proposito: la marca fue una de las cosas que
+  // empujaron aviso_pedido v1 a MARKETING, y aca no hace falta — el unico que
+  // recibe esto es el admin, que sabe perfectamente de que sistema se trata.
+  alerta: {
+    nombre: PLANTILLA_ALERTA,
+    cuerpo: `Los bots no están respondiendo.
+
+Motivo: {{1}}
+Detectado: {{2}}
+
+Aviso automático generado al detectar la falla.`,
+    ejemplos: ['La cuenta de Anthropic se quedó sin crédito', '28/09/2026 10:35'],
+  },
+};
 
 function argumento(nombre: string): string | null {
   const i = process.argv.indexOf(`--${nombre}`);
@@ -94,10 +126,11 @@ async function estado(token: string, waba: string): Promise<void> {
   const todas = (r.body.data ?? []) as Array<Record<string, string>>;
   // Todas las versiones, no solo la que usa el codigo: lo que interesa mirar
   // es cual quedo UTILITY, y esa puede no ser la que esta en uso.
-  const mias = todas.filter((t) => t.name.startsWith('aviso_pedido'));
+  const mias = todas.filter((t) => t.name.startsWith('aviso_pedido') || t.name.startsWith('alerta_'));
   console.log(`plantillas en la WABA: ${todas.length} · versiones de aviso_pedido: ${mias.length}`);
   for (const t of mias) {
-    const enUso = t.name === PLANTILLA_AVISO ? '  <- la que usa el codigo' : '';
+    const enUso =
+      t.name === PLANTILLA_AVISO || t.name === PLANTILLA_ALERTA ? '  <- la que usa el codigo' : '';
     console.log(`  ${t.name.padEnd(18)} ${t.language}  ${t.status.padEnd(9)} ${t.category}${enUso}`);
     if (t.rejected_reason && t.rejected_reason !== 'NONE') {
       console.log(`     motivo del rechazo: ${t.rejected_reason}`);
@@ -124,10 +157,18 @@ async function main(): Promise<void> {
     return;
   }
 
-  // --nombre permite probar una version nueva sin que el codigo de produccion
-  // empiece a usarla: recien se cambia PLANTILLA_AVISO si Meta la deja UTILITY.
-  const nombre = argumento('nombre') ?? PLANTILLA_AVISO;
+  // --plantilla elige cual del registro. --nombre permite probar una version
+  // nueva sin que produccion empiece a usarla: recien se cambia la constante
+  // del servicio si Meta la deja UTILITY.
+  const clave = argumento('plantilla') ?? 'pedido';
+  const def = PLANTILLAS[clave];
+  if (!def) {
+    console.error(`No existe la plantilla "${clave}". Hay: ${Object.keys(PLANTILLAS).join(', ')}`);
+    process.exit(1);
+  }
+  const nombre = argumento('nombre') ?? def.nombre;
   console.log(`creando la plantilla ${nombre} (${IDIOMA_PLANTILLA}, UTILITY)...`);
+  console.log(def.cuerpo.split('\n').map((l) => `    ${l}`).join('\n'));
   const r = await graph(token, `/${waba}/message_templates`, {
     method: 'POST',
     body: {
@@ -137,8 +178,8 @@ async function main(): Promise<void> {
       components: [
         {
           type: 'BODY',
-          text: CUERPO,
-          example: { body_text: [EJEMPLOS] },
+          text: def.cuerpo,
+          example: { body_text: [def.ejemplos] },
         },
       ],
     },

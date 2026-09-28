@@ -12,8 +12,25 @@
  */
 import { env } from '../config/env';
 import { escaparHtml, sendEmail } from './email';
-import { isMetaConfigured, sendTextMessage, ErrorEnvioMeta } from './metaMessaging';
+import {
+  isMetaConfigured,
+  sendTextMessage,
+  sendTemplateMessage,
+  limpiarParametro,
+  ErrorEnvioMeta,
+} from './metaMessaging';
+import { IDIOMA_PLANTILLA } from './avisoWhatsApp';
 import { credencialGlobal } from './metaAuth';
+
+/**
+ * La plantilla con la que sale la alerta por WhatsApp.
+ *
+ * Hace falta una plantilla porque el admin casi nunca va a tener una ventana
+ * de 24 horas abierta con este número: justamente, si algo se rompe de
+ * madrugada, hace rato que no le escribió. Fuera de esa ventana Meta solo
+ * acepta plantillas aprobadas.
+ */
+export const PLANTILLA_ALERTA = 'alerta_bots_caidos';
 
 /** Celular del admin. Va por variable para no clavar un número en el código. */
 const CELULAR_ADMIN = process.env.ADMIN_CELULAR ?? '+595981679869';
@@ -139,18 +156,38 @@ export async function avisarFallaDeCuenta(
     console.error('[alerta-ia] el email al admin falló:', err instanceof Error ? err.message : err);
   }
 
-  // WhatsApp después. Sale como texto libre, así que solo llega si el admin
-  // escribió al número en las últimas 24 horas — fuera de esa ventana Meta
-  // exige una plantilla. Se intenta igual porque cuando funciona es el canal
-  // que se mira en el momento, y el email ya cubre el caso en que no.
+  // WhatsApp después.
+  //
+  // Primero por plantilla: es lo único que llega fuera de la ventana de 24 h,
+  // que es el caso normal — si algo se rompe de madrugada, hace rato que el
+  // admin no le escribió a este número.
+  //
+  // Si la plantilla todavía no está aprobada se cae a texto libre, que llega
+  // solo si la ventana está abierta. Así la alerta funciona desde el día uno
+  // y mejora sola cuando Meta aprueba, sin tocar código.
   if (!isMetaConfigured()) return;
+
+  const cred = credencialGlobal(env.META_PHONE_NUMBER_ID);
+  const cuando = new Date().toLocaleString('es-PY', { timeZone: 'America/Asuncion' });
+
   try {
-    await sendTextMessage(
-      credencialGlobal(env.META_PHONE_NUMBER_ID),
-      CELULAR_ADMIN,
-      `BotForge: ${cuerpo}`,
+    await sendTemplateMessage(cred, CELULAR_ADMIN, PLANTILLA_ALERTA, IDIOMA_PLANTILLA, [
+      limpiarParametro(motivo, 'falla en la cuenta de IA'),
+      limpiarParametro(cuando, 'ahora'),
+    ]);
+    console.error('[alerta-ia] WhatsApp al admin: enviado por plantilla');
+    return;
+  } catch (err) {
+    const plantillaNoLista = err instanceof ErrorEnvioMeta && err.plantillaNoUsable;
+    console.error(
+      `[alerta-ia] la plantilla ${PLANTILLA_ALERTA} no se pudo usar` +
+        `${plantillaNoLista ? ' (todavía no aprobada)' : ''}, se prueba texto libre`,
     );
-    console.error('[alerta-ia] WhatsApp al admin: enviado');
+  }
+
+  try {
+    await sendTextMessage(cred, CELULAR_ADMIN, `BotForge: ${cuerpo}`);
+    console.error('[alerta-ia] WhatsApp al admin: enviado como texto libre');
   } catch (err) {
     const detalle =
       err instanceof ErrorEnvioMeta
