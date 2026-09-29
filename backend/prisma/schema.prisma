@@ -531,6 +531,11 @@ model Conversation {
   /// emails por la misma persona hacen que el dueño deje de abrirlos.
   leadAvisadoEn DateTime?
 
+  /// Cuando el bot de ventas cerro esta conversacion por llegar al limite de
+  /// mensajes sin señal de intencion. Con fecha, no contesta por 24 horas;
+  /// si la persona escribe algo con intencion real vuelve a null.
+  cerradaPorLimiteEn DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

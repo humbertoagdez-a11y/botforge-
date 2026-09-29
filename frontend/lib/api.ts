@@ -122,6 +122,8 @@ export interface ConversationSummary {
   adHeadline: string | null;
   adBody: string | null;
   ctwaClid: string | null;
+  /** Cuando el bot de ventas la cerro por llegar al limite sin intencion */
+  cerradaPorLimiteEn?: string | null;
 }
 
 export interface ConversationDetail {
@@ -142,6 +144,8 @@ export interface ConversationDetail {
   adHeadline: string | null;
   adBody: string | null;
   ctwaClid: string | null;
+  /** Cuando el bot de ventas la cerro por llegar al limite sin intencion */
+  cerradaPorLimiteEn?: string | null;
   /**
    * Pedidos concretos que dejo el cliente en esta conversacion: un pedido, un
    * turno, o sus datos para que lo llamen.

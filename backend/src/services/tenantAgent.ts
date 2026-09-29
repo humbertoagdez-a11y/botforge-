@@ -1275,15 +1275,34 @@ export interface TenantStreamHooks {
 }
 
 /** Una ronda del loop, con o sin streaming segun haya hooks */
+/**
+ * Techo de salida del bot de ventas.
+ *
+ * Medido sobre sus respuestas reales: la mediana son 105 caracteres y la mas
+ * larga que llego a mandar fueron 498 (~143 tokens), y esa justamente era una
+ * de las que sobraban — una explicacion de producto a un empleado que no
+ * podia comprar. 400 tokens es casi el triple de la mas larga observada, asi
+ * que no corta nada legitimo, pero pone un techo a las respuestas que se van
+ * de tema.
+ *
+ * Ojo con lo que esto NO hace: no ahorra plata por si solo. Se paga por los
+ * tokens que se generan, no por el maximo permitido. Lo que ahorra de verdad
+ * es que la conversacion sea mas corta; esto es la red por si el modelo se
+ * suelta igual.
+ */
+const MAX_TOKENS_VENTAS = 400;
+const MAX_TOKENS = 1024;
+
 async function runRound(
   systemBlocks: Anthropic.TextBlockParam[],
   messages: Anthropic.MessageParam[],
   tools: Anthropic.Tool[],
   stream?: TenantStreamHooks,
+  maxTokens: number = MAX_TOKENS,
 ): Promise<{ response: Anthropic.Message; emitioTexto: boolean }> {
   const request = {
     model: PRIMARY_MODEL,
-    max_tokens: 1024,
+    max_tokens: maxTokens,
     system: systemBlocks,
     tools,
     messages,
@@ -1311,6 +1330,8 @@ export async function runTenantAgentLoop(
   stream?: TenantStreamHooks,
   /** Herramientas de ESTE bot. Sin esto, las del bot más simple. */
   tools: Anthropic.Tool[] = CACHED_TENANT_TOOLS,
+  /** Techo de salida. El bot de ventas usa uno mas bajo. */
+  maxTokens: number = MAX_TOKENS,
 ): Promise<{ content: string; tokensUsed: number }> {
   let currentMessages: Anthropic.MessageParam[] = [
     ...history.map((m): Anthropic.MessageParam => ({ role: m.role, content: m.content })),
@@ -1326,7 +1347,7 @@ export async function runTenantAgentLoop(
       // Se envuelve solo la llamada a la API, no el turno entero: lo que
       // interesa detectar es que la CUENTA dejo de funcionar, no que se haya
       // caido una herramienta.
-      ({ response, emitioTexto } = await runRound(systemBlocks, currentMessages, tools, stream));
+      ({ response, emitioTexto } = await runRound(systemBlocks, currentMessages, tools, stream, maxTokens));
       marcarIAFuncionando();
     } catch (err) {
       const { esFalla, motivo } = esFallaDeCuenta(err);
@@ -1542,6 +1563,7 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
 
   const { content, tokensUsed } = await runTenantAgentLoop(
     systemPrompt, history, message, context, stream, tools,
+    esBotDeVentas ? MAX_TOKENS_VENTAS : MAX_TOKENS,
   );
 
   return { content, tokensUsed, pendingImage: context.pendingImage };

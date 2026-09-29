@@ -1,0 +1,14 @@
+-- Cuando el bot de ventas cerro esta conversacion por llegar al limite de
+-- mensajes sin ninguna señal de intencion.
+--
+-- Nace de una conversacion real que vino de un anuncio: 26 turnos, 58.793
+-- tokens y ningun lead. La persona ya habia dicho en el turno 4 que no tenia
+-- un negocio.
+--
+-- NULL es el estado normal. Con fecha, el bot no contesta por 24 horas, salvo
+-- que la persona escriba algo con intencion real — ahi se reactiva y esto
+-- vuelve a NULL.
+--
+-- Queda en la tabla y no solo en un log para que se vea en el panel: el dueño
+-- tiene que poder distinguir "el bot no contesto" de "el bot decidio cerrar".
+ALTER TABLE "conversations" ADD COLUMN "cerradaPorLimiteEn" TIMESTAMP(3);

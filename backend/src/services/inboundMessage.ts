@@ -20,6 +20,7 @@ import {
 } from '../middleware/planLimits';
 import { runTenantTurn, type PendingImage } from './tenantAgent';
 import { esFallaDeCuenta, MENSAJE_MIENTRAS_ESTA_CAIDO } from './alertaIA';
+import { evaluarLimiteDeVentas } from './limiteVentas';
 import { escaparHtml, sendEmail } from './email';
 import { getNpsState, npsFollowUp, parseNpsReply, saveComment, saveScore } from './nps';
 
@@ -375,6 +376,21 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
 
   // Agente Tipo B: RAG como contexto inicial + loop de tools nativo. Mismo
   // motor que el Chat de prueba del panel y que el widget publico.
+  // ANTES de llamar a la API: si esta conversacion ya no va a ningun lado, no
+  // se gasta el turno. Es el unico punto donde cortar sirve — pedirle al
+  // modelo que sea breve no evita que se lo invoque veinte veces.
+  const limite = await evaluarLimiteDeVentas(bot.id, conversation.id, mensajeParaElAgente);
+  if (limite.callar) {
+    // Ni respuesta ni cupo: la conversacion esta cerrada y la persona no trajo
+    // nada nuevo. El silencio es deliberado, no un fallo.
+    return { text: '', isNotice: true };
+  }
+  if (limite.cierre) {
+    // Un solo mensaje, escrito en codigo y sin pasar por el modelo: el cierre
+    // tiene que decir siempre lo mismo y no puede volver a preguntar nada.
+    return { text: limite.cierre, isNotice: true };
+  }
+
   let content: string;
   let tokensUsed: number;
   let pendingImage;

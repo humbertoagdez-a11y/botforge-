@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Bot, ChevronLeft, ChevronRight, Globe, Loader2, Megaphone, MessageSquare, Mic, ShoppingBag, Smartphone } from 'lucide-react';
+import { AlertTriangle, Ban, Bot, ChevronLeft, ChevronRight, Globe, Loader2, Megaphone, MessageSquare, Mic, ShoppingBag, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -66,6 +66,7 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
             {detail?.bot.name ?? 'Conversación'}
             {detail && <ChannelBadge channel={detail.channel} />}
             {detail && <EtiquetaPedido pedidos={detail.pedidos} />}
+            {detail && <EtiquetaCerrada cuando={detail.cerradaPorLimiteEn} />}
             {detail && (
               <EtiquetaAnuncio headline={detail.adHeadline} sourceId={detail.adSourceId} />
             )}
@@ -170,6 +171,28 @@ function ConversationThread({ conversationId, onClose }: { conversationId: strin
         ) : null}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Marca que el bot de ventas dejó de contestar esta conversación.
+ *
+ * Existe para que se distinga de un bot roto. Sin esto, el dueño ve una
+ * conversación donde el cliente escribió y nadie contestó, y lo primero que
+ * piensa —con razón— es que algo falló.
+ */
+function EtiquetaCerrada({ cuando, compacta = false }: { cuando?: string | null; compacta?: boolean }) {
+  if (!cuando) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border border-slate-400/40 bg-slate-400/15 px-2 py-0.5 font-semibold text-slate-300 ${
+        compacta ? 'text-[10px]' : 'text-xs'
+      }`}
+      title={`El bot la cerró el ${formatTime(cuando)}: llegó al límite de mensajes sin que la persona mostrara interés. Se reactiva sola si escribe algo concreto.`}
+    >
+      <Ban className={compacta ? 'h-2.5 w-2.5 shrink-0' : 'h-3 w-3 shrink-0'} />
+      Cerrada por el bot
+    </span>
   );
 }
 
@@ -339,6 +362,7 @@ export default function ConversationsPage() {
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-sm">{conv.bot.name}</span>
                         <EtiquetaPedido pedidos={conv.pedidos} compacta />
+                        <EtiquetaCerrada cuando={conv.cerradaPorLimiteEn} compacta />
                         <EtiquetaAnuncio headline={conv.adHeadline} sourceId={conv.adSourceId} compacta />
                         <div className="flex w-full items-center gap-2 md:contents">
                           <ChannelBadge channel={conv.channel} />
