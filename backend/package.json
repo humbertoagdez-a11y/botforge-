@@ -18,6 +18,7 @@
     "verificar:planes": "tsx src/scripts/verificarPlanes.ts",
     "probar:pedidos": "tsx src/scripts/probarPedidos.ts",
     "probar:ventas": "tsx src/scripts/probarVentas.ts",
+    "probar:ventas-costo": "tsx src/scripts/probarVentasCosto.ts",
     "probar:avisos": "tsx src/scripts/probarAvisos.ts",
     "vectores:huerfanos": "tsx src/scripts/vectoresHuerfanos.ts",
     "plantilla:aviso": "tsx src/scripts/plantillaAviso.ts",
