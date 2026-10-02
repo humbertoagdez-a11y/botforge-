@@ -610,3 +610,19 @@ model Message {
 
   @@map("messages")
 }
+
+/// Cuantas personas aceptan las cookies, por dia. Contador anonimo: sin IP,
+/// sin user agent, sin id de navegador. conAnuncio dice si llegaron con fbclid
+/// (booleano: el fbclid mismo no se guarda).
+model ConsentimientoDiario {
+  fecha      DateTime @db.Date
+  conAnuncio Boolean
+  /// Veces que se mostro el banner. No se deduplica (deduplicar exigiria
+  /// guardar algo en el navegador), asi que una recarga cuenta dos veces.
+  mostrado   Int      @default(0)
+  todas      Int      @default(0)
+  necesarias Int      @default(0)
+
+  @@id([fecha, conAnuncio])
+  @@map("consentimiento_diario")
+}
