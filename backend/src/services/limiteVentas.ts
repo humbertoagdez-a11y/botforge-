@@ -71,10 +71,14 @@ const SENALES_DE_INTENCION = [
   // es la persona devolviendo la pregunta del bot, confundida, y se contaba
   // como intencion — con lo cual la conversacion que hay que cortar quedaba
   // exenta. Hace falta que este CONTANDO algo, no preguntando.
-  /\b(vendo|vendemos|fabrico|reparo|atiendo|mi rubro|nuestro (negocio|local|emprendimiento)|en mi (negocio|local|tienda))\b/i,
+  // "venta de ...": asi contesto el unico prospecto real de la auditoria
+  // ("Venta de productos y servicios para el hogar") y no se detectaba.
+  /\b(vendo|vendemos|venta de|fabrico|reparo|atiendo|mi rubro|nuestro (negocio|local|emprendimiento)|en mi (negocio|local|tienda))\b/i,
   /\bcat[aá]logo\b/i,
   // Evaluar el producto
-  /\b(c[oó]mo funciona|como funciona|funciona con|c[oó]mo empiezo|como empiezo|demo|probarlo|me sirve|sirve para|se conecta|anda con)\b/i,
+  // "Donde aparece la informacion" tambien es evaluar: lo pregunto alguien
+  // en la auditoria antes de pedir como funciona.
+  /\b(c[oó]mo funciona|como funciona|funciona con|c[oó]mo empiezo|como empiezo|demo|probarlo|me sirve|sirve para|se conecta|anda con|d[oó]nde (aparece|se carga|se pone)|c[oó]mo se (usa|configura|carga))\b/i,
 ];
 
 /**
@@ -123,7 +127,11 @@ export async function evaluarLimiteDeVentas(
       select: {
         leadAvisadoEn: true,
         cerradaPorLimiteEn: true,
-        messages: { where: { role: 'USER' }, select: { content: true } },
+        messages: {
+          where: { role: 'USER' },
+          orderBy: { createdAt: 'asc' },
+          select: { content: true },
+        },
       },
     });
     if (!conv) return { callar: false };
@@ -162,8 +170,14 @@ export async function evaluarLimiteDeVentas(
       return { callar: false };
     }
 
-    // El mensaje entrante todavia no esta guardado cuando se evalua esto
-    const delCliente = conv.messages.length + 1;
+    // El mensaje entrante YA esta guardado cuando se llega aca: inboundMessage
+    // lo graba antes de evaluar el limite. Hasta el 2026-10-02 se le sumaba +1
+    // igual, asi que se contaba dos veces y el limite real era 5, no 6. En la
+    // auditoria eso corto a alguien en el mensaje 5 que en el 6 pregunto
+    // "Como funciona". Se mira el ultimo guardado en vez de asumir el orden,
+    // para que no se rompa si algun dia se graba despues.
+    const ultimo = conv.messages.at(-1)?.content;
+    const delCliente = conv.messages.length + (ultimo === mensajeEntrante ? 0 : 1);
     if (delCliente < MAX_MENSAJES_SIN_INTENCION) return { callar: false };
 
     // Llego al limite: ¿hubo intencion en ALGUN momento?

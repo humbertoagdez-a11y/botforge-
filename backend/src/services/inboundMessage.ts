@@ -388,6 +388,14 @@ export async function processInboundMessage(params: InboundParams): Promise<Inbo
   if (limite.cierre) {
     // Un solo mensaje, escrito en codigo y sin pasar por el modelo: el cierre
     // tiene que decir siempre lo mismo y no puede volver a preguntar nada.
+    //
+    // Se guarda en la conversacion para que se vea en el panel. Antes salia
+    // pero no quedaba registrado: el dueño veia un mensaje del cliente sin
+    // respuesta y la etiqueta de cerrada, sin saber que se le habia dicho.
+    // Sigue siendo isNotice, asi que no le descuenta el cupo.
+    await prisma.message.create({
+      data: { id: uuidv4(), conversationId: conversation.id, role: 'ASSISTANT', content: limite.cierre, tokensUsed: 0 },
+    });
     return { text: limite.cierre, isNotice: true };
   }
 

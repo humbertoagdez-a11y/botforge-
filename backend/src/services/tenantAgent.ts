@@ -17,8 +17,7 @@ import { logCacheUsage } from '../lib/cacheUsage';
 import { reportarError, reportarAviso } from '../lib/monitoring';
 import { sinTextoNiRazonamiento } from '../lib/anthropicBlocks';
 import { esFallaDeCuenta, avisarFallaDeCuenta, marcarIAFuncionando } from './alertaIA';
-import { CATALOGO_TEXTO } from './planCatalog';
-import { REGLAS_DE_TONO_VENTAS } from './instructivoVentas';
+import { INSTRUCTIVO_VENTAS, REGLAS_DE_TONO_VENTAS } from './instructivoVentas';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -661,11 +660,19 @@ async function avisarLead(
  * cuando eran 8, y nadie lo noto en meses.
  *
  * Es estatico, asi que no rompe el cacheo del bloque.
+ *
+ * Desde el 2026-10-02 lleva el instructivo ENTERO y el bot de ventas deja de
+ * usar el RAG. Medido en la auditoria: la apertura del anuncio ("Hola! Quiero
+ * mas informacion") traia del RAG los 4 chunks del instructivo, unos 2.300
+ * tokens SIN cachear, en cada mensaje. Las conversaciones se habian acortado
+ * pero cada mensaje costaba mas que antes (3.140 tokens contra 2.199). En el
+ * bloque estable esos mismos tokens se leen del cache, a un decimo del precio.
  */
 export const BLOQUE_PLANES_VENTAS = `
 
-PLANES Y PRECIOS DE BOTFORGE (esto es la fuente oficial, tenelo siempre a mano):
-${CATALOGO_TEXTO}
+TODO LO QUE TENES QUE SABER DE BOTFORGE ESTA ACA ABAJO. Es la fuente oficial: no hace falta buscar en documentos.
+
+${INSTRUCTIVO_VENTAS}
 
 Los precios son FIJOS y publicos. Si te preguntan cuanto sale, deci el numero del plan que corresponde antes que ninguna otra cosa, en el primer mensaje.
 Nunca digas que el precio "depende", que hay que armar una propuesta a medida, ni que necesitas mas datos para dar un numero: es falso, y la persona que pregunto un precio y no lo recibio se va.
@@ -674,7 +681,7 @@ Si no tenes claro que plan le sirve, deci el del Basico y aclara que despues se 
 COMO CONTESTAS EN ESTA LINEA (esto pisa las reglas generales de arriba):
 De 1 a 3 lineas. Sin relleno, sin entusiasmo de mas, sin repetir lo que la persona acaba de decir.
 NO termines siempre con una pregunta. Preguntá solo cuando la respuesta te sirve para avanzar a la venta: que negocio tiene, si quiere arrancar, o sus datos de contacto. Si ya sabes eso, o si la persona no es un prospecto, no preguntes nada.
-Nunca hagas dos preguntas seguidas sobre lo mismo. Si ya preguntaste que negocio tiene y no te contesto, no lo vuelvas a preguntar.
+Que negocio tiene se pregunta UNA sola vez en toda la conversacion. Si no contesto, lo esquivo o hablo de otra cosa, no lo vuelvas a preguntar: en una misma charla real se pregunto cuatro veces y la persona nunca contesto.
 
 CUANDO NO ES UN PROSPECTO:
 Si solo saluda y no dice nada mas: UNA linea. Que sos el asistente de BotForge y que negocio tiene. Nada mas.
@@ -921,6 +928,8 @@ export function buildTenantTools(opts: {
   driveActivo: boolean;
   /** La linea de avisos no vende: sin marcar_lead */
   sinVentas?: boolean;
+  /** El bot de ventas tiene todo en el prompt: buscar seria una ronda perdida */
+  sinBuscarDocumentos?: boolean;
 }): Anthropic.Tool[] {
   // Por nombre y no por posicion: agregar una herramienta en el medio del
   // array corria los indices y cambiaba en silencio que ve cada bot.
@@ -930,7 +939,8 @@ export function buildTenantTools(opts: {
     return t;
   };
 
-  const tools = [porNombre('buscar_en_documentos')]; // siempre
+  const tools: Anthropic.Tool[] = [];
+  if (!opts.sinBuscarDocumentos) tools.push(porNombre('buscar_en_documentos'));
   if (opts.driveActivo) tools.push(porNombre('buscar_archivos_drive'));
   if (opts.tieneImagenes) tools.push(TOOL_ENVIAR_IMAGEN);
   // Las que cierran la conversacion hacia una persona van siempre, al final.
@@ -1577,8 +1587,13 @@ async function quienEscribe(clientId: string): Promise<string> {
 export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTurnResult> {
   const { bot, history, message, clientId, channel, stream } = params;
 
+  // Solo el bot de ventas lleva nuestro instructivo en el prompt: a un bot de
+  // cliente no le sirve de nada tener los precios de BotForge en contexto. Y
+  // como lo tiene entero en el bloque cacheado, no consulta el RAG.
+  const esBotDeVentas = Boolean(env.BOT_VENTAS_ID) && bot.id === env.BOT_VENTAS_ID;
+
   const [chunks, imagenes, drive] = await Promise.all([
-    getRelevantChunks(bot.id, message),
+    esBotDeVentas ? Promise.resolve([] as string[]) : getRelevantChunks(bot.id, message),
     prisma.botImage.findMany({
       where: { botId: bot.id },
       orderBy: { createdAt: 'asc' },
@@ -1593,10 +1608,6 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
   const esLineaDeAvisos = Boolean(env.BOT_AVISOS_ID) && bot.id === env.BOT_AVISOS_ID;
   const contextoDelTurno = esLineaDeAvisos ? await quienEscribe(clientId) : '';
 
-  // Solo el bot de ventas lleva nuestros planes en el prompt: a un bot de
-  // cliente no le sirve de nada tener los precios de BotForge en contexto.
-  const esBotDeVentas = Boolean(env.BOT_VENTAS_ID) && bot.id === env.BOT_VENTAS_ID;
-
   // Bloques partidos: reglas, personalidad e imágenes se cachean; el RAG no
   const systemPrompt = buildTenantSystemBlocks(
     bot.name, bot.personality, bot.language, chunks.join('\n\n'), imagenes,
@@ -1607,6 +1618,7 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
     tieneImagenes: imagenes.length > 0,
     driveActivo: Boolean(drive?.isActive),
     sinVentas: esLineaDeAvisos,
+    sinBuscarDocumentos: esBotDeVentas,
   });
 
   const context: TenantAgentContext = {
