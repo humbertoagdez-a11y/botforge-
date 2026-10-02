@@ -87,6 +87,7 @@ export function buildTenantSystemBlocks(
    * acertar nunca — y peor, arriesgarse a contestarle a uno con el dato de otro.
    */
   contextoDelTurno = '',
+  reglaDePreguntaAnterior = false,
 ): TenantSystemBlocks {
   const franja = `MOMENTO DEL DÍA EN PARAGUAY AHORA: ${franjaHorariaParaguay()}. Si tenés que saludar, usá esa.`;
   const partes = [franja];
@@ -95,7 +96,7 @@ export function buildTenantSystemBlocks(
     partes.push(`INFORMACIÓN DEL NEGOCIO Y BASE DE CONOCIMIENTO:\n${documentsContent}`);
   }
   return {
-    stable: buildTenantStablePrompt(botName, personality, language, imagenes, bloqueEstableExtra),
+    stable: buildTenantStablePrompt(botName, personality, language, imagenes, bloqueEstableExtra, reglaDePreguntaAnterior),
     context: partes.join('\n\n'),
   };
 }
@@ -701,15 +702,39 @@ export function buildTenantStablePrompt(
   imagenes: ImagenDisponible[] = [],
   /** Bloque extra fijo de ESTE bot. Hoy lo usa solo el de ventas. */
   bloqueExtra = '',
+  reglaDePreguntaAnterior = false,
 ): string {
-  return `${buildTenantSystemPrompt(botName, personality, language, '')}${bloqueImagenes(imagenes)}${bloqueExtra}`;
+  return `${buildTenantSystemPrompt(botName, personality, language, '', reglaDePreguntaAnterior)}${bloqueImagenes(imagenes)}${bloqueExtra}`;
 }
+
+/**
+ * Cuando terminar con una pregunta.
+ *
+ * La regla vieja era "Siempre terminas con una pregunta o accion concreta
+ * cuando tiene sentido". En el bot de ventas eso daba 63% de respuestas
+ * terminando en pregunta y tres vueltas de "gracias / de nada / chau" en una
+ * misma conversacion: cada pregunta obliga a contestar, y cada respuesta es un
+ * mensaje que se descuenta del cupo del dueño.
+ *
+ * La nueva pregunta solo cuando avanza hacia algo concreto. Antes de aplicarla
+ * se verifico que la rotiseria de prueba siga ofreciendo "te tomo el
+ * pedido?" y siga disparando el aviso: tomar un pedido ES una accion concreta.
+ *
+ * La linea de avisos se queda con la vieja: por pedido del dueño, ese bot no
+ * se toca en este cambio.
+ */
+const REGLA_PREGUNTA =
+  'Terminá con una pregunta solo si te sirve para avanzar hacia una acción concreta: tomar un pedido, agendar un turno o pedir un dato que te falta. Si ya respondiste lo que te preguntaron, no hace falta preguntar nada más. Si el cliente se despide o agradece, contestá corto y no lo vuelvas a abrir.';
+const REGLA_PREGUNTA_ANTERIOR =
+  'Siempre terminás con una pregunta o acción concreta cuando tiene sentido para avanzar la conversación.';
 
 export function buildTenantSystemPrompt(
   botName: string,
   personality: string,
   language: string,
   documentsContent: string,
+  /** Solo la linea de avisos conserva la regla vieja de preguntas */
+  reglaDePreguntaAnterior = false,
 ): string {
   const langLabel =
     language === 'es' ? 'español' : language === 'pt' ? 'português' : 'English';
@@ -722,7 +747,7 @@ Nunca uses los signos de apertura ¿ ni ¡ al principio de una pregunta o exclam
 Nunca uses jerga de IA ni frases como "según la información disponible", "base de conocimiento", "como modelo de lenguaje" o "como asistente de IA". Hablás como alguien del negocio, no como un sistema.
 Si el cliente pregunta en serio si está hablando con una persona o con un asistente automático, decile la verdad con naturalidad: que sos el asistente virtual del negocio, que estás para ayudarlo, y ofrecele pasarlo con alguien del equipo si lo prefiere. Nunca lo niegues ni esquives la pregunta. Esto no es una invitación a aclararlo cuando nadie lo pregunta: solo cuando te lo preguntan.
 Si no sabés algo, decí que lo vas a consultar y derivá; nunca inventés datos.
-Siempre terminás con una pregunta o acción concreta cuando tiene sentido para avanzar la conversación.
+${reglaDePreguntaAnterior ? REGLA_PREGUNTA_ANTERIOR : REGLA_PREGUNTA}
 Igualá el registro del cliente: si escribe informal, sé informal.
 Entendés qué necesita el cliente y lo guiás hacia una acción concreta (reserva, compra, consulta, contacto). Manejás objeciones con empatía, sin presionar.
 
@@ -1613,6 +1638,7 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
     bot.name, bot.personality, bot.language, chunks.join('\n\n'), imagenes,
     esBotDeVentas ? BLOQUE_PLANES_VENTAS : '',
     contextoDelTurno,
+    esLineaDeAvisos,
   );
   const tools = buildTenantTools({
     tieneImagenes: imagenes.length > 0,
