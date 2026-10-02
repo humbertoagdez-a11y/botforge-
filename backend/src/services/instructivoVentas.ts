@@ -298,6 +298,46 @@ export function violacionesDeTono(texto: string): string[] {
 }
 
 /**
+ * Saca de la respuesta lo empalagoso que se puede sacar sin riesgo.
+ *
+ * POR QUE EXISTE: con las reglas de tono en el prompt, reproduciendo las
+ * conversaciones reales de la auditoria, igual quedaron 5 resbalones en 44
+ * respuestas (11%, contra 42% antes). Los 5 eran del mismo tipo: una muletilla
+ * AL PRINCIPIO ("Dale, lo armas vos", "Sin problema. BotForge es...") o un ¿.
+ * Pedirlo mas fuerte en el prompt sigue siendo una sugerencia.
+ *
+ * Solo toca lo que es posicional y mecanico, donde sacar no puede romper la
+ * oracion: la muletilla inicial, ¿ y ¡, los ! despues del saludo, y los
+ * emojis. Una palabra prohibida en el medio de una frase NO se toca —cortarla
+ * podria dejar la oracion rota— y la sigue atrapando probar:ventas.
+ *
+ * Si sacar la muletilla dejara la respuesta vacia ("Dale." solo), se deja la
+ * original: un mensaje vacio es peor que un "dale".
+ */
+const MULETILLA_INICIAL =
+  /^\s*(?:entendido,?\s*)?(?:dale|sin problema|sin drama|todo bien|tranqui|perfecto|genial|excelente|buen[ií]simo|qu[eé] bueno|bien ah[ií])\s*[,.!]*\s*/i;
+
+export function limpiarTonoVentas(texto: string): string {
+  let t = texto;
+
+  const sinMuletilla = t.replace(MULETILLA_INICIAL, '');
+  if (sinMuletilla.trim().length >= 2 && sinMuletilla !== t) {
+    t = sinMuletilla.charAt(0).toUpperCase() + sinMuletilla.slice(1);
+  }
+
+  t = t.replace(/[¿¡]/g, '');
+
+  // El saludo de apertura puede llevar un !; en el resto, punto.
+  const saludo = t.match(/^\s*(hola|buen[oa]s?( d[ií]as| tardes| noches)?|buen d[ií]a)[^!\n]{0,40}!/i);
+  const cabeza = saludo ? saludo[0] : '';
+  const cola = t.slice(cabeza.length).replace(/!+/g, '.').replace(/\.{2,}/g, '.');
+  t = cabeza + cola;
+
+  t = t.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}\u{FE0F}]/gu, '');
+  return t.replace(/[ \t]{2,}/g, ' ').trim();
+}
+
+/**
  * Las reglas de tono para el prompt del bot de ventas. Nombran la misma lista
  * que verifica probar:ventas.
  */

@@ -17,7 +17,7 @@ import { logCacheUsage } from '../lib/cacheUsage';
 import { reportarError, reportarAviso } from '../lib/monitoring';
 import { sinTextoNiRazonamiento } from '../lib/anthropicBlocks';
 import { esFallaDeCuenta, avisarFallaDeCuenta, marcarIAFuncionando } from './alertaIA';
-import { INSTRUCTIVO_VENTAS, REGLAS_DE_TONO_VENTAS } from './instructivoVentas';
+import { INSTRUCTIVO_VENTAS, REGLAS_DE_TONO_VENTAS, limpiarTonoVentas } from './instructivoVentas';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -1655,9 +1655,15 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
     conversationId: params.conversationId,
   };
 
-  const { content, tokensUsed } = await runTenantAgentLoop(
+  const { content: crudo, tokensUsed } = await runTenantAgentLoop(
     systemPrompt, history, message, context, stream, tools,
   );
+
+  // Solo el bot de ventas: la muletilla inicial y los signos que el prompt no
+  // alcanzo a evitar. Ojo: en el Chat de prueba con streaming el texto ya
+  // salio en vivo antes de esto, asi que ahi se ve sin limpiar; por WhatsApp,
+  // que es por donde entra el anuncio, sale limpio.
+  const content = esBotDeVentas ? limpiarTonoVentas(crudo) : crudo;
 
   return { content, tokensUsed, pendingImage: context.pendingImage };
 }
