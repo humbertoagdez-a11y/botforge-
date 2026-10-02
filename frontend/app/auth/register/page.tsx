@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,23 +18,21 @@ import { datosMeta, nuevoEventId } from '@/lib/atribucion';
 import { useAuthStore } from '@/lib/store';
 import { AUTH_CARD, AUTH_INPUT, AUTH_LABEL, AUTH_LINK, AUTH_MUTED, AUTH_SUBMIT } from '@/lib/auth-styles';
 
-const schema = z
-  .object({
-    name: z.string().min(2, 'Mínimo 2 caracteres'),
-    email: z.string().email('Email inválido'),
-    password: z.string().min(8, 'Mínimo 8 caracteres'),
-    confirmPassword: z.string().min(1, 'Confirmá tu contraseña'),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: 'Las contraseñas no coinciden',
-    path: ['confirmPassword'],
-  });
+// Sin "Confirmar contraseña": era un campo mas para quien llega desde un
+// anuncio en el celular. El error de tipeo que evitaba lo cubre el boton de
+// ver la contraseña, y si igual se equivoca, "Olvidé mi contraseña" existe.
+const schema = z.object({
+  name: z.string().min(2, 'Mínimo 2 caracteres'),
+  email: z.string().email('Email inválido'),
+  password: z.string().min(8, 'Mínimo 8 caracteres'),
+});
 type FormData = z.infer<typeof schema>;
 
 export default function RegisterPage() {
   const router = useRouter();
   const { setAuth } = useAuthStore();
   const [loading, setLoading] = useState(false);
+  const [verClave, setVerClave] = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -83,23 +81,35 @@ export default function RegisterPage() {
       <form onSubmit={handleSubmit(onSubmit)} className="mt-7 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="name" className={AUTH_LABEL}>Nombre</Label>
-          <Input id="name" placeholder="Tu nombre" className={AUTH_INPUT} {...register('name')} />
+          <Input id="name" placeholder="Tu nombre" autoComplete="name" className={AUTH_INPUT} {...register('name')} />
           {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="email" className={AUTH_LABEL}>Email</Label>
-          <Input id="email" type="email" placeholder="vos@empresa.com" className={AUTH_INPUT} {...register('email')} />
+          <Input id="email" type="email" inputMode="email" autoComplete="email" placeholder="vos@empresa.com" className={AUTH_INPUT} {...register('email')} />
           {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="password" className={AUTH_LABEL}>Contraseña</Label>
-          <Input id="password" type="password" placeholder="Mínimo 8 caracteres" className={AUTH_INPUT} {...register('password')} />
+          <div className="relative">
+            <Input
+              id="password"
+              type={verClave ? 'text' : 'password'}
+              autoComplete="new-password"
+              placeholder="Mínimo 8 caracteres"
+              className={`${AUTH_INPUT} pr-10`}
+              {...register('password')}
+            />
+            <button
+              type="button"
+              onClick={() => setVerClave((v) => !v)}
+              aria-label={verClave ? 'Ocultar contraseña' : 'Ver contraseña'}
+              className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-gray-400 hover:text-white"
+            >
+              {verClave ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="confirmPassword" className={AUTH_LABEL}>Confirmar contraseña</Label>
-          <Input id="confirmPassword" type="password" placeholder="Repetí tu contraseña" className={AUTH_INPUT} {...register('confirmPassword')} />
-          {errors.confirmPassword && <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>}
         </div>
         <Button type="submit" className={AUTH_SUBMIT} disabled={loading}>
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}

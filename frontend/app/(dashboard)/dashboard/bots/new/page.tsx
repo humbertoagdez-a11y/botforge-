@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowRight, Bot, Check, FileText, Loader2, Pencil, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, FileText, Loader2, Pencil, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,7 +24,6 @@ const STEPS = [
   'Elegí una personalidad',
   'Personalidad',
   'Datos del negocio',
-  'Confirmar',
 ];
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -41,8 +40,6 @@ type Step3Data = z.infer<typeof step3Schema>;
 
 const DEFAULT_PERSONALITY =
   'Sos un asistente virtual amable y profesional. Respondés preguntas de forma clara y concisa basándote en la información disponible. Si no sabés algo, lo indicás honestamente y ofrecés alternativas.';
-
-const LANG_LABEL: Record<string, string> = { es: 'Español', en: 'English', pt: 'Português' };
 
 // ─── Indicador de pasos ───────────────────────────────────────────────────────
 function StepIndicator({ current }: { current: number }) {
@@ -121,7 +118,6 @@ export default function NewBotPage() {
    * activar el chat", que es donde se traba la mayoría.
    */
   const [instructivo, setInstructivo] = useState('');
-  const [cargarInstructivo, setCargarInstructivo] = useState(true);
 
   const form1 = useForm<Step1Data>({
     resolver: zodResolver(step1Schema),
@@ -162,7 +158,10 @@ export default function NewBotPage() {
   }
 
   // Crear bot
-  async function handleCreate() {
+  // Se crea desde la pantalla de datos del negocio. Antes habia una quinta
+  // pantalla, "Confirmar creacion", que repetia lo ya visto: un paso mas entre
+  // el registro y el primer mensaje del bot, sin decision nueva que tomar.
+  async function handleCreate(cargarInstructivo: boolean) {
     setLoading(true);
     try {
       const bot = await api.bots.create({
@@ -188,7 +187,9 @@ export default function NewBotPage() {
       }
 
       toast.success('Bot creado exitosamente');
-      router.push(`/dashboard/bots/${bot.id}`);
+      // Directo al chat de prueba: lo primero que quiere ver alguien que
+      // acaba de crear su bot es que conteste.
+      router.push(`/dashboard/bots/${bot.id}?tab=chat`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al crear el bot');
       setLoading(false);
@@ -394,9 +395,10 @@ export default function NewBotPage() {
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground"
-                onClick={() => { setCargarInstructivo(false); setStep(4); }}
+                disabled={loading}
+                onClick={() => handleCreate(false)}
               >
-                Lo cargo después
+                Crear sin datos, los cargo después
               </Button>
             </div>
           </CardContent>
@@ -407,84 +409,16 @@ export default function NewBotPage() {
             <Button
               type="button"
               className="w-full sm:w-auto"
-              onClick={() => { setCargarInstructivo(true); setStep(4); }}
+              disabled={loading}
+              onClick={() => handleCreate(true)}
             >
-              Siguiente <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {/* ── Paso 4: Confirmar ──────────────────────────────────────────── */}
-      {step === 4 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Confirmar creación</CardTitle>
-            <CardDescription>Revisá los datos antes de crear el bot</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                {selectedPersonalidad ? (
-                  <selectedPersonalidad.icon className="h-7 w-7" />
-                ) : (
-                  <Bot className="h-5 w-5 text-primary" />
-                )}
-              </div>
-              <div>
-                <p className="font-semibold">{step1Data.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {LANG_LABEL[step1Data.language]}
-                  {selectedPersonalidad && (
-                    <span className="ml-2 text-muted-foreground/70">· {selectedPersonalidad.nombre}</span>
-                  )}
-                </p>
-              </div>
-            </div>
-            <div className="max-h-40 overflow-y-auto rounded-lg border bg-muted/30 p-3">
-              <p className="mb-1 text-xs font-medium text-muted-foreground">Instrucciones del sistema</p>
-              <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground/80">
-                {step3Data.personality}
-              </p>
-            </div>
-
-            {/* Que se sepa antes de crear si el bot va a nacer con informacion
-                o vacio: de eso depende que conteste algo util desde el minuto uno */}
-            <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <div className="text-xs leading-relaxed text-muted-foreground">
-                {cargarInstructivo && instructivo.trim().length > 0 ? (
-                  <>
-                    <p className="font-medium text-foreground">Tu bot arranca con los datos que cargaste.</p>
-                    <p className="mt-1">
-                      {pendientesDeCompletar(instructivo) > 0
-                        ? `Quedan ${pendientesDeCompletar(instructivo)} datos sin completar: el bot va a decir que los confirma en un momento hasta que los cargues.`
-                        : 'No quedó nada sin completar.'}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-medium text-foreground">Tu bot arranca sin información.</p>
-                    <p className="mt-1">
-                      No va a poder contestar nada hasta que subas un documento desde la pestaña
-                      Documentos.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-          </CardContent>
-          <div className="flex flex-col-reverse gap-3 p-6 pt-0 sm:flex-row sm:justify-between sm:gap-2">
-            <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setStep(3)}>
-              <ArrowLeft className="h-4 w-4" /> Atrás
-            </Button>
-            <Button onClick={handleCreate} disabled={loading} className="w-full sm:w-auto">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Crear bot
             </Button>
           </div>
         </Card>
       )}
+
     </div>
   );
 }
