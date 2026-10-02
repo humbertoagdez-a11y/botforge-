@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
 import { runTenantTurn } from '../services/tenantAgent';
 import { LIMITS } from '../middleware/planLimits';
+import { violacionesDeTono } from '../services/instructivoVentas';
 
 const BOT_ID = process.env.BOT_VENTAS_ID;
 
@@ -176,6 +177,16 @@ async function main(): Promise<void> {
       }
 
       const todo = respuestas.join('\n');
+
+      // Tono en TODAS las respuestas, en todos los casos: el dueño encontro al
+      // bot empalagoso, y en la auditoria fallaban 27 de 65 respuestas reales.
+      // Usa la misma lista que el prompt, asi no se desincronizan.
+      const deTono = respuestas.flatMap((x) => violacionesDeTono(x));
+      chequeo(
+        'tono: sin halagos, festejos, exclamaciones ni emojis',
+        deTono.length === 0,
+        deTono.length ? [...new Set(deTono)].join(', ') : '',
+      );
 
       for (const re of caso.debeDecir ?? []) {
         chequeo(`dice ${re}`, re.test(todo));

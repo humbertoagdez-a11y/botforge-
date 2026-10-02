@@ -18,6 +18,7 @@ import { reportarError, reportarAviso } from '../lib/monitoring';
 import { sinTextoNiRazonamiento } from '../lib/anthropicBlocks';
 import { esFallaDeCuenta, avisarFallaDeCuenta, marcarIAFuncionando } from './alertaIA';
 import { CATALOGO_TEXTO } from './planCatalog';
+import { REGLAS_DE_TONO_VENTAS } from './instructivoVentas';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -681,7 +682,9 @@ Si ya te dijo que no tiene negocio, que es empleado, o que solo esta mirando: un
 Si pregunta algo que no tiene que ver con BotForge (el clima, un chiste, politica, una tarea, arreglar una moto, charla suelta): una linea diciendo que solo atendes consultas sobre BotForge. Sin explicar, sin seguirle el tema, sin preguntarle nada.
 Si te esta probando o jodiendo, o manda cosas sin sentido: contesta en una linea y no alimentes la charla.
 Si se despide o agradece: una linea corta y listo. No devuelvas la despedida con otra pregunta — asi es como una conversacion terminada arranca de nuevo tres veces.
-Nunca digas que estas para charlar ni que podes hablar de otra cosa. No es cierto: esta linea atiende consultas sobre BotForge.`;
+Nunca digas que estas para charlar ni que podes hablar de otra cosa. No es cierto: esta linea atiende consultas sobre BotForge.
+
+${REGLAS_DE_TONO_VENTAS}`;
 
 /** Parte cacheable: todo lo que no depende del mensaje puntual */
 export function buildTenantStablePrompt(
@@ -1339,6 +1342,8 @@ export async function runTenantAgentLoop(
   ];
   let tokensUsed = 0;
   const systemBlocks = toSystemBlocks(systemPrompt);
+  // Lo que hizo la ultima ronda, para poder decir POR QUE no hubo texto
+  let ultimaRonda: { stopReason: string; salida: number; bloques: string } | null = null;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let response: Anthropic.Message;
@@ -1360,6 +1365,20 @@ export async function runTenantAgentLoop(
     }
     tokensUsed += response.usage.input_tokens + response.usage.output_tokens;
     logCacheUsage('tenant', response.usage);
+    ultimaRonda = {
+      stopReason: String(response.stop_reason),
+      salida: response.usage.output_tokens,
+      bloques: response.content.map((b) => b.type).join(','),
+    };
+    // Apagado por defecto. Con TENANT_DEBUG_RONDAS=1 muestra cuantos tokens de
+    // salida usa cada ronda y en que bloques: es lo que hace falta para
+    // calibrar max_tokens, porque el razonamiento interno tambien consume
+    // salida aunque el cliente nunca lo vea.
+    if (process.env.TENANT_DEBUG_RONDAS === '1') {
+      console.log(
+        `[ronda] stop=${ultimaRonda.stopReason} salida=${ultimaRonda.salida} bloques=${ultimaRonda.bloques}`,
+      );
+    }
 
     // El SDK 0.36 no tipa 'refusal' todavia; llega en runtime con fable-5
     if ((response.stop_reason as string) === 'refusal') {
@@ -1424,10 +1443,23 @@ export async function runTenantAgentLoop(
   // Se gastaron las MAX_TURNS rondas sin que el modelo produjera texto. El
   // cliente recibe una disculpa genérica, así que sin esto el problema es
   // invisible: el dueño solo ve que su bot "a veces no contesta".
-  reportarAviso('tenant-sin-respuesta', 'El agente agotó las rondas sin producir texto', {
+  // El motivo real y no "agoto las rondas" a secas: una ronda que corta por
+  // max_tokens sin llegar a escribir tambien termina aca, y con el mensaje
+  // viejo se confundia con un loop de herramientas.
+  const motivo =
+    ultimaRonda?.stopReason === 'max_tokens'
+      ? `se quedo sin tokens de salida (${ultimaRonda.salida}) antes de escribir`
+      : `termino sin texto (stop_reason=${ultimaRonda?.stopReason ?? '?'})`;
+  console.error(
+    `[tenant] sin respuesta para el cliente: ${motivo} · bloques: ${ultimaRonda?.bloques ?? '-'} · bot ${context.botId}`,
+  );
+  reportarAviso('tenant-sin-respuesta', `El agente no produjo texto: ${motivo}`, {
     botId: context.botId,
     canal: context.channel,
     rondas: MAX_TURNS,
+    stopReason: ultimaRonda?.stopReason ?? 'desconocido',
+    tokensDeSalida: ultimaRonda?.salida ?? 0,
+    bloques: ultimaRonda?.bloques ?? '',
   });
   const agotado = 'Disculpá, no pude procesar tu consulta. ¿Podés escribirla de nuevo?';
   if (stream) stream.onDelta(agotado);
