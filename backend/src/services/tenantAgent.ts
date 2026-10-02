@@ -1279,21 +1279,21 @@ export interface TenantStreamHooks {
 
 /** Una ronda del loop, con o sin streaming segun haya hooks */
 /**
- * Techo de salida del bot de ventas.
+ * Techo de salida de una ronda. Es el mismo para todos los bots.
  *
- * Medido sobre sus respuestas reales: la mediana son 105 caracteres y la mas
- * larga que llego a mandar fueron 498 (~143 tokens), y esa justamente era una
- * de las que sobraban — una explicacion de producto a un empleado que no
- * podia comprar. 400 tokens es casi el triple de la mas larga observada, asi
- * que no corta nada legitimo, pero pone un techo a las respuestas que se van
- * de tema.
+ * Hubo un techo de 400 solo para el bot de ventas y fue un error: se calibro
+ * midiendo el TEXTO visible de sus respuestas (la mas larga, ~143 tokens),
+ * pero Sonnet 5 emite bloques de razonamiento que tambien cuentan como salida.
+ * Medido con TENANT_DEBUG_RONDAS: las rondas que llaman a una herramienta
+ * gastan entre 146 y 384 tokens solo pensando, y una llego a 400 y se corto
+ * antes de escribir. Como esa es justo la ronda de marcar_lead, el que salia
+ * perdiendo era el prospecto que dejaba su nombre y su telefono: recibia
+ * "no pude procesar tu consulta" en el momento exacto de la venta.
  *
- * Ojo con lo que esto NO hace: no ahorra plata por si solo. Se paga por los
- * tokens que se generan, no por el maximo permitido. Lo que ahorra de verdad
- * es que la conversacion sea mas corta; esto es la red por si el modelo se
- * suelta igual.
+ * Un techo mas bajo no ahorra plata —se paga lo que se genera, no el maximo—
+ * y lo que corta no es una respuesta larga sino el razonamiento, con lo cual
+ * no queda respuesta. El largo del texto se controla en el prompt.
  */
-const MAX_TOKENS_VENTAS = 400;
 const MAX_TOKENS = 1024;
 
 async function runRound(
@@ -1345,6 +1345,13 @@ export async function runTenantAgentLoop(
   // Lo que hizo la ultima ronda, para poder decir POR QUE no hubo texto
   let ultimaRonda: { stopReason: string; salida: number; bloques: string } | null = null;
 
+  // Si una ronda se corta por max_tokens antes de escribir, se repite UNA vez
+  // con el doble de lugar. Con 1024 no deberia pasar, pero el razonamiento
+  // interno no tiene un largo fijo, y la alternativa es mandarle una disculpa
+  // a alguien que capaz estaba por comprar.
+  let techo = maxTokens;
+  let reintentoPorCorte = false;
+
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let response: Anthropic.Message;
     let emitioTexto: boolean;
@@ -1352,7 +1359,7 @@ export async function runTenantAgentLoop(
       // Se envuelve solo la llamada a la API, no el turno entero: lo que
       // interesa detectar es que la CUENTA dejo de funcionar, no que se haya
       // caido una herramienta.
-      ({ response, emitioTexto } = await runRound(systemBlocks, currentMessages, tools, stream, maxTokens));
+      ({ response, emitioTexto } = await runRound(systemBlocks, currentMessages, tools, stream, techo));
       marcarIAFuncionando();
     } catch (err) {
       const { esFalla, motivo } = esFallaDeCuenta(err);
@@ -1378,6 +1385,22 @@ export async function runTenantAgentLoop(
       console.log(
         `[ronda] stop=${ultimaRonda.stopReason} salida=${ultimaRonda.salida} bloques=${ultimaRonda.bloques}`,
       );
+    }
+
+    if (
+      response.stop_reason === 'max_tokens' &&
+      !response.content.some((b) => b.type === 'text') &&
+      !reintentoPorCorte
+    ) {
+      reintentoPorCorte = true;
+      techo = Math.min(techo * 2, 4096);
+      console.warn(
+        `[tenant] ronda cortada por max_tokens sin texto (${response.usage.output_tokens}); ` +
+          `se repite con ${techo} · bot ${context.botId}`,
+      );
+      if (emitioTexto) stream?.onDiscard?.();
+      turn--;
+      continue;
     }
 
     // El SDK 0.36 no tipa 'refusal' todavia; llega en runtime con fable-5
@@ -1461,7 +1484,8 @@ export async function runTenantAgentLoop(
     tokensDeSalida: ultimaRonda?.salida ?? 0,
     bloques: ultimaRonda?.bloques ?? '',
   });
-  const agotado = 'Disculpá, no pude procesar tu consulta. ¿Podés escribirla de nuevo?';
+  // Sin ¿: es la misma regla de estilo que se le exige al modelo.
+  const agotado = 'Disculpá, no pude procesar tu consulta. Podés escribirla de nuevo?';
   if (stream) stream.onDelta(agotado);
   return { content: agotado, tokensUsed };
 }
@@ -1595,7 +1619,6 @@ export async function runTenantTurn(params: TenantTurnParams): Promise<TenantTur
 
   const { content, tokensUsed } = await runTenantAgentLoop(
     systemPrompt, history, message, context, stream, tools,
-    esBotDeVentas ? MAX_TOKENS_VENTAS : MAX_TOKENS,
   );
 
   return { content, tokensUsed, pendingImage: context.pendingImage };
