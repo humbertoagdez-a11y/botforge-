@@ -58,6 +58,22 @@ const envSchema = z.object({
   // entry[].id de los webhooks, y depender de un log para un dato de
   // configuracion es como se pierden dos horas la proxima vez.
   META_WABA_ID: z.string().optional().default(''),
+  // API de Conversiones de Meta: el mismo evento que manda el pixel, pero
+  // desde el servidor, para que Meta vea registros, checkouts y compras aunque
+  // el navegador bloquee el pixel. Solo se manda con consentimiento: ver
+  // services/metaCapi.ts.
+  //
+  // El token se genera en el Administrador de eventos -> el dataset ->
+  // Configuracion -> API de Conversiones -> Generar token de acceso. Sin
+  // cargar, la API queda apagada y el pixel del navegador sigue igual.
+  META_CAPI_TOKEN: z.string().optional().default(''),
+  // El dataset (pixel) al que van los eventos. Es el mismo id que usa el
+  // frontend en lib/metaPixel.ts; si cambia uno, cambia el otro.
+  META_PIXEL_ID: z.string().optional().default('1988014471769093'),
+  // Solo para verificar en la herramienta "Probar eventos" de Meta: con esto
+  // cargado los eventos se marcan como de prueba y NO cuentan para la campaña.
+  // Hay que borrarlo despues de probar.
+  META_CAPI_TEST_CODE: z.string().optional().default(''),
   // App ID de Meta. Solo hace falta para la Resumable Upload API, que es el
   // unico camino para cambiar la foto del perfil de negocio: el resto del
   // perfil se edita sin el. Sin esta variable la feature de foto avisa y el

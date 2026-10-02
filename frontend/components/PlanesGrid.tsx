@@ -17,6 +17,7 @@ import {
 } from './ui/dialog';
 import { api, type ApiError } from '@/lib/api';
 import { pixelTrack } from '@/lib/metaPixel';
+import { datosMeta } from '@/lib/atribucion';
 import { useAuthStore } from '@/lib/store';
 import { PLANES, precioTexto, type PlanPago } from '@/lib/planes';
 
@@ -52,7 +53,9 @@ export default function PlanesGrid({ publica = false, renovar = null }: Props) {
   async function irAlCheckout(planId: PlanPago) {
     setLoading(planId);
     try {
-      const { checkoutUrl, hashPedido } = await api.pagopar.checkout(planId);
+      // El id del evento lo arma el servidor con el hash de la orden
+      // (checkout_<hash>), que todavia no existe: por eso no va aca.
+      const { checkoutUrl, hashPedido } = await api.pagopar.checkout(planId, datosMeta());
       if (!checkoutUrl) throw new Error('Error al crear la orden de pago');
       // Conversion: la orden existe y el usuario se va al checkout de Pagopar.
       // Se manda aca y no en el onClick porque antes del checkout puede
@@ -64,7 +67,7 @@ export default function PlanesGrid({ publica = false, renovar = null }: Props) {
         content_type: 'product',
         value: elegido?.precioGs ?? 0,
         currency: 'PYG',
-      });
+      }, `checkout_${hashPedido}`);
       // Guardado para poder consultar el estado al volver del checkout, que es
       // de dónde vuelve el usuario sin ningún parámetro nuestro
       try {

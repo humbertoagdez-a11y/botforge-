@@ -82,6 +82,14 @@ model User {
   /// confirmar el codigo. Los usuarios previos al deploy quedan en true
   /// via la migracion, para no dejarlos afuera.
   emailVerified          Boolean   @default(false)
+  /// Eligio "Aceptar" en el banner de cookies. Sin esto, a Meta no se le manda
+  /// nada de esta persona. Ver services/metaCapi.ts.
+  metaConsentimiento     Boolean   @default(false)
+  metaConsentimientoEn   DateTime?
+  /// Click del anuncio (formato de la cookie _fbc). Solo con consentimiento.
+  metaFbc                String?
+  /// Navegador segun el pixel (cookie _fbp). Solo con consentimiento.
+  metaFbp                String?
   emailVerifiedAt        DateTime?
   messagesUsedThisMonth  Int       @default(0)
   messagesResetAt        DateTime  @default(now())
@@ -119,25 +127,32 @@ model User {
 /// se crea antes de mandar al cliente al checkout y lo marca pagado el
 /// webhook, siempre despues de validar el token sha1.
 model PagoparOrder {
-  id                String    @id @default(uuid())
-  userId            String
-  plan              String
-  montoTotal        Int
+  id                 String    @id @default(uuid())
+  userId             String
+  plan               String
+  montoTotal         Int
   /// Lo devuelve Pagopar al iniciar la transaccion; identifica el pedido
-  hashPedido        String?   @unique
+  hashPedido         String?   @unique
   /// Nuestro identificador, el que viaja en el token de la firma
-  idPedidoComercio  String    @unique
-  pagado            Boolean   @default(false)
-  fechaPago         DateTime?
+  idPedidoComercio   String    @unique
+  pagado             Boolean   @default(false)
+  fechaPago          DateTime?
   /// Medio con el que efectivamente pagó (QR, transferencia, tarjeta...).
   /// Lo dice la notificacion; se guarda para no depender de volver a
   /// consultarle a Pagopar cada vez que alguien mira el pedido.
-  formaPago         String?
+  formaPago          String?
   /// Numero de comprobante que emite Pagopar al acreditar el pago. Es el dato
   /// con el que se concilia un cobro ante un reclamo, asi que se persiste en
   /// vez de quedar solo en el log del webhook.
-  numeroComprobante String?
-  createdAt         DateTime  @default(now())
+  numeroComprobante  String?
+  /// Lo necesario para mandar el Purchase desde el webhook, donde no hay
+  /// navegador. Todo en null si la persona no eligio "Aceptar".
+  metaConsentimiento Boolean   @default(false)
+  metaFbc            String?
+  metaFbp            String?
+  metaIp             String?
+  metaUserAgent      String?
+  createdAt          DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

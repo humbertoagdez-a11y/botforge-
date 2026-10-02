@@ -35,7 +35,13 @@ declare global {
   var _fbq: FbqFn | undefined;
 }
 
-export type EventoPixel = 'Lead' | 'InitiateCheckout' | 'Purchase';
+/**
+ * CompleteRegistration y no Lead para la cuenta creada: es el evento estandar
+ * de Meta para eso, y el que se puede usar para optimizar una campaña. Lead
+ * nunca llego a dispararse en produccion (0 eventos), asi que no hay historia
+ * que se corte.
+ */
+export type EventoPixel = 'CompleteRegistration' | 'InitiateCheckout' | 'Purchase';
 
 function hayConsentimiento(): boolean {
   return useCookieConsentStore.getState().choice === 'all';
@@ -110,6 +116,11 @@ export function pixelTrack(
  * deduplicacion del lado de Meta, que igual alcanza.
  */
 export function marcarEventoUnico(clave: string): boolean {
+  // Sin consentimiento no se escribe nada: la marca existe solo para no mandar
+  // a Meta dos veces el mismo evento, y sin consentimiento no se manda ninguno.
+  // Antes escribia igual, o sea guardaba en el navegador algo de publicidad de
+  // quien habia elegido "Solo las necesarias".
+  if (!hayConsentimiento()) return true;
   try {
     const k = `bf_pixel_${clave}`;
     if (localStorage.getItem(k)) return false;

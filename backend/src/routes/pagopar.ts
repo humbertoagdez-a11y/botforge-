@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { enviarEventoMeta, normalizarFbc, normalizarFbp, ipDelCliente } from '../services/metaCapi';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { reportarError } from '../lib/monitoring';
@@ -22,13 +23,27 @@ const router = Router();
 const PLAN_DURACION_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ─── POST /checkout ───────────────────────────────────────────────────────────
+/**
+ * Lo que manda el navegador para atribuir la conversion a un anuncio de Meta.
+ * Si consentimiento es false, el resto se ignora aunque venga: es la regla.
+ */
+const metaSchema = z
+  .object({
+    consentimiento: z.boolean(),
+    eventId: z.string().min(8).max(100).regex(/^[A-Za-z0-9_-]+$/).optional(),
+    fbc: z.string().max(500).optional(),
+    fbp: z.string().max(100).optional(),
+  })
+  .optional();
+
 const checkoutSchema = z.object({
   plan: z.enum(['STARTER', 'PRO', 'AGENCY']),
+  meta: metaSchema,
 });
 
 router.post('/checkout', requireAuth, requireVerifiedEmail, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { plan } = checkoutSchema.parse(req.body);
+    const { plan, meta } = checkoutSchema.parse(req.body);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.userId } });
 
     // Pagopar exige el documento del comprador. Se avisa con un codigo propio
@@ -49,6 +64,48 @@ router.post('/checkout', requireAuth, requireVerifiedEmail, async (req: Request,
       plan as PagoparPlan,
       PLAN_MONTOS[plan as PagoparPlan],
     );
+
+    // Atribucion a Meta, solo con consentimiento. Se guarda en la ORDEN porque
+    // el Purchase sale del webhook de Pagopar, donde no hay navegador ni IP.
+    // Lo que trajo ahora pisa lo del registro: es mas reciente, y si llego de
+    // otro anuncio, ese es el que corresponde.
+    if (meta?.consentimiento === true) {
+      const fbc = normalizarFbc(meta.fbc) ?? user.metaFbc;
+      const fbp = normalizarFbp(meta.fbp) ?? user.metaFbp;
+      const ip = ipDelCliente(req.ip);
+      const userAgent = req.get('user-agent') ?? null;
+
+      await prisma.pagoparOrder.update({
+        where: { hashPedido },
+        data: { metaConsentimiento: true, metaFbc: fbc, metaFbp: fbp, metaIp: ip, metaUserAgent: userAgent },
+      });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { metaConsentimiento: true, metaConsentimientoEn: new Date(), metaFbc: fbc, metaFbp: fbp },
+      });
+
+      // Mismo id que el pixel: checkout_<hash>. El frontend lo arma igual.
+      void enviarEventoMeta({
+        evento: 'InitiateCheckout',
+        eventId: `checkout_${hashPedido}`,
+        url: `${env.FRONTEND_URL}/pricing`,
+        email: user.email,
+        userId: user.id,
+        fbc,
+        fbp,
+        ip,
+        userAgent,
+        valor: PLAN_MONTOS[plan as PagoparPlan],
+        contenido: plan,
+      });
+    } else {
+      // Retiro el consentimiento (o nunca lo dio): se borra lo que habia de
+      // Meta en la cuenta, asi un pago futuro no sale con datos de antes.
+      await prisma.user.updateMany({
+        where: { id: user.id, metaConsentimiento: true },
+        data: { metaConsentimiento: false, metaConsentimientoEn: null, metaFbc: null, metaFbp: null },
+      });
+    }
 
     res.json({ data: { checkoutUrl, hashPedido }, error: null, meta: null });
   } catch (err) {
@@ -573,7 +630,43 @@ async function activarPlan(
     `[pagopar] pago confirmado por ${origen} — pedido ${order.idPedidoComercio}, ` +
       `plan ${order.plan} activo hasta ${validaHasta.toISOString()}`,
   );
+
+  // La compra, para Meta. Va DESPUES de la guarda de arriba (updateMany con
+  // pagado:false), asi que sale una sola vez por pedido aunque Pagopar notifique
+  // tres veces o la pantalla de resultado consulte en paralelo. Mismo id que el
+  // pixel de pago-resultado: purchase_<hash>. Solo con consentimiento.
+  void reportarCompraAMeta(order.id);
   return true;
+}
+
+/** El Purchase, con lo que se guardo al crear la orden. Nunca lanza. */
+async function reportarCompraAMeta(orderId: string): Promise<void> {
+  try {
+    const o = await prisma.pagoparOrder.findUnique({
+      where: { id: orderId },
+      select: {
+        hashPedido: true, plan: true, montoTotal: true, metaConsentimiento: true,
+        metaFbc: true, metaFbp: true, metaIp: true, metaUserAgent: true,
+        user: { select: { id: true, email: true } },
+      },
+    });
+    if (!o?.metaConsentimiento || !o.hashPedido) return;
+    await enviarEventoMeta({
+      evento: 'Purchase',
+      eventId: `purchase_${o.hashPedido}`,
+      url: `${env.FRONTEND_URL}/dashboard/pago-resultado`,
+      email: o.user.email,
+      userId: o.user.id,
+      fbc: o.metaFbc,
+      fbp: o.metaFbp,
+      ip: o.metaIp,
+      userAgent: o.metaUserAgent,
+      valor: o.montoTotal,
+      contenido: o.plan,
+    });
+  } catch (err) {
+    console.error('[meta-capi] no se pudo reportar la compra:', err instanceof Error ? err.message : err);
+  }
 }
 
 router.post('/webhook', async (req: Request, res: Response) => {

@@ -1,6 +1,8 @@
 import { toast } from 'sonner';
 import { useAuthStore } from './store';
 
+import type { DatosMeta } from './atribucion';
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export interface ApiError extends Error {
@@ -585,10 +587,10 @@ export const api = {
         body: JSON.stringify({ email, password }),
       }),
     /** No devuelve sesión: hay que verificar el email antes de entrar */
-    register: (name: string, email: string, password: string) =>
+    register: (name: string, email: string, password: string, meta?: DatosMeta) =>
       request<RegisterPending>('/api/v1/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, meta }),
       }),
     /** Verifica el código y recién ahí devuelve la sesión */
     verifyEmail: (email: string, code: string) =>
@@ -856,10 +858,10 @@ export const api = {
   },
 
   pagopar: {
-    checkout: (plan: 'STARTER' | 'PRO' | 'AGENCY') =>
+    checkout: (plan: 'STARTER' | 'PRO' | 'AGENCY', meta?: DatosMeta) =>
       request<{ checkoutUrl: string; hashPedido: string }>('/api/v1/pagopar/checkout', {
         method: 'POST',
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, meta }),
       }),
     consultar: (hashPedido: string) =>
       request<PagoparEstado>(`/api/v1/pagopar/consultar/${hashPedido}`),

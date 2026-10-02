@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     'Qué datos recolecta BotForge, para qué los usa, con quién los comparte y cómo ejercer tus derechos.',
 };
 
-const ACTUALIZADO = '26 de julio de 2026';
+const ACTUALIZADO = '2 de octubre de 2026';
 
 const SECCIONES: LegalSection[] = [
   {
@@ -123,7 +123,63 @@ const SECCIONES: LegalSection[] = [
           </Li>
         </L>
         <p className="pt-2">
-          <T>No vendemos tus datos ni los de tus clientes</T>, y no los usamos para publicidad.
+          <T>No vendemos tus datos ni los de tus clientes.</T> Los datos de las conversaciones de tus
+          clientes nunca se usan para publicidad. Los tuyos, solo para medir nuestros anuncios y{' '}
+          <T>solo si aceptaste las cookies</T>: está explicado en la sección siguiente.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'medicion',
+    title: 'Medición de anuncios (solo si aceptaste las cookies)',
+    content: (
+      <>
+        <p>
+          Hacemos publicidad en Facebook e Instagram, y para saber qué anuncios funcionan le
+          avisamos a Meta cuando alguien que vino de un anuncio se registra o contrata.{' '}
+          <T>Esto pasa únicamente si tocaste &laquo;Aceptar&raquo; en el aviso de cookies.</T> Si
+          elegiste &laquo;Solo las necesarias&raquo;, a Meta no le llega nada tuyo: ni desde tu
+          navegador ni desde nuestro servidor.
+        </p>
+        <p className="pt-2">Si aceptaste, le avisamos en tres momentos:</p>
+        <L>
+          <Li>cuando creás tu cuenta,</Li>
+          <Li>cuando empezás a pagar un plan,</Li>
+          <Li>cuando el pago queda confirmado (con el plan y el monto).</Li>
+        </L>
+        <p className="pt-2">Y en cada aviso viaja esto:</p>
+        <L>
+          <Li>
+            <T>Tu email, cifrado con SHA-256.</T> Meta no recibe el email: recibe un código que solo
+            sirve para compararlo con el que ella ya tiene si tenés cuenta de Facebook o
+            Instagram.
+          </Li>
+          <Li>
+            <T>Tu número de cuenta en BotForge, cifrado igual.</T>
+          </Li>
+          <Li>
+            <T>La dirección IP y el tipo de navegador</T> desde los que te registraste o pagaste. Van
+            sin cifrar porque Meta los necesita así para reconocer el dispositivo.
+          </Li>
+          <Li>
+            <T>Los identificadores de Meta</T> que traía tu navegador (las cookies _fbc y _fbp),
+            que dicen de qué anuncio viniste.
+          </Li>
+        </L>
+        <p className="pt-2">
+          Para poder atribuir un pago que hacés días después del registro, guardamos esos
+          identificadores de Meta en tu cuenta, y la IP y el navegador del momento del pago en el
+          registro del pedido. Se borran si borrás tu cuenta. Podés retirar el consentimiento en
+          cualquier momento desde la{' '}
+          <Link href="/cookies" className="text-cyan-400 underline-offset-2 hover:underline">
+            política de cookies
+          </Link>
+          : desde ahí en adelante no se le avisa nada más a Meta. Si querés que borremos también lo
+          que ya guardamos, escribinos.
+        </p>
+        <p className="pt-2">
+          Lo que Meta hace con esos datos se rige por su propia política de privacidad.
         </p>
       </>
     ),
@@ -140,6 +196,7 @@ const SECCIONES: LegalSection[] = [
         <L>
           <Li><T>Anthropic</T> — procesa los mensajes para generar las respuestas del bot.</Li>
           <Li><T>Meta (WhatsApp Business Platform)</T> — es el canal por el que viajan los mensajes de WhatsApp.</Li>
+          <Li><T>Meta (Facebook / Instagram Ads)</T> — solo si aceptaste las cookies: la medición de anuncios de la sección anterior.</Li>
           <Li><T>Railway</T> — hosting de la aplicación, base de datos y cola de procesamiento.</Li>
           <Li><T>Pinecone</T> — búsqueda dentro del contenido de tus documentos.</Li>
           <Li><T>Cloudinary</T> — almacenamiento de los archivos e imágenes que se suben o se envían.</Li>

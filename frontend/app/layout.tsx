@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Toaster } from 'sonner';
 import CookieBanner from '@/components/CookieBanner';
 import MetaPixel from '@/components/MetaPixel';
+import CapturaAtribucion from '@/components/CapturaAtribucion';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.className} ${jetbrainsMono.variable}`}>
         {children}
         <MetaPixel />
+        <CapturaAtribucion />
         <CookieBanner />
         <Toaster richColors position="top-right" />
       </body>

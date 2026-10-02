@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { enviarEventoMeta, normalizarFbc, normalizarFbp, ipDelCliente } from '../services/metaCapi';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -13,10 +14,24 @@ import { escaparHtml, sendEmail } from '../services/email';
 
 const router = Router();
 
+/**
+ * Lo que manda el navegador para atribuir la conversion a un anuncio de Meta.
+ * Si consentimiento es false, el resto se ignora aunque venga: es la regla.
+ */
+const metaSchema = z
+  .object({
+    consentimiento: z.boolean(),
+    eventId: z.string().min(8).max(100).regex(/^[A-Za-z0-9_-]+$/).optional(),
+    fbc: z.string().max(500).optional(),
+    fbp: z.string().max(100).optional(),
+  })
+  .optional();
+
 const registerSchema = z.object({
   name: z.string().min(2).max(100),
   email: z.string().email(),
   password: z.string().min(8).max(100),
+  meta: metaSchema,
 });
 
 const loginSchema = z.object({
@@ -165,10 +180,42 @@ router.post('/register', authLimiter, async (req: Request, res: Response, next: 
     if (existing) throw new AppError(409, 'El email ya está registrado');
 
     const passwordHash = await bcrypt.hash(body.password, 12);
+
+    // Atribucion a Meta SOLO con consentimiento. Sin "Aceptar" estas columnas
+    // quedan vacias y no se manda nada: es lo que promete el banner.
+    const conConsentimiento = body.meta?.consentimiento === true;
+    const fbc = conConsentimiento ? normalizarFbc(body.meta?.fbc) : null;
+    const fbp = conConsentimiento ? normalizarFbp(body.meta?.fbp) : null;
+
     const user = await prisma.user.create({
-      data: { id: uuidv4(), name: body.name, email: body.email, passwordHash },
+      data: {
+        id: uuidv4(),
+        name: body.name,
+        email: body.email,
+        passwordHash,
+        ...(conConsentimiento
+          ? { metaConsentimiento: true, metaConsentimientoEn: new Date(), metaFbc: fbc, metaFbp: fbp }
+          : {}),
+      },
       select: { id: true, name: true, email: true },
     });
+
+    // Sin await: la conversion no puede demorar el registro, y enviarEventoMeta
+    // nunca lanza. El event_id es el mismo que usa el pixel del navegador.
+    if (conConsentimiento && body.meta?.eventId) {
+      void enviarEventoMeta({
+        evento: 'CompleteRegistration',
+        eventId: body.meta.eventId,
+        url: `${env.FRONTEND_URL}/auth/register`,
+        email: user.email,
+        userId: user.id,
+        fbc,
+        fbp,
+        ip: ipDelCliente(req.ip),
+        userAgent: req.get('user-agent') ?? null,
+        contenido: 'Registro',
+      });
+    }
 
     // Sin tokens hasta verificar: la sesión se emite recién en /verify-email.
     // El email de bienvenida también espera a la verificación.

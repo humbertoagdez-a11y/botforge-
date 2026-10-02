@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import LegalDoc, { L, Li, T, type LegalSection } from '@/components/LegalDoc';
+import CambiarCookies from '@/components/CambiarCookies';
 
 export const metadata: Metadata = {
   title: 'Política de cookies',
@@ -8,7 +9,7 @@ export const metadata: Metadata = {
     'Qué cookies y almacenamiento local usa BotForge, para qué sirve cada uno y cómo borrarlos.',
 };
 
-const ACTUALIZADO = '26 de julio de 2026';
+const ACTUALIZADO = '2 de octubre de 2026';
 
 const SECCIONES: LegalSection[] = [
   {
@@ -23,9 +24,10 @@ const SECCIONES: LegalSection[] = [
           compartimos tu navegación con nadie.
         </p>
         <p>
-          Si aceptás todas, cargamos el Pixel de Meta para medir cuánta gente llega desde nuestros
-          anuncios y termina registrándose o contratando un plan. Nunca se carga dentro del panel:
-          tu uso diario de BotForge no se trackea. Abajo está el detalle de cada cosa.
+          Si aceptás todas, cargamos el Pixel de Meta y además le avisamos a Meta desde nuestro
+          servidor cuando te registrás, empezás un pago o pagás un plan. Sirve para medir qué
+          anuncios traen gente que se registra o contrata. Nunca se carga dentro del panel: tu uso
+          diario de BotForge no se trackea. Abajo está el detalle de cada cosa.
         </p>
       </>
     ),
@@ -81,6 +83,10 @@ const SECCIONES: LegalSection[] = [
             <T>bf_pagopar_hash</T> — un identificador temporal del pago en curso, para poder
             mostrarte el resultado cuando volvés de Pagopar. Se borra al terminar.
           </Li>
+          <Li>
+            <T>bf_pixel_…</T> — solo si aceptaste todas: una marca de que ya le avisamos a Meta de
+            tu pago, para no contarlo dos veces si recargás la pantalla.
+          </Li>
         </L>
       </>
     ),
@@ -90,24 +96,36 @@ const SECCIONES: LegalSection[] = [
     title: 'Qué cambia según lo que elijas',
     content: (
       <>
-        <p>
-          En el banner tenés dos opciones. Siendo honestos,{' '}
-          <T>hoy las dos hacen prácticamente lo mismo</T>, porque no tenemos cookies opcionales:
-        </p>
+        <p>En el banner tenés dos opciones, y no hacen lo mismo:</p>
         <L>
           <Li>
             <T>Solo las necesarias</T> — se usan únicamente las cookies de sesión y el
-            almacenamiento descrito arriba.
+            almacenamiento descrito arriba. <T>A Meta no le llega nada</T>: ni desde tu navegador
+            ni desde nuestro servidor.
           </Li>
           <Li>
-            <T>Aceptar</T> — lo mismo. Guardamos tu consentimiento por si en el futuro sumamos
-            alguna medición, en cuyo caso actualizaríamos esta página y te lo volveríamos a
-            preguntar.
+            <T>Aceptar</T> — además se carga el Pixel de Meta en las páginas públicas, y cuando te
+            registrás, empezás un pago o pagás, le avisamos a Meta desde nuestro servidor. El
+            detalle de qué datos viajan está en la{' '}
+            <Link href="/privacidad#medicion" className="text-cyan-400 underline-offset-2 hover:underline">
+              Política de privacidad
+            </Link>
+            .
           </Li>
         </L>
         <p className="pt-2">
-          Preferimos decirlo así en vez de simular una elección que hoy no cambia nada.
+          Si llegás desde un anuncio de Meta, la dirección trae un código del click (
+          <T>fbclid</T>). Lo leemos para saber de qué anuncio viniste, pero mientras no elijas{' '}
+          <T>no lo guardamos en ningún lado</T>: queda solo en la memoria de la pestaña y se pierde
+          al cerrarla. Recién si tocás &laquo;Aceptar&raquo; se guarda.
         </p>
+        <p className="pt-2">
+          Contamos cuántas personas eligen cada opción, de forma anónima: sumamos uno a un total
+          del día, sin guardar tu dirección IP, tu navegador ni ningún dato que te identifique.
+        </p>
+        <div className="pt-3">
+          <CambiarCookies />
+        </div>
       </>
     ),
   },
@@ -122,10 +140,11 @@ const SECCIONES: LegalSection[] = [
         </p>
         <L>
           <Li>
-            <T>Meta (Facebook / Instagram)</T> — instala la cookie <T>_fbp</T> para reconocer si
-            llegaste desde uno de nuestros anuncios. Se carga únicamente en las páginas públicas y
-            en el momento en que completás un registro o un pago; nunca mientras usás el panel.
-            Podés evitarlo eligiendo &laquo;Solo necesarias&raquo;.
+            <T>Meta (Facebook / Instagram)</T> — instala la cookie <T>_fbp</T>, que identifica a
+            tu navegador para Meta, y <T>_fbc</T>, que guarda de qué anuncio viniste. Duran 90 días.
+            Se cargan únicamente en las páginas públicas y en el momento en que completás un
+            registro o un pago; nunca mientras usás el panel. Podés evitarlas eligiendo &laquo;Solo
+            necesarias&raquo;, y borrarlas con el botón &laquo;Cambiar mi elección&raquo; de arriba.
           </Li>
         </L>
         <p>
@@ -185,7 +204,7 @@ export default function CookiesPage() {
   return (
     <LegalDoc
       title="Política de cookies"
-      intro="Qué guardamos en tu navegador y para qué. Spoiler: solo lo necesario para que puedas iniciar sesión."
+      intro="Qué guardamos en tu navegador y para qué. Si elegís «Solo las necesarias», es solo lo que hace falta para que puedas iniciar sesión."
       updated={ACTUALIZADO}
       sections={SECCIONES}
     />
