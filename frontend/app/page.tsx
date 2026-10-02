@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -288,11 +288,11 @@ function AnimatedCounter({
 
 // ─── HERO ─────────────────────────────────────────────────────────────────────
 
-function Hero() {
-  const scrollTo = useCallback((id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+// El plan pago mas barato, para el precio del hero. Sale del catalogo: si
+// cambia el precio, el hero no queda mintiendo.
+const PLAN_DESDE = CATALOGO.filter((p) => p.precioGs > 0).sort((a, b) => a.precioGs - b.precioGs)[0];
 
+function Hero() {
   return (
     <section
       className="relative overflow-hidden"
@@ -308,7 +308,7 @@ function Hero() {
         <div className="text-center md:text-left">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-violet-500/40 bg-violet-600/20 px-4 py-1.5 text-xs font-medium text-violet-300">
             <Sparkles className="h-3.5 w-3.5" />
-            BotForge — Software hecho en Paraguay
+            Para dueños de negocio · Hecho en Paraguay
           </div>
 
           <h1 className="text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
@@ -319,8 +319,8 @@ function Hero() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-xl text-base text-gray-300 sm:text-lg md:mx-0">
-            Crea un asistente con IA en minutos. Conectalo a WhatsApp. El trabaja solo mientras vos
-            te enfocas en lo que importa.
+            Tus clientes te escriben por WhatsApp y un bot les responde solo, de día y de noche,
+            con la información de tu negocio. Lo armás en minutos.
           </p>
 
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row md:justify-start">
@@ -330,16 +330,20 @@ function Hero() {
             >
               Crear mi bot gratis
             </Link>
-            <button
-              onClick={() => scrollTo('como-funciona')}
-              className="w-full rounded-xl border border-white/25 px-7 py-3.5 text-base font-medium text-white transition-colors hover:bg-white/10 sm:w-auto"
+            <Link
+              href="/planes"
+              className="text-sm font-medium text-violet-300 underline-offset-4 hover:text-violet-200 hover:underline sm:px-3"
             >
-              Ver como funciona
-            </button>
+              Ver planes y precios →
+            </Link>
           </div>
 
-          <p className="mt-5 text-xs text-gray-500">
-            Sin tarjeta de credito · Sin contrato · Cancela cuando quieras
+          <p className="mt-5 text-sm text-gray-300">
+            Probalo gratis · Planes desde{' '}
+            <strong className="font-semibold text-white">{precioTexto(PLAN_DESDE)}</strong> al mes
+          </p>
+          <p className="mt-1.5 text-xs text-gray-500">
+            Sin tarjeta de crédito · Sin contrato · Cancelás cuando quieras
           </p>
         </div>
 
