@@ -52,7 +52,12 @@ export function persistirFbc(): void {
   if (typeof document === 'undefined' || !fbclidEnMemoria || leerCookie('_fbc')) return;
   const valor = `fb.1.${Date.now()}.${fbclidEnMemoria}`;
   const vence = new Date(Date.now() + DIAS_FBC * 86400000).toUTCString();
-  document.cookie = `_fbc=${encodeURIComponent(valor)}; expires=${vence}; path=/; SameSite=Lax; Secure`;
+  // En el dominio sin www, como la escribe el pixel. Si quedaba solo en el
+  // host, el pixel creaba la suya en .mibotforge.com al cargar y convivian dos
+  // _fbc con fechas distintas (visto en la prueba del 2026-10-02).
+  const host = location.hostname.replace(/^www\./, '');
+  const dominio = host.includes('.') ? `; domain=.${host}` : '';
+  document.cookie = `_fbc=${encodeURIComponent(valor)}; expires=${vence}; path=/${dominio}; SameSite=Lax; Secure`;
 }
 
 export interface DatosMeta {

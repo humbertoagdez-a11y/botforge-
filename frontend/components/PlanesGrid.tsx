@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { api, type ApiError } from '@/lib/api';
-import { pixelTrack } from '@/lib/metaPixel';
+import { pixelTrackAntesDeSalir } from '@/lib/metaPixel';
 import { datosMeta } from '@/lib/atribucion';
 import { useAuthStore } from '@/lib/store';
 import { PLANES, precioTexto, type PlanPago } from '@/lib/planes';
@@ -61,7 +61,7 @@ export default function PlanesGrid({ publica = false, renovar = null }: Props) {
       // Se manda aca y no en el onClick porque antes del checkout puede
       // faltar la cedula, y ahi no hay intencion de pago concretada.
       const elegido = PLANES.find((p) => p.id === planId);
-      pixelTrack('InitiateCheckout', {
+      await pixelTrackAntesDeSalir('InitiateCheckout', {
         content_name: elegido?.nombre ?? planId,
         content_ids: [planId],
         content_type: 'product',

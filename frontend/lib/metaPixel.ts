@@ -110,6 +110,30 @@ export function pixelTrack(
 }
 
 /**
+ * Para cuando despues del evento la pagina se va (el checkout de Pagopar).
+ *
+ * pixelTrack solo encola: si fbevents.js todavia no termino de bajar y la
+ * pagina navega, el evento se pierde. Pasaba siempre con InitiateCheckout,
+ * porque /pricing no carga el pixel antes (prueba del 2026-10-02: el navegador
+ * nunca lo mando). Espera a que el script este listo y un margen para que
+ * salga el pedido, con tope. Sin consentimiento vuelve en el acto.
+ */
+export async function pixelTrackAntesDeSalir(
+  evento: EventoPixel,
+  datos: Record<string, unknown>,
+  eventID: string,
+  topeMs = 1500,
+): Promise<void> {
+  if (!asegurarPixel()) return;
+  pixelTrack(evento, datos, eventID);
+  const inicio = Date.now();
+  while (!window.fbq?.callMethod && Date.now() - inicio < topeMs) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  await new Promise((r) => setTimeout(r, 300));
+}
+
+/**
  * Marca en localStorage que un evento unico ya se mando, y devuelve false si
  * ya estaba marcado. Segunda capa sobre el eventID: evita incluso emitir el
  * pedido a Meta. Si localStorage esta bloqueado devuelve true y queda solo la
