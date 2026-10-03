@@ -58,10 +58,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body className={`${inter.className} ${jetbrainsMono.variable}`}>
+        {/* Primero en el DOM: con teclado el banner es lo primero que se
+            alcanza, no lo ultimo despues de toda la pagina. En pantalla sigue
+            abajo (es fixed). */}
+        <CookieBanner />
         {children}
         <MetaPixel />
         <CapturaAtribucion />
-        <CookieBanner />
         <Toaster richColors position="top-right" />
       </body>
     </html>
