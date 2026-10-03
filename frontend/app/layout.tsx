@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import CookieBanner from '@/components/CookieBanner';
 import MetaPixel from '@/components/MetaPixel';
 import CapturaAtribucion from '@/components/CapturaAtribucion';
+import CapturaOrigen from '@/components/CapturaOrigen';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -65,6 +66,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {children}
         <MetaPixel />
         <CapturaAtribucion />
+        {/* Aparte del pixel: embudo anonimo por origen, sin consentimiento */}
+        <CapturaOrigen />
         <Toaster richColors position="top-right" />
       </body>
     </html>

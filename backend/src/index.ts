@@ -32,6 +32,7 @@ import stripeRouter from './routes/stripe';
 import pagoparRouter from './routes/pagopar';
 import publicRouter from './routes/public';
 import consentimientoRouter from './routes/consentimiento';
+import origenRouter from './routes/origen';
 import assistantRouter from './routes/assistant';
 import assistantDashboardRouter from './routes/assistantDashboard';
 import testRouter from './routes/test';
@@ -199,6 +200,7 @@ app.use('/api/v1/dev', devRouter);
 app.use('/api/v1/public', publicRouter);
 // Contador anonimo del banner de cookies. sendBeacon manda text/plain.
 app.use('/api/v1/consentimiento', express.text({ type: 'text/plain', limit: '1kb' }), consentimientoRouter);
+app.use('/api/v1/origen', express.text({ type: 'text/plain', limit: '1kb' }), origenRouter);
 
 // Callback OAuth2 de Google (público: la identidad viaja en el state firmado)
 app.use('/api/auth/google', googleOAuthRouter);

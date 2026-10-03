@@ -90,6 +90,11 @@ model User {
   metaFbc                String?
   /// Navegador segun el pixel (cookie _fbp). Solo con consentimiento.
   metaFbp                String?
+  /// Origen normalizado del registro (meta-anuncio-web, directo, ...). SOLO
+  /// esa etiqueta: nunca fbclid ni utm. Ver embudo_diario.
+  origenRegistro         String?
+  /// Primer mensaje en el Chat de prueba, para contarlo una sola vez.
+  primerChatPruebaEn     DateTime?
   emailVerifiedAt        DateTime?
   messagesUsedThisMonth  Int       @default(0)
   messagesResetAt        DateTime  @default(now())
@@ -629,6 +634,20 @@ model Message {
 /// Cuantas personas aceptan las cookies, por dia. Contador anonimo: sin IP,
 /// sin user agent, sin id de navegador. conAnuncio dice si llegaron con fbclid
 /// (booleano: el fbclid mismo no se guarda).
+/// Embudo por origen, agregado por dia. Sin nada que identifique a nadie.
+model EmbudoDiario {
+  fecha    DateTime @db.Date
+  origen   String
+  campana  String   @default("")
+  anuncio  String   @default("")
+  pagina   String   @default("")
+  tipo     String
+  cantidad Int      @default(0)
+
+  @@id([fecha, origen, campana, anuncio, pagina, tipo])
+  @@map("embudo_diario")
+}
+
 model ConsentimientoDiario {
   fecha             DateTime @db.Date
   conAnuncio        Boolean
