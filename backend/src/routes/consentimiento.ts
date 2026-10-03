@@ -1,7 +1,9 @@
 /**
  * Contador anonimo del banner de cookies.
  *
- *   POST /api/v1/consentimiento   { evento: 'mostrado' | 'todas' | 'necesarias', conAnuncio: boolean }
+ *   POST /api/v1/consentimiento
+ *   { evento: 'mostrado' | 'todas' | 'necesarias' | 'ignorado', conAnuncio: boolean,
+ *     dispositivo: 'movil' | 'escritorio', variante: 'actual' | 'nueva', rapida?: boolean }
  *
  * Para saber que parte del trafico del anuncio llega a ver Meta: el pixel solo
  * se carga si la persona toca "Aceptar".
@@ -18,8 +20,12 @@ const router = Router();
 
 const cuerpo = z
   .object({
-    evento: z.enum(['mostrado', 'todas', 'necesarias']),
+    evento: z.enum(['mostrado', 'todas', 'necesarias', 'ignorado']),
     conAnuncio: z.boolean(),
+    // Opcionales: el banner viejo que siga abierto en alguna pestaña no los manda
+    dispositivo: z.enum(['movil', 'escritorio']).optional(),
+    variante: z.enum(['actual', 'nueva']).optional(),
+    rapida: z.boolean().optional(),
   })
   .strict();
 
@@ -46,15 +52,22 @@ router.post('/', limite, async (req: Request, res: Response) => {
     return;
   }
 
-  const { evento, conAnuncio } = parsed.data;
+  const { evento, conAnuncio, rapida } = parsed.data;
+  const dispositivo = parsed.data.dispositivo ?? 'sin_dato';
+  const variante = parsed.data.variante ?? 'actual';
+  // Una eleccion en menos de 1 s suma ademas a su contador de "rapidas"
+  const sumar: Record<string, { increment: number }> = { [evento]: { increment: 1 } };
+  if (rapida && evento === 'todas') sumar.todasRapidas = { increment: 1 };
+  if (rapida && evento === 'necesarias') sumar.necesariasRapidas = { increment: 1 };
+  const crear = Object.fromEntries(Object.entries(sumar).map(([k, v]) => [k, v.increment]));
   // Fecha de Paraguay (UTC-3): un dia que empieza a medianoche de aca
   const fecha = new Date(new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10));
 
   try {
     await prisma.consentimientoDiario.upsert({
-      where: { fecha_conAnuncio: { fecha, conAnuncio } },
-      create: { fecha, conAnuncio, [evento]: 1 },
-      update: { [evento]: { increment: 1 } },
+      where: { fecha_conAnuncio_dispositivo_variante: { fecha, conAnuncio, dispositivo, variante } },
+      create: { fecha, conAnuncio, dispositivo, variante, ...crear },
+      update: sumar,
     });
   } catch (err) {
     // Un contador que falla no puede romperle nada a nadie

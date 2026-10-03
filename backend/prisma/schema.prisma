@@ -630,14 +630,24 @@ model Message {
 /// sin user agent, sin id de navegador. conAnuncio dice si llegaron con fbclid
 /// (booleano: el fbclid mismo no se guarda).
 model ConsentimientoDiario {
-  fecha      DateTime @db.Date
-  conAnuncio Boolean
-  /// Veces que se mostro el banner. No se deduplica (deduplicar exigiria
-  /// guardar algo en el navegador), asi que una recarga cuenta dos veces.
-  mostrado   Int      @default(0)
-  todas      Int      @default(0)
-  necesarias Int      @default(0)
+  fecha             DateTime @db.Date
+  conAnuncio        Boolean
+  /// 'movil' | 'escritorio' (ancho < 768 px). 'sin_dato' en filas viejas.
+  dispositivo       String   @default("sin_dato")
+  /// Diseño de banner que vio: 'actual' | 'nueva'.
+  variante          String   @default("actual")
+  /// Visitas que vieron el banner. Desde 2026-10-03 se cuenta solo al entrar
+  /// desde afuera del sitio (sin guardar nada en el navegador); antes cada
+  /// recarga contaba de nuevo.
+  mostrado          Int      @default(0)
+  todas             Int      @default(0)
+  necesarias        Int      @default(0)
+  /// Siguio usando el sitio sin elegir (cambio de pagina o scroll > 1 pantalla).
+  ignorado          Int      @default(0)
+  /// Eligieron en menos de 1 s desde que aparecio el banner.
+  todasRapidas      Int      @default(0)
+  necesariasRapidas Int      @default(0)
 
-  @@id([fecha, conAnuncio])
+  @@id([fecha, conAnuncio, dispositivo, variante])
   @@map("consentimiento_diario")
 }

@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Cookie } from 'lucide-react';
 import { useCookieConsentStore } from '@/lib/store';
 import { Z } from '@/lib/z-index';
@@ -15,10 +16,14 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
  * desde un anuncio (un si/no, el fbclid no viaja). Va por sendBeacon para no
  * frenar nada y para que llegue aunque la persona cierre la pestaña.
  */
-function contar(evento: 'mostrado' | 'todas' | 'necesarias'): void {
+type EventoBanner = 'mostrado' | 'todas' | 'necesarias' | 'ignorado';
+
+function contar(evento: EventoBanner, rapida?: boolean): void {
   try {
     const conAnuncio = /[?&](fbclid|utm_source=(facebook|fb|ig|instagram|meta))\b/i.test(window.location.search);
-    const cuerpo = JSON.stringify({ evento, conAnuncio });
+    // Etiqueta gruesa, no identifica a nadie: el mismo corte que usa el layout
+    const dispositivo = window.innerWidth < 768 ? 'movil' : 'escritorio';
+    const cuerpo = JSON.stringify({ evento, conAnuncio, dispositivo, variante: 'actual', rapida });
     if (!navigator.sendBeacon?.(`${API}/api/v1/consentimiento`, cuerpo)) {
       void fetch(`${API}/api/v1/consentimiento`, { method: 'POST', body: cuerpo, keepalive: true });
     }
@@ -48,12 +53,47 @@ export default function CookieBanner() {
   useEffect(() => setMontado(true), []);
 
   const visible = montado && choice === null;
+  const aparecioEn = useRef(0);
+  const ignorado = useRef(false);
+  const pathname = usePathname();
+  const pathInicial = useRef(pathname);
+
   useEffect(() => {
-    if (visible) contar('mostrado');
+    if (!visible) return;
+    aparecioEn.current = performance.now();
+    // Una vez por visita: solo si se entro desde afuera del sitio. Sin esto
+    // cada recarga contaba como un banner mas, y no hay forma de deduplicar
+    // sin guardar algo en el navegador de quien todavia no eligio.
+    let desdeAfuera = true;
+    try {
+      desdeAfuera = !document.referrer || new URL(document.referrer).origin !== location.origin;
+    } catch {
+      // referrer ilegible: se cuenta
+    }
+    if (desdeAfuera) contar('mostrado');
+  }, [visible]);
+
+  // "Ignorado": siguio usando el sitio con el banner abierto. Una vez por visita.
+  const marcarIgnorado = useRef(() => {
+    if (ignorado.current) return;
+    ignorado.current = true;
+    contar('ignorado');
+  });
+  useEffect(() => {
+    if (visible && pathname !== pathInicial.current) marcarIgnorado.current();
+  }, [visible, pathname]);
+  useEffect(() => {
+    if (!visible) return;
+    const alScrollear = () => {
+      if (window.scrollY > window.innerHeight) marcarIgnorado.current();
+    };
+    window.addEventListener('scroll', alScrollear, { passive: true });
+    return () => window.removeEventListener('scroll', alScrollear);
   }, [visible]);
 
   function elegir(c: 'necessary' | 'all') {
-    contar(c === 'all' ? 'todas' : 'necesarias');
+    const rapida = aparecioEn.current > 0 && performance.now() - aparecioEn.current < 1000;
+    contar(c === 'all' ? 'todas' : 'necesarias', rapida);
     accept(c);
   }
 
