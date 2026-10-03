@@ -105,6 +105,10 @@ const CASOS: Caso[] = [
       'Soy Marcos Benítez, mi número es 0982 445 667',
     ],
     esperaLead: true,
+    // Dejar los datos solo lo anota como lead: no tiene cuenta. El bot le
+    // decia "ya quedaste registrado" (2026-10-03). "registrás"/"registrate"
+    // para mandarlo al link si estan bien.
+    noDebeDecir: [/registrad[oa]s?\b/i, /ya ten[eé]s (tu )?cuenta/i],
   },
   {
     nombre: '7. Pregunta si es una persona',

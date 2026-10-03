@@ -632,11 +632,19 @@ async function avisarLead(
       // le llegaba era "ya avisé al equipo" — sin el precio.
       //
       // Por eso hay que decirle explícitamente que lo anterior no llegó.
+      //
+      // Decia "Aviso interno registrado", y el bot de ventas le repetia al
+      // prospecto "ya quedaste registrado" cuando solo se habia anotado un
+      // lead: la persona creia tener cuenta y no la tenia (probar:ventas,
+      // caso 6, 2026-10-03). Marcar un lead no crea nada del lado del cliente,
+      // en ningun bot, asi que la aclaracion vale para todos.
       message:
-        'Aviso interno registrado. IMPORTANTE: el cliente NO vio nada de lo que escribiste ' +
+        'Aviso interno enviado al equipo. IMPORTANTE: el cliente NO vio nada de lo que escribiste ' +
         'antes de usar esta herramienta. Tu próximo mensaje es lo único que va a recibir, ' +
         'así que tiene que estar completo por sí solo: contestale lo que preguntó, con los ' +
-        'datos concretos. El aviso al equipo, si lo mencionás, va al final y en una línea.',
+        'datos concretos. El aviso al equipo, si lo mencionás, va al final y en una línea: ' +
+        'que lo anotaste y que alguien del equipo le escribe. Esto NO le crea ninguna cuenta ' +
+        'ni reserva nada: no le digas que quedó registrado ni que ya tiene cuenta.',
     };
   } catch (err) {
     reportarError('tenant-lead', err, { botId: context.botId });
