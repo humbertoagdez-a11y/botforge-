@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
-import { ArrowLeft, BellRing, Bot, FileText, IdCard, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BellRing, Bot, FileText, IdCard, Image as ImageIcon, Loader2, MessageSquare, MessageSquareQuote, Settings, Smartphone, Sparkles, Upload } from 'lucide-react';
 // Smartphone kept for the tab icon
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -389,6 +389,11 @@ export default function BotDetailPage() {
       .then(([b, d]) => {
         setBot(b);
         setDocs(d);
+        // Al chat con un bot sin nada que leer y nada en camino: no hay
+        // conversacion posible, se abre donde se carga la informacion.
+        const listo = d.some((x) => x.status === 'READY');
+        const enCamino = d.some((x) => x.status === 'PENDING' || x.status === 'PROCESSING');
+        if (!listo && !enCamino) setActiveTab((t) => (t === 'chat' ? 'documents' : t));
         form.reset({ name: b.name, language: b.language as 'es' | 'en' | 'pt', personality: b.personality });
       })
       .catch(() => { toast.error('Error al cargar el bot'); router.push('/dashboard'); })
@@ -432,6 +437,8 @@ export default function BotDetailPage() {
   if (!bot) return null;
 
   const readyDocs = docs.filter((d) => d.status === 'READY').length;
+  const docsEnCamino = docs.filter((d) => d.status === 'PENDING' || d.status === 'PROCESSING').length;
+  const docsFallidos = docs.filter((d) => d.status === 'ERROR').length;
 
   return (
     <div className="p-6 md:p-8">
@@ -513,6 +520,21 @@ export default function BotDetailPage() {
 
         {/* Documents tab */}
         <TabsContent value="documents" className="mt-4 space-y-4">
+          {readyDocs === 0 && docsEnCamino === 0 && (
+            <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 sm:flex-row sm:items-center">
+              <AlertTriangle className="hidden h-5 w-5 shrink-0 text-amber-400 sm:block" />
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-medium text-amber-100">Tu bot todavía no sabe nada de tu negocio</p>
+                <p className="mt-0.5 text-amber-100/80">
+                  Para poder responder necesita información: precios, horarios, productos. Subí un documento acá
+                  abajo o armá el instructivo con tus datos.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="h-11 shrink-0 sm:h-9" onClick={() => setActiveTab('instructivo')}>
+                <Sparkles className="h-4 w-4" /> Armar el instructivo
+              </Button>
+            </div>
+          )}
           <Card>
             <CardHeader className="pb-4">
               <CardTitle className="text-base">Subir documento</CardTitle>
@@ -553,14 +575,33 @@ export default function BotDetailPage() {
 
         {/* Chat tab */}
         <TabsContent value="chat" className="mt-4">
-          {readyDocs === 0 ? (
+          {/* El chat solo aparece cuando hay algo que leer. Antes de eso, un
+              estado que dice que pasa y que hacer, nunca un error. Mientras se
+              procesa, la pagina consulta cada 5 s y el chat aparece solo. */}
+          {readyDocs === 0 && docsEnCamino > 0 ? (
             <Card>
-              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                <MessageSquare className="mb-3 h-10 w-10 text-muted-foreground/30" />
-                <p className="font-medium">No hay documentos listos</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Subí al menos un documento y esperá que se procese para chatear con el bot.
+              <CardContent className="flex flex-col items-center justify-center px-6 py-16 text-center">
+                <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" />
+                <p className="font-medium">Procesando la información, ya casi</p>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                  Tu bot está leyendo lo que cargaste. Suele tardar menos de un minuto; el chat aparece acá solo cuando
+                  esté listo.
                 </p>
+              </CardContent>
+            </Card>
+          ) : readyDocs === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center px-6 py-16 text-center">
+                <MessageSquare className="mb-3 h-10 w-10 text-muted-foreground/30" />
+                <p className="font-medium">Tu bot necesita información para responder</p>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                  {docsFallidos > 0
+                    ? 'No se pudo leer lo que subiste. Probá con otro archivo o armá el instructivo con tus datos.'
+                    : 'Cargá los datos de tu negocio (precios, horarios, productos) y después probalo acá.'}
+                </p>
+                <Button className="mt-5 h-11" onClick={() => setActiveTab('documents')}>
+                  <Upload className="h-4 w-4" /> Cargar información
+                </Button>
               </CardContent>
             </Card>
           ) : (

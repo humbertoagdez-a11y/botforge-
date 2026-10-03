@@ -173,6 +173,7 @@ export default function NewBotPage() {
       // El instructivo va como un documento más: mismo endpoint, misma cola,
       // mismo troceado. Si falla, el bot igual quedó creado — se avisa y se
       // sigue, porque perder el bot por un documento sería peor.
+      let conDatos = false;
       if (cargarInstructivo && instructivo.trim().length > 0) {
         try {
           const archivo = new File(
@@ -181,15 +182,17 @@ export default function NewBotPage() {
             { type: 'text/plain' },
           );
           await api.documents.upload(bot.id, archivo);
+          conDatos = true;
         } catch {
           toast.warning('El bot se creó, pero no se pudo subir el instructivo. Cargalo desde la pestaña Documentos.');
         }
       }
 
       toast.success('Bot creado exitosamente');
-      // Directo al chat de prueba: lo primero que quiere ver alguien que
-      // acaba de crear su bot es que conteste.
-      router.push(`/dashboard/bots/${bot.id}?tab=chat`);
+      // Con informacion, directo al chat de prueba: lo primero que quiere ver
+      // es que conteste (mientras se procesa, el chat dice "ya casi"). Sin
+      // informacion el chat no puede responder nada, asi que a Documentos.
+      router.push(`/dashboard/bots/${bot.id}?tab=${conDatos ? 'chat' : 'documents'}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al crear el bot');
       setLoading(false);
