@@ -19,6 +19,7 @@ import { AppError } from '../middleware/errorHandler';
 import { ESTADO_ACTIVO } from './metaAuth';
 import { escaparHtml, sendEmail } from './email';
 import { cifrar } from '../lib/cifrado';
+import { sumarPasoDeUsuario } from './embudo';
 
 const GRAPH_VERSION = 'v23.0';
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -327,6 +328,11 @@ export async function completarOnboarding(
 
   const conectadoEn = new Date();
   const displayNumber = await traerNumeroLegible(datos.phoneNumberId, businessToken);
+  // Embudo: cuenta solo si es el primer WhatsApp conectado de la cuenta
+  const duenio = await prisma.bot.findUnique({ where: { id: botId }, select: { userId: true } });
+  const yaTenia = duenio
+    ? await prisma.bot.count({ where: { userId: duenio.userId, metaConectadoEn: { not: null } } })
+    : 1;
 
   await prisma.bot.update({
     where: { id: botId },
@@ -339,6 +345,8 @@ export async function completarOnboarding(
       metaEstado: ESTADO_ACTIVO,
     },
   });
+
+  if (duenio && yaTenia === 0) void sumarPasoDeUsuario(duenio.userId, 'whatsapp');
 
   console.log(`[meta-onboarding] bot ${botId} conectado — waba ${datos.wabaId}`);
   return { phoneNumberId: datos.phoneNumberId, wabaId: datos.wabaId, displayNumber, pin, conectadoEn };

@@ -11,6 +11,7 @@ import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth';
 import { authLimiter, forgotPasswordLimiter, resendVerificationLimiter } from '../middleware/rateLimit';
 import { escaparHtml, sendEmail } from '../services/email';
+import { ORIGENES, etiqueta, sumarEmbudo, sumarPasoDeUsuario } from '../services/embudo';
 
 const router = Router();
 
@@ -32,6 +33,16 @@ const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(100),
   meta: metaSchema,
+  // De donde llego, ya normalizado en el navegador. A la cuenta va SOLO el
+  // origen; campaña y anuncio suman al contador del registro y se descartan.
+  origen: z
+    .object({
+      origen: z.enum(ORIGENES),
+      campana: z.string().max(200).optional(),
+      anuncio: z.string().max(200).optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 const loginSchema = z.object({
@@ -193,6 +204,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response, next: 
         name: body.name,
         email: body.email,
         passwordHash,
+        origenRegistro: body.origen?.origen ?? null,
         ...(conConsentimiento
           ? { metaConsentimiento: true, metaConsentimientoEn: new Date(), metaFbc: fbc, metaFbp: fbp }
           : {}),
@@ -216,6 +228,13 @@ router.post('/register', authLimiter, async (req: Request, res: Response, next: 
         contenido: 'Registro',
       });
     }
+
+    void sumarEmbudo({
+      tipo: 'registro',
+      origen: body.origen?.origen ?? 'sin-dato',
+      campana: etiqueta(body.origen?.campana),
+      anuncio: etiqueta(body.origen?.anuncio),
+    });
 
     // Sin tokens hasta verificar: la sesión se emite recién en /verify-email.
     // El email de bienvenida también espera a la verificación.
@@ -318,6 +337,7 @@ router.post('/verify-email', authLimiter, async (req: Request, res: Response, ne
         data: { usedAt: new Date() },
       }),
     ]);
+    void sumarPasoDeUsuario(user.id, 'verificado');
 
     // La bienvenida se manda SOLO acá: con el email ya confirmado como real
     void sendEmail(user.email, 'Bienvenido a BotForge', welcomeEmailHtml(user.name));

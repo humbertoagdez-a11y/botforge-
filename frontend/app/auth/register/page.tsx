@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { api } from '@/lib/api';
 import { pixelTrack } from '@/lib/metaPixel';
 import { datosMeta, nuevoEventId } from '@/lib/atribucion';
+import { origenDeLaVisita } from '@/lib/origen';
 import { useAuthStore } from '@/lib/store';
 import { AUTH_CARD, AUTH_INPUT, AUTH_LABEL, AUTH_LINK, AUTH_MUTED, AUTH_SUBMIT } from '@/lib/auth-styles';
 
@@ -46,7 +47,8 @@ export default function RegisterPage() {
       // junta los dos y cuenta un solo registro. Sin consentimiento, datosMeta
       // manda solo { consentimiento: false } y el pixel no se carga.
       const eventId = nuevoEventId('registro');
-      const { email } = await api.auth.register(data.name, data.email, data.password, datosMeta(eventId));
+      // origenDeLaVisita: solo la etiqueta corta del origen, sin fbclid ni nada del visitante
+      const { email } = await api.auth.register(data.name, data.email, data.password, datosMeta(eventId), origenDeLaVisita());
       // Conversion: la cuenta quedo creada. Va antes del redirect porque la
       // pantalla de verificacion ya es otra ruta.
       pixelTrack('CompleteRegistration', { content_name: 'Registro' }, eventId);

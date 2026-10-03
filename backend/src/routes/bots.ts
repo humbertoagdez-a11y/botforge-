@@ -7,6 +7,7 @@ import { AppError } from '../middleware/errorHandler';
 import { checkBotLimit, effectivePlan, LIMITS, PLAN_LIMIT_CODE } from '../middleware/planLimits';
 import { generateInstructivo } from '../services/ai';
 import { limpiarRastroDelBot } from '../services/limpiezaBot';
+import { sumarPasoDeUsuario } from '../services/embudo';
 
 const router = Router();
 
@@ -102,6 +103,10 @@ router.post('/', checkBotLimit, async (req: Request, res: Response, next: NextFu
       data: { id: uuidv4(), userId: req.user!.userId, ...body },
       select: CAMPOS_PUBLICOS,
     });
+    // Embudo: solo el primer bot de la cuenta es un paso nuevo
+    if ((await prisma.bot.count({ where: { userId: req.user!.userId } })) === 1) {
+      void sumarPasoDeUsuario(req.user!.userId, 'bot');
+    }
     res.status(201).json({ data: bot, error: null, meta: null });
   } catch (err) {
     next(err);

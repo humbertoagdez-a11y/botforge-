@@ -19,6 +19,7 @@ import { requireAuth } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { assertTestChatLimit, incrementTestChatUsage } from '../middleware/planLimits';
 import { runTenantTurn } from '../services/tenantAgent';
+import { sumarPasoDeUsuario } from '../services/embudo';
 
 const router = Router({ mergeParams: true });
 
@@ -81,6 +82,14 @@ router.post('/stream', async (req: Request, res: Response, next: NextFunction) =
     // Cupo propio del Chat de prueba. NO se toca monthlyMessages: probar el
     // bot no le puede comer al dueño los mensajes que necesita para vender.
     await assertTestChatLimit(req.user!.userId);
+
+    // Embudo: el primer mensaje de la cuenta. updateMany con primerChatPruebaEn
+    // null hace que solo uno lo marque aunque lleguen dos a la vez.
+    const primero = await prisma.user.updateMany({
+      where: { id: req.user!.userId, primerChatPruebaEn: null },
+      data: { primerChatPruebaEn: new Date() },
+    });
+    if (primero.count === 1) void sumarPasoDeUsuario(req.user!.userId, 'primer-mensaje');
 
     const { bot, conversation } = await resolveConversation(
       req.params.botId,

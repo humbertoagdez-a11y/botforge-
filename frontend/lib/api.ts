@@ -2,6 +2,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from './store';
 
 import type { DatosMeta } from './atribucion';
+import type { DatosOrigen } from './origen';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -587,10 +588,10 @@ export const api = {
         body: JSON.stringify({ email, password }),
       }),
     /** No devuelve sesión: hay que verificar el email antes de entrar */
-    register: (name: string, email: string, password: string, meta?: DatosMeta) =>
+    register: (name: string, email: string, password: string, meta?: DatosMeta, origen?: DatosOrigen) =>
       request<RegisterPending>('/api/v1/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ name, email, password, meta }),
+        body: JSON.stringify({ name, email, password, meta, origen }),
       }),
     /** Verifica el código y recién ahí devuelve la sesión */
     verifyEmail: (email: string, code: string) =>

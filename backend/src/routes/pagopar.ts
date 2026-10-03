@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { enviarEventoMeta, normalizarFbc, normalizarFbp, ipDelCliente } from '../services/metaCapi';
+import { sumarPasoDeUsuario } from '../services/embudo';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { reportarError } from '../lib/monitoring';
@@ -106,6 +107,8 @@ router.post('/checkout', requireAuth, requireVerifiedEmail, async (req: Request,
         data: { metaConsentimiento: false, metaConsentimientoEn: null, metaFbc: null, metaFbp: null },
       });
     }
+
+    void sumarPasoDeUsuario(user.id, 'pago-iniciado');
 
     res.json({ data: { checkoutUrl, hashPedido }, error: null, meta: null });
   } catch (err) {
@@ -636,6 +639,7 @@ async function activarPlan(
   // tres veces o la pantalla de resultado consulte en paralelo. Mismo id que el
   // pixel de pago-resultado: purchase_<hash>. Solo con consentimiento.
   void reportarCompraAMeta(order.id);
+  void sumarPasoDeUsuario(order.userId, 'pagado');
   return true;
 }
 
