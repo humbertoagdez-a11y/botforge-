@@ -135,6 +135,23 @@ const SECCIONES: LegalSection[] = [
     ),
   },
   {
+    id: 'origen',
+    title: 'Lo que contamos sin cookies',
+    content: (
+      <p>
+        Para saber de dónde llega la gente (un anuncio, un link directo, otro sitio) leemos la dirección
+        con la que entraste y sumamos uno a un total del día. Esto <T>no usa cookies ni ningún
+        almacenamiento</T> en tu navegador, no guarda nada que te identifique y no se manda a Meta,
+        así que funciona igual elijas lo que elijas en el aviso. Del código del click de un anuncio
+        (fbclid) solo miramos si está o no; su valor no se lee. El detalle está en la{' '}
+        <Link href="/privacidad#origen" className="text-cyan-400 underline-offset-2 hover:underline">
+          Política de privacidad
+        </Link>
+        .
+      </p>
+    ),
+  },
+  {
     id: 'terceros',
     title: 'Cookies de terceros',
     content: (

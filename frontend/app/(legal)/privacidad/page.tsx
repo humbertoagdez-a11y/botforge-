@@ -49,6 +49,11 @@ const SECCIONES: LegalSection[] = [
             comprobante. Si nunca pagás, nunca te lo pedimos.
           </Li>
           <Li>El plan que tenés contratado y su fecha de vencimiento.</Li>
+          <Li>
+            De dónde llegaste cuando te registraste, como una etiqueta general (por ejemplo
+            &laquo;anuncio de Meta&raquo; o &laquo;directo&raquo;). Más detalle en la sección sobre el
+            origen de las visitas.
+          </Li>
         </L>
 
         <p className="pt-2"><T>b) Datos de tu negocio</T></p>
@@ -180,6 +185,28 @@ const SECCIONES: LegalSection[] = [
         </p>
         <p className="pt-2">
           Lo que Meta hace con esos datos se rige por su propia política de privacidad.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'origen',
+    title: 'De dónde llegó cada visita (sin cookies)',
+    content: (
+      <>
+        <p>
+          Aparte de lo anterior, y aunque hayas elegido &laquo;Solo las necesarias&raquo;, contamos de
+          forma anónima de dónde llega la gente al sitio: por ejemplo, &laquo;desde un anuncio de
+          Meta&raquo; o &laquo;directo&raquo;, con el nombre de la campaña y del anuncio cuando el link
+          lo trae. Son totales por día. No guardamos tu dirección IP, tu navegador, el código del click
+          del anuncio ni nada que identifique a tu persona o a tu dispositivo, no escribimos nada en tu
+          navegador y no se lo mandamos a Meta ni a nadie.
+        </p>
+        <p className="pt-2">
+          Si te registrás, en tu cuenta queda <T>solo esa etiqueta de origen</T> (una de cuatro:
+          anuncio de Meta a la web, anuncio de Meta a WhatsApp, directo u otro sitio). Sirve para
+          contar, también en total, cuántas de las cuentas que llegaron por cada vía verifican el email,
+          crean su bot, lo prueban, conectan WhatsApp o contratan. Se borra con tu cuenta.
         </p>
       </>
     ),
