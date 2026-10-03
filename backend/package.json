@@ -21,6 +21,7 @@
     "probar:ventas-costo": "tsx src/scripts/probarVentasCosto.ts",
     "probar:avisos": "tsx src/scripts/probarAvisos.ts",
     "vectores:huerfanos": "tsx src/scripts/vectoresHuerfanos.ts",
+    "consentimiento:ab": "tsx src/scripts/abConsentimiento.ts",
     "plantilla:aviso": "tsx src/scripts/plantillaAviso.ts",
     "backfill:fechas": "tsx src/scripts/backfillFechaConversacion.ts",
     "instructivo:ventas": "tsx src/scripts/instructivoVentas.ts",

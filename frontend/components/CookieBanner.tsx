@@ -43,7 +43,13 @@ function contar(evento: EventoBanner, ctx: Contexto, rapida?: boolean): void {
  * Que diseño mostrar, y si la vista cuenta.
  *
  * ?banner=actual|nueva fuerza un diseño para revisarlo o capturarlo, y esas
- * vistas NO se cuentan. Fuera de eso, por ahora todos ven el actual.
+ * vistas NO se cuentan.
+ *
+ * Fuera de eso, A/B 50/50 desde el 2026-10-03: se sortea en cada carga
+ * completa de pagina, sin guardar nada (guardar la variante antes de que la
+ * persona elija ya seria almacenar sin consentimiento). Al navegar dentro del
+ * sitio el banner no se desmonta, asi que la variante no cambia en la visita;
+ * solo una recarga vuelve a sortear. El resultado: npm run consentimiento:ab.
  *
  * En celular se probo tambien una hoja inferior con titulo y botones apilados:
  * 180 px de alto en 375, tapaba el precio y el link a planes. Se descarto.
@@ -51,7 +57,7 @@ function contar(evento: EventoBanner, ctx: Contexto, rapida?: boolean): void {
 function elegirDiseno(): { diseno: Variante; cuenta: boolean } {
   const forzado = new URLSearchParams(window.location.search).get('banner');
   if (forzado === 'actual' || forzado === 'nueva') return { diseno: forzado, cuenta: false };
-  return { diseno: 'actual', cuenta: true };
+  return { diseno: Math.random() < 0.5 ? 'actual' : 'nueva', cuenta: true };
 }
 
 /**
