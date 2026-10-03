@@ -83,19 +83,22 @@ router.post('/stream', async (req: Request, res: Response, next: NextFunction) =
     // bot no le puede comer al dueño los mensajes que necesita para vender.
     await assertTestChatLimit(req.user!.userId);
 
-    // Embudo: el primer mensaje de la cuenta. updateMany con primerChatPruebaEn
-    // null hace que solo uno lo marque aunque lleguen dos a la vez.
-    const primero = await prisma.user.updateMany({
-      where: { id: req.user!.userId, primerChatPruebaEn: null },
-      data: { primerChatPruebaEn: new Date() },
-    });
-    if (primero.count === 1) void sumarPasoDeUsuario(req.user!.userId, 'primer-mensaje');
-
     const { bot, conversation } = await resolveConversation(
       req.params.botId,
       req.user!.userId,
       conversationId,
     );
+
+    // Embudo: el primer mensaje de la cuenta que el bot llega a procesar. Va
+    // despues de resolver la conversacion: antes contaba tambien el mensaje
+    // rechazado por "el bot no tiene documentos" (prueba del 2026-10-02).
+    // updateMany con primerChatPruebaEn null: solo uno lo marca aunque
+    // lleguen dos a la vez.
+    const primero = await prisma.user.updateMany({
+      where: { id: req.user!.userId, primerChatPruebaEn: null },
+      data: { primerChatPruebaEn: new Date() },
+    });
+    if (primero.count === 1) void sumarPasoDeUsuario(req.user!.userId, 'primer-mensaje');
 
     const history = await getHistory(conversation.id, message);
 
