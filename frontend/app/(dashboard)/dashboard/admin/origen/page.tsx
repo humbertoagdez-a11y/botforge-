@@ -60,6 +60,7 @@ export default function OrigenPage() {
   const [panel, setPanel] = useState<PanelOrigen | null>(null);
   const [cargando, setCargando] = useState(true);
   const [prohibido, setProhibido] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     setCargando(true);
@@ -68,9 +69,12 @@ export default function OrigenPage() {
       .then((p) => {
         setPanel(p);
         setProhibido(false);
+        setError(false);
       })
       .catch((err: ApiError) => {
+        // Un fallo no puede verse como "no hay datos": eso es otra cosa
         if (err.statusCode === 403) setProhibido(true);
+        else setError(true);
       })
       .finally(() => setCargando(false));
   }, [dias]);
@@ -135,6 +139,15 @@ export default function OrigenPage() {
     );
   }
 
+  if (error && !panel) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col items-center gap-3 p-8 text-center">
+        <ShieldAlert className="h-8 w-8 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No se pudieron cargar los datos. Probá recargar la página.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-5 sm:px-6 md:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -174,7 +187,9 @@ export default function OrigenPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{ORIGEN_LABEL[origen] ?? origen}</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  De cada 100 visitas, se registran: <strong className="text-foreground">{deCada100(conteo.registro ?? 0, conteo.visita ?? 0)}</strong>
+                  De cada 100 visitas, se registran:{' '}
+                  <strong className="text-foreground">{deCada100(conteo.registro ?? 0, conteo.visita ?? 0).replace(' de cada 100', '')}</strong>
+                  . El % de cada paso es sobre el paso anterior.
                 </p>
               </CardHeader>
               <CardContent className="pt-0">
@@ -188,8 +203,8 @@ export default function OrigenPage() {
                         <span className="flex items-baseline gap-2">
                           <strong className="font-mono tabular-nums">{n}</strong>
                           {i > 0 && (
-                            <span className="w-24 text-right text-[11px] text-muted-foreground">
-                              {anterior ? `${Math.round((n / anterior) * 100)} % del paso ant.` : '—'}
+                            <span className="w-12 text-right text-[11px] text-muted-foreground">
+                              {anterior ? `${Math.round((n / anterior) * 100)} %` : '—'}
                             </span>
                           )}
                         </span>
