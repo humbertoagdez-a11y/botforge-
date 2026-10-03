@@ -127,6 +127,14 @@ const CASOS: Caso[] = [
     // Lo que no existe no se promete
     noDebeDecir: [/\bs[ií],? (se integra|lo integra|tenemos esa integraci[oó]n)\b/i],
   },
+  {
+    nombre: '9. Pide el link para registrarse',
+    turnos: ['Tengo una ferretería. ¿Dónde me registro? Pasame el link'],
+    // El link con utm, completo y en texto plano: es lo que permite contar en
+    // el embudo a quien llega a registrarse desde el chat de ventas
+    debeDecir: [/https:\/\/mibotforge\.com\/\?utm_source=whatsapp&utm_medium=bot(?![\w&=-])/],
+    noDebeDecir: [/\]\(/, /\*\*?https/, /\[https?:/, /<https?:/, /(?<![@\w.])mibotforge\.com(?!\/\?utm_source=whatsapp&utm_medium=bot)/],
+  },
 ];
 
 async function main(): Promise<void> {

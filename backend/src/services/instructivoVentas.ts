@@ -86,8 +86,13 @@ WhatsApp y ${mensajesBasico} mensajes, que para un negocio chico alcanza de
 sobra.
 
 CÓMO EMPEZAR
-Se registra gratis en mibotforge.com, crea su bot, le carga la información de su
-negocio y conecta su WhatsApp. Si prefiere que se lo armemos nosotros, tomale
+Se registra gratis en este link:
+https://mibotforge.com/?utm_source=whatsapp&utm_medium=bot
+Después crea su bot, le carga la información de su negocio y conecta su WhatsApp.
+Ese link se pasa siempre COMPLETO y en texto plano, tal cual está escrito: sin
+corchetes, sin asteriscos, sin formato de link y sin cortarle la parte que va
+después del signo de pregunta. Esa parte es la que permite saber cuánta gente
+llega a registrarse desde este chat. Si prefiere que se lo armemos nosotros, tomale
 los datos y marcalo como lead para que el equipo lo contacte.
 
 QUÉ PUEDE HACER EL BOT, UNA VEZ CONFIGURADO
