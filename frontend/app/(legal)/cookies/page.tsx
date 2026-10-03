@@ -26,8 +26,9 @@ const SECCIONES: LegalSection[] = [
         <p>
           Si aceptás todas, cargamos el Pixel de Meta y además le avisamos a Meta desde nuestro
           servidor cuando te registrás, empezás un pago o pagás un plan. Sirve para medir qué
-          anuncios traen gente que se registra o contrata. Nunca se carga dentro del panel: tu uso
-          diario de BotForge no se trackea. Abajo está el detalle de cada cosa.
+          anuncios traen gente que se registra o contrata. Dentro del panel se usa solo en dos
+          momentos: cuando empezás un pago y cuando se confirma. Tu uso diario de BotForge no se
+          trackea. Abajo está el detalle de cada cosa.
         </p>
       </>
     ),
@@ -122,6 +123,10 @@ const SECCIONES: LegalSection[] = [
         <p className="pt-2">
           Contamos cuántas personas eligen cada opción, de forma anónima: sumamos uno a un total
           del día, sin guardar tu dirección IP, tu navegador ni ningún dato que te identifique.
+          Junto con ese total anotamos solo cuatro etiquetas generales, que no distinguen a una persona de otra: si
+          llegaste desde un anuncio, si usás celular o computadora, cuál de las dos versiones de
+          este aviso te tocó (estamos probando cuál se entiende mejor; la versión se sortea en cada
+          visita y no se guarda) y si elegiste en menos de un segundo.
         </p>
         <div className="pt-3">
           <CambiarCookies />
