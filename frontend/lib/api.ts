@@ -4,6 +4,22 @@ import { useAuthStore } from './store';
 import type { DatosMeta } from './atribucion';
 import type { DatosOrigen } from './origen';
 
+export interface FilaEmbudo {
+  fecha: string;
+  origen: string;
+  campana: string;
+  anuncio: string;
+  pagina: string;
+  tipo: string;
+  cantidad: number;
+}
+
+export interface PanelOrigen {
+  desde: string;
+  filas: FilaEmbudo[];
+  whatsapp: { fecha: string; conversaciones: number; desdeAnuncio: number; leads: number }[];
+}
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export interface ApiError extends Error {
@@ -714,6 +730,11 @@ export const api = {
   // directamente contra /bots/:id/chat/stream. Acá vivía un api.chat.send que
   // pegaba a un POST /chat sin streaming; nadie lo llamaba y corría por un
   // motor distinto al de WhatsApp, así que se eliminaron los dos.
+
+  /** Embudo por origen: solo para el dueño de la plataforma (403 para el resto) */
+  origen: {
+    panel: (dias: number) => request<PanelOrigen>(`/api/v1/origen/panel?dias=${dias}`),
+  },
 
   stats: {
     get: () => request<AccountStats>('/api/v1/stats'),
