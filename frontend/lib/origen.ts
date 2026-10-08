@@ -8,6 +8,8 @@
  * la memoria sigue, al cerrar la pestaña se pierde.
  *
  * Del fbclid se usa solo el hecho de que existe (si/no). El valor no se lee.
+ * Al backend van solo la etiqueta de origen, la campaña y el anuncio; a la
+ * cuenta, solo la etiqueta.
  */
 
 export type Origen = 'meta-anuncio-web' | 'meta-anuncio-whatsapp' | 'directo' | 'otro';
@@ -25,32 +27,60 @@ const FUENTES_META = ['meta', 'facebook', 'fb', 'instagram', 'ig'];
 let enMemoria: DatosOrigen | null = null;
 let visitaContada = false;
 
-/** Normaliza la URL de llegada a un origen corto */
-function clasificar(): DatosOrigen {
-  const q = new URLSearchParams(window.location.search);
+/**
+ * Id de campaña de Meta tal como lo escribe {{campaign.id}} en los parametros
+ * de URL: solo digitos, 15 a 20 (hoy 18, ej. 120260357049340456). Se reconoce
+ * por la forma y no por un id fijo, para que sirva con campañas nuevas.
+ */
+const ID_CAMPANA_META = /^\d{15,20}$/;
+
+/**
+ * Normaliza la URL de llegada a un origen corto. Pura (recibe todo por
+ * parametro) para poder probarla: ver scripts/probarOrigen.ts.
+ *
+ * El 2026-10-03 llegaron 88 visitas con el id de la campaña "botforge 30/09"
+ * en utm_campaign y un utm_source que no estaba en FUENTES_META: cayeron en
+ * "otro" y el panel subconto el trafico de Meta. Por eso el id de campaña de
+ * Meta decide "meta-anuncio-web" ANTES de mirar utm_source.
+ *
+ * Un fbclid solo NO alcanza: Facebook lo agrega tambien a los clics organicos
+ * (posts, grupos), y contarlo como anuncio inflaria la atribucion. Sin id de
+ * campaña, un fbclid es "otro": vino de Facebook, pero no se sabe si de un
+ * anuncio.
+ */
+export function clasificarOrigen(search: string, referrerExterno: boolean): DatosOrigen {
+  const q = new URLSearchParams(search);
   const fuente = (q.get('utm_source') ?? '').toLowerCase();
   const medio = (q.get('utm_medium') ?? '').toLowerCase();
   const hayFbclid = q.has('fbclid');
   const campana = q.get('utm_campaign') ?? undefined;
   const anuncio = q.get('utm_content') ?? undefined;
 
+  if (campana !== undefined && ID_CAMPANA_META.test(campana)) {
+    return { origen: 'meta-anuncio-web', campana, anuncio };
+  }
   if (fuente === 'whatsapp' || fuente === 'wa' || medio.includes('whatsapp')) {
     return { origen: 'meta-anuncio-whatsapp', campana, anuncio };
   }
-  if (FUENTES_META.includes(fuente) || (!fuente && hayFbclid)) {
+  if (FUENTES_META.includes(fuente)) {
     return { origen: 'meta-anuncio-web', campana, anuncio };
   }
-  if (fuente) return { origen: 'otro', campana, anuncio };
+  if (fuente || hayFbclid) return { origen: 'otro', campana, anuncio };
 
   // Sin utm ni fbclid: si vino de otro sitio (buscador, red social sin
-  // anuncio) es "otro"; si no hay referrer, "directo". Del referrer solo se
-  // mira si es de afuera, no se guarda.
+  // anuncio) es "otro"; si no hay referrer, "directo".
+  return { origen: referrerExterno ? 'otro' : 'directo' };
+}
+
+/** La clasificacion de esta carga. Del referrer solo se mira si es de afuera, no se guarda. */
+function clasificar(): DatosOrigen {
+  let referrerExterno = false;
   try {
-    if (document.referrer && new URL(document.referrer).origin !== location.origin) return { origen: 'otro' };
+    referrerExterno = !!document.referrer && new URL(document.referrer).origin !== location.origin;
   } catch {
     // referrer ilegible
   }
-  return { origen: 'directo' };
+  return clasificarOrigen(window.location.search, referrerExterno);
 }
 
 /**
