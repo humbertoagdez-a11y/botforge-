@@ -130,7 +130,7 @@ export default function BotForgeAssistant() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-white">Aria — Asistente de BotForge</p>
-              <p className="text-xs text-gray-400">Te respondo al instante</p>
+              <p className="text-xs text-gray-400">Te respondo en segundos</p>
             </div>
             <button
               type="button"

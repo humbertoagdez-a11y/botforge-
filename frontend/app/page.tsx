@@ -208,7 +208,7 @@ const FAQS = [
   },
   {
     q: 'Puedo cambiar lo que responde el bot después?',
-    a: 'Sí, en cualquier momento. Subís un documento nuevo o editado y el bot incorpora la información de inmediato.',
+    a: 'Sí, en cualquier momento. Subís un documento nuevo o editado y el bot la incorpora apenas termina de procesarlo, en general en menos de un minuto.',
   },
   {
     q: 'Cuánto tarda en estar listo el primer bot?',
