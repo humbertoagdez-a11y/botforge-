@@ -246,3 +246,15 @@ Sentry separado para que el cupo no compita.
 
 Borrá la variable `SENTRY_DSN` de Railway. Todo sigue funcionando; los errores
 vuelven a quedar solo en los logs.
+
+## Correcciones manuales de métricas
+
+`embudo_diario` es un contador: no guarda los eventos, así que un día no se puede
+recalcular. Cuando hubo que corregirlo se restó a mano, en una transacción, y queda
+anotado acá.
+
+| Fecha | Qué | Antes → después | Motivo |
+|---|---|---|---|
+| 2026-10-08 | `sin-dato`: registro, verificado, primer-mensaje, bot | 1, 1, 1, 4 → filas borradas (0) | Las sumó la cuenta de demo "Pet Shop Firulais" (capturas para el video de Meta Ads). Verificado que ninguna otra cuenta sin origen tuvo actividad ese día. La cuenta quedó marcada con `cuentaInterna`, así que no vuelve a sumar. |
+
+Para cuentas de demo o de prueba nuevas: `npm run cuenta:interna -- <email>` **antes** de usarlas.
