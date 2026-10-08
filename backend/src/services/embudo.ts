@@ -85,7 +85,9 @@ export async function sumarEmbudo(s: Suma): Promise<void> {
 /** Suma un paso posterior al registro con el origen guardado en la cuenta */
 export async function sumarPasoDeUsuario(userId: string, tipo: Paso): Promise<void> {
   try {
-    const u = await prisma.user.findUnique({ where: { id: userId }, select: { origenRegistro: true } });
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { origenRegistro: true, cuentaInterna: true } });
+    // Las cuentas internas (demos, pruebas) no son trafico: no suman
+    if (u?.cuentaInterna) return;
     await sumarEmbudo({ tipo, origen: u?.origenRegistro ?? SIN_DATO });
   } catch (err) {
     console.error('[embudo] no se pudo sumar el paso:', err instanceof Error ? err.message : err);

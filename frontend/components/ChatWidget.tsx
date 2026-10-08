@@ -82,7 +82,7 @@ export default function ChatWidget({ botId, botName, isPublic = false }: Props) 
   // Mensaje inicial local para orientar al usuario (no se envia al backend)
   const greeting: UIMessage = {
     role: 'ASSISTANT',
-    content: `Hola! Soy ${botName}. Preguntame lo que quieras sobre el negocio y te respondo al instante.`,
+    content: `Hola! Soy ${botName}. Preguntame lo que quieras sobre el negocio y te respondo en segundos.`,
   };
   const [messages, setMessages] = useState<UIMessage[]>([greeting]);
   const [input, setInput] = useState('');

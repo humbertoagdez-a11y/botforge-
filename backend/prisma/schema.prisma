@@ -95,6 +95,9 @@ model User {
   origenRegistro         String?
   /// Primer mensaje en el Chat de prueba, para contarlo una sola vez.
   primerChatPruebaEn     DateTime?
+  /// Cuenta interna o de prueba: no suma al embudo por origen. Se marca con
+  /// npm run cuenta:interna -- <email>
+  cuentaInterna          Boolean   @default(false)
   emailVerifiedAt        DateTime?
   messagesUsedThisMonth  Int       @default(0)
   messagesResetAt        DateTime  @default(now())

@@ -256,34 +256,6 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   );
 }
 
-function AnimatedCounter({
-  value,
-  format,
-}: {
-  value: number;
-  format: (n: number) => string;
-}) {
-  const { ref, inView } = useInView<HTMLSpanElement>(0.5);
-  const [display, setDisplay] = useState(0);
-
-  useEffect(() => {
-    if (!inView) return;
-    const duration = 1600;
-    let raf = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplay(Math.round(value * eased));
-      if (progress < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [inView, value]);
-
-  return <span ref={ref}>{format(display)}</span>;
-}
-
 // ─── NAVBAR ───────────────────────────────────────────────────────────────────
 
 // ─── HERO ─────────────────────────────────────────────────────────────────────
@@ -564,25 +536,15 @@ function DemoSection() {
 // ─── METRICAS ─────────────────────────────────────────────────────────────────
 
 function MetricsSection() {
+  // Afirmaciones verdaderas, sin cifras. Hasta el 2026-10-08 aca habia
+  // numeros fijos inventados ("1.247 mensajes respondidos hoy", "43 bots
+  // activos en Paraguay", "menos de 2 seg"): no salian de ningun dato real y
+  // la respuesta medida tarda entre 5 y 9 segundos. No volver a poner cifras
+  // que no salgan de la base.
   const stats = [
-    {
-      icon: MessageSquare,
-      value: 1247,
-      format: (n: number) => n.toLocaleString('es-PY'),
-      label: 'mensajes respondidos hoy',
-    },
-    {
-      icon: Bot,
-      value: 43,
-      format: (n: number) => String(n),
-      label: 'bots activos en Paraguay',
-    },
-    {
-      icon: Zap,
-      value: 2,
-      format: (n: number) => `menos de ${n} seg`,
-      label: 'tiempo promedio de respuesta',
-    },
+    { icon: MessageSquare, titulo: 'Responde en segundos', label: 'con la información que vos cargás' },
+    { icon: Bot, titulo: 'Plan gratis', label: 'para armarlo y probarlo, sin tarjeta' },
+    { icon: Zap, titulo: 'Hecho en Paraguay', label: 'precios en guaraníes' },
   ];
 
   return (
@@ -591,11 +553,9 @@ function MetricsSection() {
         {stats.map((s) => {
           const Icon = s.icon;
           return (
-            <div key={s.label} className="flex flex-col items-center text-center">
+            <div key={s.titulo} className="flex flex-col items-center text-center">
               <Icon className="mb-3 h-6 w-6 text-violet-400" />
-              <p className="font-mono text-4xl font-extrabold text-white sm:text-5xl">
-                <AnimatedCounter value={s.value} format={s.format} />
-              </p>
+              <p className="text-2xl font-extrabold text-white sm:text-3xl">{s.titulo}</p>
               <p className="mt-2 text-sm text-gray-300">{s.label}</p>
             </div>
           );
